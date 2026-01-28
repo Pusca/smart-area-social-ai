@@ -1,0 +1,29 @@
+/* UI primitives (mobile-first) */
+.ui-container { @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8; }
+.ui-card { @apply rounded-2xl border border-gray-200 bg-white shadow-sm; }
+.ui-card-h { @apply px-4 py-3 border-b border-gray-100; }
+.ui-card-b { @apply p-4; }
+
+.ui-h1 { @apply text-2xl font-semibold text-gray-900; }
+.ui-sub { @apply mt-1 text-sm text-gray-600; }
+
+.ui-btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition; }
+.ui-btn-primary { @apply bg-gray-900 text-white hover:bg-gray-800; }
+.ui-btn-ghost { @apply border border-gray-200 bg-white text-gray-700 hover:bg-gray-50; }
+.ui-btn-danger { @apply border border-red-200 bg-white text-red-700 hover:bg-red-50; }
+
+.ui-input { @apply mt-1 w-full rounded-xl border-gray-200; }
+.ui-label { @apply text-sm font-medium text-gray-700; }
+
+.ui-badge { @apply inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold; }
+.ui-badge-gray { @apply bg-gray-100 text-gray-700; }
+.ui-badge-yellow { @apply bg-yellow-100 text-yellow-800; }
+.ui-badge-blue { @apply bg-blue-100 text-blue-800; }
+.ui-badge-purple { @apply bg-purple-100 text-purple-800; }
+.ui-badge-green { @apply bg-green-100 text-green-800; }
+.ui-badge-red { @apply bg-red-100 text-red-800; }
+
+.ui-step { @apply flex items-center gap-3; }
+.ui-step-dot { @apply h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold; }
+.ui-step-dot-on { @apply bg-gray-900 text-white; }
+.ui-step-dot-off { @apply bg-gray-100 text-gray-600; }

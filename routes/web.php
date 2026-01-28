@@ -1,20 +1,73 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PushController;
+use App\Http\Controllers\CalendarController;
+use App\Http\Controllers\ContentItemController;
+use App\Http\Controllers\PlanWizardController;
+use App\Http\Controllers\AiController;
+
+/*
+|--------------------------------------------------------------------------
+| Public
+|--------------------------------------------------------------------------
+*/
 
 Route::get('/', function () {
     return view('welcome');
-});
+})->name('home');
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+/*
+|--------------------------------------------------------------------------
+| App (protetta)
+|--------------------------------------------------------------------------
+*/
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
+
+    Route::view('/dashboard', 'dashboard')->name('dashboard');
+
+    // Calendario e contenuti
+    Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
+    Route::get('/posts', [ContentItemController::class, 'index'])->name('posts');
+
+    // Wizard piano editoriale (Step 1 -> Step 2 -> Genera)
+    Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');
+    Route::post('/wizard', [PlanWizardController::class, 'store'])->name('wizard.store');
+    Route::get('/wizard/brand', [PlanWizardController::class, 'brand'])->name('wizard.brand');
+    Route::post('/wizard/brand', [PlanWizardController::class, 'brandStore'])->name('wizard.brand.store');
+    Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
+
+    // AI Lab (test)
+    Route::get('/ai', [AiController::class, 'index'])->name('ai');
+    Route::post('/ai/generate', [AiController::class, 'generate'])->name('ai.generate');
+
+    // Sezioni (stub)
+    Route::view('/notifications', 'notifications')->name('notifications');
+    Route::view('/settings', 'settings')->name('settings');
+
+    // CRUD base contenuti
+    Route::prefix('posts')->name('posts.')->group(function () {
+        Route::get('/create', [ContentItemController::class, 'create'])->name('create');
+        Route::post('/', [ContentItemController::class, 'store'])->name('store');
+
+        Route::get('/{contentItem}/edit', [ContentItemController::class, 'edit'])->name('edit');
+        Route::put('/{contentItem}', [ContentItemController::class, 'update'])->name('update');
+
+        Route::delete('/{contentItem}', [ContentItemController::class, 'destroy'])->name('destroy');
+    });
+
+    // Push (PWA)
+    Route::get('/push/public-key', [PushController::class, 'publicKey'])->name('push.publicKey');
+    Route::post('/push/subscribe', [PushController::class, 'subscribe'])->name('push.subscribe');
+    Route::post('/push/test', [PushController::class, 'test'])->name('push.test');
+
+    // Profile (Breeze)
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';
