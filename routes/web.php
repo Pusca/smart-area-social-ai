@@ -8,6 +8,8 @@ use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ContentItemController;
 use App\Http\Controllers\PlanWizardController;
 use App\Http\Controllers\AiController;
+use App\Http\Controllers\AiGenerateController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -44,6 +46,11 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/ai', [AiController::class, 'index'])->name('ai');
     Route::post('/ai/generate', [AiController::class, 'generate'])->name('ai.generate');
 
+       // AI generate
+    Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
+    Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
+
+   
     // Sezioni (stub)
     Route::view('/notifications', 'notifications')->name('notifications');
     Route::view('/settings', 'settings')->name('settings');
