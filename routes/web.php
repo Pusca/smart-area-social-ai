@@ -50,6 +50,8 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
 
+    Route::post('ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])
+    ->name('ai.content.generateImage');
    
     // Sezioni (stub)
     Route::view('/notifications', 'notifications')->name('notifications');

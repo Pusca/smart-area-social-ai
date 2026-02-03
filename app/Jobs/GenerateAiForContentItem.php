@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
-class GenerateAiForContentItem implements ShouldQueue
+class GenerateAiImageForContentItem implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -28,88 +28,65 @@ class GenerateAiForContentItem implements ShouldQueue
     {
         $item = ContentItem::findOrFail($this->contentItemId);
 
-        // Firma job
+        // Mettiamo queued/pending, ma NON tocchiamo caption ecc.
         $item->ai_status = 'pending';
-        $item->ai_error = null;
-
-        $meta = $item->ai_meta ?? [];
-        if (!is_array($meta)) $meta = [];
-        $meta['debug'] = array_merge($meta['debug'] ?? [], [
-            'job' => 'GenerateAiForContentItem::JOBv4',
-            'openai_base_url_config' => config('openai.base_url'),
-            'openai_text_model' => config('openai.text_model'),
-            'openai_image_model' => config('openai.image_model'),
-            'time' => now()->toDateTimeString(),
-        ]);
-        $item->ai_meta = $meta;
-
         $item->save();
 
-        // 1) TESTO: se fallisce, è errore vero
         try {
-            $context = [
-                'brand' => data_get($item, 'ai_meta.brand', []),
-                'plan'  => data_get($item, 'ai_meta.plan', []),
-                'item'  => [
-                    'platform' => $item->platform,
-                    'format'   => $item->format,
-                    'title'    => $item->title,
-                    'scheduled_at' => optional($item->scheduled_at)->toDateTimeString(),
-                ],
-            ];
+            $prompt = trim((string) ($item->ai_image_prompt ?? ''));
 
-            $gen = $openAi->generateContent($context);
+            // Fallback prompt se vuoto: lo costruiamo da brand + caption + platform/format
+            if ($prompt === '') {
+                $brandName = data_get($item, 'ai_meta.brand.business_name', 'Brand');
+                $industry  = data_get($item, 'ai_meta.brand.industry', '');
+                $goal      = data_get($item, 'ai_meta.plan.goal', '');
+                $tone      = data_get($item, 'ai_meta.plan.tone', '');
 
-            $item->ai_caption = $gen['caption'] ?? null;
-            $item->ai_hashtags = $gen['hashtags'] ?? [];
-            $item->ai_cta = $gen['cta'] ?? null;
-            $item->ai_image_prompt = $gen['image_prompt'] ?? null;
+                $caption = trim((string) ($item->ai_caption ?? ''));
+                if ($caption === '') {
+                    $caption = $item->title ?? '';
+                }
 
+                $prompt = "Create a high-quality square social media image (1024x1024) for {$brandName}. "
+                        . "Industry: {$industry}. Goal: {$goal}. Tone: {$tone}. "
+                        . "Platform: {$item->platform}. Format: {$item->format}. "
+                        . "Visual concept based on: {$caption}. "
+                        . "No text in the image, modern minimal design, strong contrast, professional look.";
+                $item->ai_image_prompt = $prompt;
+                $item->save();
+            }
+
+            $img = $openAi->generateImageBase64($prompt);
+            $bytes = base64_decode($img['b64']);
+
+            $filename = 'ai/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.png';
+            Storage::disk('public')->put($filename, $bytes);
+
+            $item->ai_image_path = $filename;
+
+            // Se il testo esiste già, lasciamo done. Se non c’è, almeno non blocchiamo.
+            $item->ai_status = $item->ai_caption ? 'done' : 'pending';
             $item->save();
         } catch (Throwable $e) {
-            $msg = "JOBv4 | TEXT | " . $e->getMessage();
-            $item->ai_status = 'error';
-            $item->ai_error = $msg;
+            // Best-effort: non distruggiamo il post, ma salviamo l’errore
+            $msg = "IMAGE_ONLY | " . $e->getMessage();
+
+            $meta = $item->ai_meta ?? [];
+            if (!is_array($meta)) $meta = [];
+            $meta['image_error'] = $msg;
+            $meta['image_error_at'] = now()->toDateTimeString();
+            $item->ai_meta = $meta;
+
+            // Se caption c’è, restiamo done; altrimenti error
+            $item->ai_status = $item->ai_caption ? 'done' : 'error';
             $item->save();
 
-            Log::error('GenerateAiForContentItem JOBv4 text failed', [
+            Log::warning('GenerateAiImageForContentItem failed', [
                 'content_item_id' => $item->id,
                 'error' => $e->getMessage(),
             ]);
 
             throw $e;
         }
-
-        // 2) IMMAGINE: best-effort (se fallisce NON blocca il post)
-        try {
-            $prompt = (string) ($item->ai_image_prompt ?? '');
-
-            if (trim($prompt) !== '') {
-                $img = $openAi->generateImageBase64($prompt);
-                $bytes = base64_decode($img['b64']);
-
-                $filename = 'ai/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.png';
-                Storage::disk('public')->put($filename, $bytes);
-
-                $item->ai_image_path = $filename;
-                $item->save();
-            }
-        } catch (Throwable $e) {
-            // Non blocchiamo: salviamo info per debug
-            $warn = "JOBv4 | IMAGE | " . $e->getMessage();
-
-            $item->ai_error = $warn; // mantiene traccia, ma post resta "done"
-            $item->save();
-
-            Log::warning('GenerateAiForContentItem JOBv4 image failed', [
-                'content_item_id' => $item->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Done comunque se testo ok
-        $item->ai_status = 'done';
-        $item->ai_generated_at = now();
-        $item->save();
     }
 }

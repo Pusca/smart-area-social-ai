@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Jobs\GenerateAiImageForContentItem;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 
@@ -32,5 +33,16 @@ class AiGenerateController extends Controller
         }
 
         return back()->with('status', 'Rigenerazione AI del piano messa in coda (JOBv3).');
+    }
+
+    // ✅ Nuovo: solo immagine
+    public function generateImage(ContentItem $contentItem)
+    {
+        $contentItem->ai_status = 'queued';
+        $contentItem->save();
+
+        GenerateAiImageForContentItem::dispatch($contentItem->id);
+
+        return back()->with('status', 'Rigenerazione IMMAGINE messa in coda.');
     }
 }
