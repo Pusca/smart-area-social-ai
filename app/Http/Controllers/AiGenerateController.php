@@ -2,36 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateContentItemAiJob;
+use App\Jobs\GenerateAiForContentItem;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
-use Illuminate\Http\Request;
 
 class AiGenerateController extends Controller
 {
-    public function generateOne(Request $request, ContentItem $contentItem)
+    public function generateOne(ContentItem $contentItem)
     {
-        // sicurezza tenant
-        abort_unless($contentItem->tenant_id === auth()->user()->tenant_id, 403);
+        $contentItem->ai_status = 'queued';
+        $contentItem->ai_error = null;
+        $contentItem->save();
 
-        GenerateContentItemAiJob::dispatch($contentItem->id);
+        GenerateAiForContentItem::dispatch($contentItem->id);
 
-        return back()->with('status', 'Generazione AI avviata per: '.$contentItem->title);
+        return back()->with('status', 'Rigenerazione AI messa in coda (JOBv3).');
     }
 
-    public function generatePlan(Request $request, ContentPlan $contentPlan)
+    public function generatePlan(ContentPlan $contentPlan)
     {
-        abort_unless($contentPlan->tenant_id === auth()->user()->tenant_id, 403);
-
-        $items = ContentItem::query()
-            ->where('tenant_id', auth()->user()->tenant_id)
-            ->where('content_plan_id', $contentPlan->id)
-            ->get();
+        $items = ContentItem::where('content_plan_id', $contentPlan->id)->get();
 
         foreach ($items as $item) {
-            GenerateContentItemAiJob::dispatch($item->id);
+            $item->ai_status = 'queued';
+            $item->ai_error = null;
+            $item->save();
+
+            GenerateAiForContentItem::dispatch($item->id);
         }
 
-        return back()->with('status', 'Generazione AI avviata per '.count($items).' contenuti.');
+        return back()->with('status', 'Rigenerazione AI del piano messa in coda (JOBv3).');
     }
 }

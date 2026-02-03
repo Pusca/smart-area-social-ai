@@ -2,282 +2,173 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\GenerateAiForContentItem;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
-use App\Services\OpenAIClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class PlanWizardController extends Controller
 {
-    public function start(Request $request)
+    public function start()
     {
-        $tz = config('app.timezone', 'Europe/Rome');
-
-        $defaults = [
-            'name' => 'Piano ' . now($tz)->locale('it')->isoFormat('MMMM YYYY'),
-            'goal' => 'lead',
-            'tone' => 'professionale',
-            'platforms' => ['instagram'],
-            'formats' => ['post'],
-            'posts_per_week' => 3,
-            'start_date' => now($tz)->startOfWeek(Carbon::MONDAY)->toDateString(),
-        ];
-
-        return view('wizard.start', compact('defaults'));
+        return view('wizard.start');
     }
 
-    // Step 1: salva in sessione e vai allo step 2
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name' => 'required|string|max:80',
-            'goal' => 'required|string|max:40',
-            'tone' => 'required|string|max:40',
-            'platforms' => 'required|array|min:1',
-            'platforms.*' => 'string|max:30',
-            'formats' => 'required|array|min:1',
-            'formats.*' => 'string|max:30',
-            'posts_per_week' => 'required|integer|min:1|max:14',
-            'start_date' => 'required|date',
+            'goal' => ['required', 'string', 'max:200'],
+            'tone' => ['required', 'string', 'max:100'],
+            'posts_per_week' => ['required', 'integer', 'min:1', 'max:14'],
+            'platforms' => ['required', 'array', 'min:1'],
+            'platforms.*' => ['string'],
+            'formats' => ['required', 'array', 'min:1'],
+            'formats.*' => ['string'],
         ]);
 
-        session(['wizard_step1' => $data]);
+        session()->put('wizard_step1', $data);
 
         return redirect()->route('wizard.brand');
     }
 
-    // Step 2: brand kit
-    public function brand(Request $request)
+    public function brand()
     {
-        $step1 = session('wizard_step1');
-        if (!$step1) {
-            return redirect()->route('wizard.start');
-        }
-
-        $defaults = [
-            'business_name' => 'Smartera',
-            'industry' => 'Digital agency / AI',
-            'services' => 'Siti web, Web app, Marketing, Automazioni, Chatbot',
-            'target' => 'PMI, professionisti, attività locali',
-            'geo' => 'Italia (Veneto)',
-            'cta' => 'Richiedi una consulenza',
-            'keywords' => 'automazione, AI, crescita, strategia, risultati',
-            'avoid' => 'troppo tecnico, frasi lunghe',
-        ];
-
-        return view('wizard.brand', compact('defaults', 'step1'));
+        return view('wizard.brand');
     }
 
     public function brandStore(Request $request)
     {
-        $step1 = session('wizard_step1');
-        if (!$step1) {
-            return redirect()->route('wizard.start');
-        }
-
         $brand = $request->validate([
-            'business_name' => 'required|string|max:80',
-            'industry' => 'required|string|max:120',
-            'services' => 'required|string|max:500',
-            'target' => 'required|string|max:200',
-            'geo' => 'nullable|string|max:120',
-            'cta' => 'required|string|max:120',
-            'keywords' => 'nullable|string|max:300',
-            'avoid' => 'nullable|string|max:300',
+            'business_name' => ['required', 'string', 'max:120'],
+            'industry' => ['nullable', 'string', 'max:255'],
+            'services' => ['nullable', 'string', 'max:800'],
+            'target' => ['nullable', 'string', 'max:800'],
+            'cta' => ['nullable', 'string', 'max:200'],
+            // ridondanti se arrivano da step1, ma li accettiamo per sicurezza:
+            'goal' => ['nullable', 'string', 'max:200'],
+            'tone' => ['nullable', 'string', 'max:100'],
+            'posts_per_week' => ['nullable'],
+            'platforms' => ['nullable', 'array'],
+            'formats' => ['nullable', 'array'],
         ]);
 
-        session(['wizard_brand' => $brand]);
+        session()->put('wizard_brand', $brand);
 
         return $this->finalize($request);
     }
 
-    // Finalizzazione: crea piano + items + genera AI
-    private function finalize(Request $request)
+    public function finalize(Request $request)
     {
-        $user = $request->user();
-        $tenantId = $user->tenant_id;
-        $tz = config('app.timezone', 'Europe/Rome');
+        $user = Auth::user();
+        $tenantId = (int) $user->tenant_id;
 
-        $step1 = session('wizard_step1');
-        $brand = session('wizard_brand');
+        $step1 = session('wizard_step1', []);
+        $brand = session('wizard_brand', []);
 
-        if (!$step1 || !$brand) {
-            return redirect()->route('wizard.start');
-        }
+        // merge: step1 ha priorità, brand completa
+        $goal = $step1['goal'] ?? ($brand['goal'] ?? 'Lead');
+        $tone = $step1['tone'] ?? ($brand['tone'] ?? 'professionale');
+        $postsPerWeek = (int) ($step1['posts_per_week'] ?? ($brand['posts_per_week'] ?? 5));
+        $platforms = $step1['platforms'] ?? ($brand['platforms'] ?? ['instagram']);
+        $formats = $step1['formats'] ?? ($brand['formats'] ?? ['post']);
 
-        $start = Carbon::parse($step1['start_date'], $tz)->startOfWeek(Carbon::MONDAY);
-        $end = (clone $start)->endOfWeek(Carbon::SUNDAY);
+        // Piano settimana corrente (lun-dom) a partire da oggi
+        $start = Carbon::now()->startOfWeek();
+        $end = (clone $start)->addDays(6)->endOfDay();
 
-        // Piano
-        $plan = new ContentPlan();
-        $plan->tenant_id = $tenantId;
-        $plan->created_by = $user->id;
-        $plan->name = $step1['name'];
-        $plan->start_date = $start->toDateString();
-        $plan->end_date = $end->toDateString();
-        $plan->status = 'active';
-        $plan->settings = [
-            'goal' => $step1['goal'],
-            'tone' => $step1['tone'],
-            'platforms' => $step1['platforms'],
-            'formats' => $step1['formats'],
-            'posts_per_week' => (int)$step1['posts_per_week'],
-            'brand' => $brand,
-        ];
-        $plan->save();
+        $plan = ContentPlan::create([
+            'tenant_id' => $tenantId,
+            'created_by' => $user->id,
+            'name' => 'Piano ' . Carbon::now()->format('F Y'),
+            'start_date' => $start,
+            'end_date' => $end,
+            'status' => 'active',
+            'settings' => [
+                'goal' => $goal,
+                'tone' => $tone,
+                'platforms' => $platforms,
+                'formats' => $formats,
+                'posts_per_week' => $postsPerWeek,
+                'brand' => [
+                    'business_name' => $brand['business_name'] ?? '',
+                    'industry' => $brand['industry'] ?? '',
+                    'services' => $brand['services'] ?? '',
+                    'target' => $brand['target'] ?? '',
+                    'cta' => $brand['cta'] ?? '',
+                ],
+            ],
+        ]);
 
-        // slots
-        $count = (int)$step1['posts_per_week'];
-        $platforms = $step1['platforms'];
-        $formats = $step1['formats'];
-
-        $daysOrder = [0, 2, 4, 6, 1, 3, 5];
-        $slots = [];
-        for ($i = 0; $i < $count; $i++) {
-            $dayOffset = $daysOrder[$i % count($daysOrder)];
-            $date = $start->copy()->addDays($dayOffset);
-            $hour = [10, 13, 18, 21][$i % 4];
-            $slots[] = $date->copy()->setTime($hour, 0, 0);
-        }
-
-        // crea items base
+        // Crea N items distribuiti nei prossimi 7 giorni
         $items = [];
-        foreach ($slots as $i => $dt) {
+        for ($i = 0; $i < $postsPerWeek; $i++) {
+            $dayOffset = (int) floor(($i * 7) / max(1, $postsPerWeek));
+            $scheduledAt = (clone $start)->addDays($dayOffset)->setTime(10, 0, 0);
+
+            $platform = $platforms[$i % count($platforms)];
+            $format = $formats[$i % count($formats)];
+
+            $title = "Bozza #" . ($i + 1) . " — " . ucfirst($platform);
+
             $item = new ContentItem();
             $item->tenant_id = $tenantId;
             $item->content_plan_id = $plan->id;
             $item->created_by = $user->id;
 
-            $item->platform = $platforms[$i % count($platforms)];
-            $item->format = $formats[$i % count($formats)];
-            $item->scheduled_at = $dt;
+            $item->platform = $platform;
+            $item->format = $format;
+            $item->scheduled_at = $scheduledAt;
 
             $item->status = 'draft';
-            $item->title = 'Bozza #' . ($i + 1) . ' — ' . ucfirst($item->platform);
+            $item->title = $title;
 
-            $bn = $brand['business_name'];
-            $cta = $brand['cta'];
-
-            $item->caption = "Brand: {$bn}\nObiettivo: {$step1['goal']} | Tone: {$step1['tone']}\nCTA: {$cta}\n\n(Placeholder: AI)";
-            $item->hashtags = [];
+            // campi "base" (placeholder)
+            $item->caption = "Brand: " . ($brand['business_name'] ?? '') . " | Obiettivo: {$goal} | Tone: {$tone} | CTA: " . ($brand['cta'] ?? '—') . " (Placeholder: AI)";
+            $item->hashtags = []; // verranno riempiti da AI
             $item->ai_meta = [
-                'wizard' => [
-                    'step1' => $step1,
-                    'brand' => $brand,
+                'plan' => [
+                    'goal' => $goal,
+                    'tone' => $tone,
+                ],
+                'brand' => [
+                    'business_name' => $brand['business_name'] ?? '',
+                    'industry' => $brand['industry'] ?? '',
+                    'services' => $brand['services'] ?? '',
+                    'target' => $brand['target'] ?? '',
+                    'cta' => $brand['cta'] ?? '',
                 ],
                 'ai' => [
                     'status' => 'pending',
                 ],
             ];
+
+            // campi AI veri
+            $item->ai_status = 'queued';
+            $item->ai_error = null;
+
             $item->save();
             $items[] = $item;
         }
 
-        // genera contenuti AI (best-effort)
-        $this->generateAiForItems($items, $plan, $step1, $brand);
+        // dispatch generazione AI (queue)
+        foreach ($items as $it) {
+            GenerateAiForContentItem::dispatch($it->id);
+        }
 
-        // pulizia sessione wizard
         session()->forget(['wizard_step1', 'wizard_brand']);
 
         return redirect()->route('wizard.done')->with('plan_id', $plan->id);
     }
 
-    private function generateAiForItems(array $items, ContentPlan $plan, array $step1, array $brand): void
-    {
-        // se non hai la chiave, non blocchiamo
-        if (!config('openai.api_key')) {
-            foreach ($items as $it) {
-                $it->ai_meta = array_merge((array)$it->ai_meta, [
-                    'ai' => ['status' => 'skipped', 'reason' => 'OPENAI_API_KEY missing'],
-                ]);
-                $it->save();
-            }
-            return;
-        }
-
-        $openai = app(OpenAIClient::class);
-
-        $schema = [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'properties' => [
-                'hook' => ['type' => 'string'],
-                'title' => ['type' => 'string'],
-                'caption' => ['type' => 'string'],
-                'hashtags' => [
-                    'type' => 'array',
-                    'items' => ['type' => 'string'],
-                    'minItems' => 3,
-                    'maxItems' => 20,
-                ],
-                'cta' => ['type' => 'string'],
-                'notes' => ['type' => 'string'],
-            ],
-            'required' => ['hook', 'title', 'caption', 'hashtags', 'cta', 'notes'],
-        ];
-
-        foreach ($items as $item) {
-            try {
-                $topic = "Piano per {$brand['business_name']} — {$brand['industry']} — servizi: {$brand['services']}";
-
-                $system = "Sei un content strategist senior. "
-                    . "Genera contenuti pronti da pubblicare. "
-                    . "Lingua: it. "
-                    . "Brand: {$brand['business_name']}. "
-                    . "Target: {$brand['target']}. "
-                    . "Area: " . ($brand['geo'] ?: 'Italia') . ". "
-                    . "Obiettivo: {$step1['goal']}. "
-                    . "Tono: {$step1['tone']}. "
-                    . "Piattaforma: {$item->platform}. "
-                    . "Formato: {$item->format}. "
-                    . "CTA: {$brand['cta']}. "
-                    . "Usa parole chiave se presenti: " . ($brand['keywords'] ?: 'n/a') . ". "
-                    . "Evita: " . ($brand['avoid'] ?: 'n/a') . ".";
-
-                $user = "Crea un contenuto per la data/orario {$item->scheduled_at}.\n"
-                    . "Tema base: {$topic}\n"
-                    . "Richiesta:\n"
-                    . "- hook breve e incisivo\n"
-                    . "- title breve (max ~60 caratteri)\n"
-                    . "- caption adatta a {$item->platform}\n"
-                    . "- hashtag pertinenti\n"
-                    . "- CTA chiara\n"
-                    . "- notes: suggerimento visual (reel/carousel/post) e idea creativa.\n";
-
-                $messages = [
-                    ['role' => 'system', 'content' => $system],
-                    ['role' => 'user', 'content' => $user],
-                ];
-
-                $out = $openai->generateStructured($messages, $schema, 950);
-
-                $item->title = $out['title'] ?? $item->title;
-                $item->caption = trim(($out['hook'] ?? '') . "\n\n" . ($out['caption'] ?? '') . "\n\n" . ($out['cta'] ?? ''));
-                $item->hashtags = $out['hashtags'] ?? [];
-                $item->ai_meta = array_merge((array)$item->ai_meta, [
-                    'ai' => [
-                        'status' => 'ok',
-                        'notes' => $out['notes'] ?? '',
-                        'model' => config('openai.model'),
-                    ],
-                ]);
-                $item->save();
-            } catch (\Throwable $e) {
-                $item->ai_meta = array_merge((array)$item->ai_meta, [
-                    'ai' => [
-                        'status' => 'fail',
-                        'error' => $e->getMessage(),
-                    ],
-                ]);
-                $item->save();
-            }
-        }
-    }
-
     public function done(Request $request)
     {
-        $planId = session('plan_id');
-        return view('wizard.done', compact('planId'));
+        $planId = $request->session()->get('plan_id');
+        $plan = $planId ? ContentPlan::with('items')->find($planId) : null;
+
+        return view('wizard.done', [
+            'plan' => $plan,
+        ]);
     }
 }

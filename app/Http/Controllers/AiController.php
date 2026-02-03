@@ -2,80 +2,38 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\OpenAIClient;
+use App\Jobs\GenerateAiForContentItem;
+use App\Models\ContentItem;
 use Illuminate\Http\Request;
 
 class AiController extends Controller
 {
     public function index()
     {
-        return view('ai');
+        return view('ai.index');
     }
 
-    public function generate(Request $request, OpenAIClient $openai)
+    /**
+     * Route: ai.generate (POST ai/generate)
+     * Accetta un array di content_item_ids e li mette in coda
+     */
+    public function generate(Request $request)
     {
-        $validated = $request->validate([
-            'topic' => ['required', 'string', 'max:200'],
-            'platform' => ['required', 'in:instagram,facebook,tiktok'],
-            'tone' => ['required', 'in:professionale,amichevole,ironico,tecnico,commerciale'],
-            'goal' => ['required', 'in:lead,brand,engagement,vendita'],
-            'lang' => ['required', 'in:it,en'],
+        $data = $request->validate([
+            'content_item_ids' => ['required', 'array', 'min:1'],
+            'content_item_ids.*' => ['integer'],
         ]);
 
-        $topic    = $validated['topic'];
-        $platform = $validated['platform'];
-        $tone     = $validated['tone'];
-        $goal     = $validated['goal'];
-        $lang     = $validated['lang'];
+        $items = ContentItem::whereIn('id', $data['content_item_ids'])->get();
 
-        // Schema output (Structured Outputs). :contentReference[oaicite:5]{index=5}
-        $schema = [
-            'type' => 'object',
-            'additionalProperties' => false,
-            'properties' => [
-                'hook' => ['type' => 'string'],
-                'caption' => ['type' => 'string'],
-                'hashtags' => [
-                    'type' => 'array',
-                    'items' => ['type' => 'string'],
-                    'minItems' => 3,
-                    'maxItems' => 20,
-                ],
-                'cta' => ['type' => 'string'],
-                'notes' => ['type' => 'string'],
-            ],
-            'required' => ['hook', 'caption', 'hashtags', 'cta', 'notes'],
-        ];
+        foreach ($items as $item) {
+            $item->ai_status = 'queued';
+            $item->ai_error = null;
+            $item->save();
 
-        $system = "Sei un content strategist per Smartera. "
-            . "Genera contenuti pronti da pubblicare, coerenti con il tono richiesto, senza citare policy o metadati. "
-            . "Lingua: {$lang}. Piattaforma: {$platform}. Obiettivo: {$goal}. Tono: {$tone}.";
-
-        $user = "Tema/argomento: {$topic}\n"
-            . "Vincoli:\n"
-            . "- Hook breve e forte\n"
-            . "- Caption adatta alla piattaforma\n"
-            . "- Hashtag pertinenti\n"
-            . "- CTA chiara\n"
-            . "- Notes: 1-2 consigli su visual o formato (reel/carousel/post)\n";
-
-        $messages = [
-            ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => $user],
-        ];
-
-        try {
-            $result = $openai->generateStructured($messages, $schema, 900);
-
-            return response()->json([
-                'ok' => true,
-                'data' => $result,
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'ok' => false,
-                'error' => $e->getMessage(),
-            ], 500);
+            GenerateAiForContentItem::dispatch($item->id);
         }
+
+        return back()->with('status', 'Generazione AI messa in coda.');
     }
 }

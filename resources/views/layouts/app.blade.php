@@ -1,77 +1,110 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="csrf-token" content="{{ csrf_token() }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+    <title>{{ config('app.name', 'Laravel') }}</title>
 
-        <!-- Fonts -->
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="font-sans antialiased bg-gray-50">
+    <div class="min-h-screen">
 
-        <!-- Scripts -->
-        @vite(['resources/css/app.css', 'resources/js/app.js'])
-   
-       <!--qUESTI sono per la pwa -->
-      <link rel="manifest" href="/manifest.webmanifest">
-      <meta name="theme-color" content="#4f46e5">
-      <link rel="apple-touch-icon" href="/icons/icon-192.png">
-
-    </head>
-    <body class="font-sans antialiased">
-        <div class="min-h-screen bg-gray-100">
-            @include('layouts.navigation')
-
-            <!-- Page Heading -->
-            @isset($header)
-                <header class="bg-white shadow">
-                    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                        {{ $header }}
+        {{-- TOP NAV (desktop) --}}
+        <header class="hidden sm:block bg-white border-b sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">
+                        S
                     </div>
-                </header>
-            @endisset
+                    <div class="leading-tight">
+                        <div class="font-semibold">{{ config('app.name', 'Smartera Social AI') }}</div>
+                        <div class="text-xs text-gray-500">Dashboard</div>
+                    </div>
+                </div>
 
-            <!-- Page Content -->
-         <main class="pb-24">
-             {{ $slot }}
-         </main>
+                <nav class="flex items-center gap-2 text-sm">
+                    <a href="{{ route('dashboard') }}"
+                       class="px-3 py-2 rounded-xl {{ request()->routeIs('dashboard') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                        Home
+                    </a>
 
-        </div>
+                    <a href="{{ route('calendar') }}"
+                       class="px-3 py-2 rounded-xl {{ request()->routeIs('calendar') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                        Calendar
+                    </a>
 
+                    <a href="{{ route('posts') }}"
+                       class="px-3 py-2 rounded-xl {{ request()->routeIs('posts*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                        Posts
+                    </a>
 
-        <nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
-    <div class="max-w-7xl mx-auto px-4">
-        <div class="grid grid-cols-5 text-center text-xs">
-            <a href="{{ route('dashboard') }}" class="py-3 {{ request()->routeIs('dashboard') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                Home
-            </a>
-            <a href="{{ route('calendar') }}" class="py-3 {{ request()->routeIs('calendar') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                Calendario
-            </a>
-            <a href="{{ route('posts') }}" class="py-3 {{ request()->routeIs('posts') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                Post
-            </a>
-            <a href="{{ route('notifications') }}" class="py-3 {{ request()->routeIs('notifications') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                Notifiche
-            </a>
-            <a href="{{ route('settings') }}" class="py-3 {{ request()->routeIs('settings') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                Impostazioni
-            </a>
-        </div>
+                    <a href="{{ route('wizard.start') }}"
+                       class="px-3 py-2 rounded-xl {{ request()->routeIs('wizard.*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                        Wizard
+                    </a>
+
+                    <a href="{{ route('settings') }}"
+                       class="px-3 py-2 rounded-xl {{ request()->routeIs('settings') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                        Settings
+                    </a>
+                </nav>
+            </div>
+        </header>
+
+        {{-- Header "slot" (se una view lo usa) --}}
+        @isset($header)
+            <div class="bg-white border-b">
+                <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                    {{ $header }}
+                </div>
+            </div>
+        @endisset
+
+        {{-- Page Content --}}
+        <main class="pb-24">
+            @hasSection('content')
+                @yield('content')
+            @elseif (isset($slot))
+                {{ $slot }}
+            @endif
+        </main>
+
     </div>
-</nav>
 
+    {{-- Bottom nav (mobile) --}}
+    <nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="grid grid-cols-5 text-center text-xs">
 
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch(console.error);
-    });
-  }
-</script>
+                <a href="{{ route('dashboard') }}"
+                   class="py-3 {{ request()->routeIs('dashboard') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
+                    Home
+                </a>
 
+                <a href="{{ route('calendar') }}"
+                   class="py-3 {{ request()->routeIs('calendar') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
+                    Calendar
+                </a>
 
-    </body>
+                <a href="{{ route('posts') }}"
+                   class="py-3 {{ request()->routeIs('posts*') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
+                    Posts
+                </a>
+
+                <a href="{{ route('wizard.start') }}"
+                   class="py-3 {{ request()->routeIs('wizard.*') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
+                    Wizard
+                </a>
+
+                <a href="{{ route('settings') }}"
+                   class="py-3 {{ request()->routeIs('settings') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
+                    Settings
+                </a>
+
+            </div>
+        </div>
+    </nav>
+</body>
 </html>
