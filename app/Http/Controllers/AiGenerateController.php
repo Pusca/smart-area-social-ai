@@ -17,7 +17,7 @@ class AiGenerateController extends Controller
 
         GenerateAiForContentItem::dispatch($contentItem->id);
 
-        return back()->with('status', 'Rigenerazione AI messa in coda (JOBv3).');
+        return back()->with('status', 'Rigenerazione AI messa in coda (JOBv4).');
     }
 
     public function generatePlan(ContentPlan $contentPlan)
@@ -32,13 +32,13 @@ class AiGenerateController extends Controller
             GenerateAiForContentItem::dispatch($item->id);
         }
 
-        return back()->with('status', 'Rigenerazione AI del piano messa in coda (JOBv3).');
+        return back()->with('status', 'Rigenerazione AI del piano messa in coda (JOBv4).');
     }
 
-    // ✅ Nuovo: solo immagine
     public function generateImage(ContentItem $contentItem)
     {
         $contentItem->ai_status = 'queued';
+        $contentItem->ai_error = null;
         $contentItem->save();
 
         GenerateAiImageForContentItem::dispatch($contentItem->id);
