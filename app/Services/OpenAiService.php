@@ -3,180 +3,214 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
 class OpenAiService
 {
-    private string $apiKey;
-    private string $baseUrl;
-    private string $textModel;
-    private string $imageModel;
-    private int $maxTokens;
-    private float $temperature;
-
-    public function __construct()
+    /**
+     * Normalizza base URL:
+     * - accetta https://api.openai.com
+     * - accetta https://api.openai.com/v1
+     * e restituisce SEMPRE host senza /v1 finale.
+     */
+    protected function baseHost(): string
     {
-        $this->apiKey = (string) config('openai.api_key');
-        $this->baseUrl = $this->normalizeBaseUrl((string) config('openai.base_url'));
-        $this->textModel = (string) config('openai.text_model');
-        $this->imageModel = (string) config('openai.image_model');
-        $this->maxTokens = (int) config('openai.max_tokens');
-        $this->temperature = (float) config('openai.temperature');
+        $base = (string) (env('OPENAI_BASE_URL') ?: config('openai.base_url') ?: 'https://api.openai.com');
+        $base = rtrim(trim($base), '/');
+        if (str_ends_with($base, '/v1')) {
+            $base = rtrim(substr($base, 0, -3), '/');
+        }
+        return $base;
+    }
 
-        if (!$this->apiKey) {
-            throw new RuntimeException('OPENAI_API_KEY mancante (controlla .env).');
+    protected function apiKey(): string
+    {
+        $key = (string) (env('OPENAI_API_KEY') ?: '');
+        if (trim($key) === '') {
+            throw new RuntimeException('Missing OPENAI_API_KEY');
         }
+        return $key;
+    }
 
-        if (!preg_match('#^https?://#i', $this->baseUrl)) {
-            throw new RuntimeException('OPENAI_BASE_URL non valido: ' . $this->baseUrl);
-        }
-        if (!str_ends_with($this->baseUrl, '/v1')) {
-            throw new RuntimeException('OPENAI_BASE_URL deve terminare con /v1. Attuale: ' . $this->baseUrl);
-        }
+    protected function url(string $path): string
+    {
+        // $path deve iniziare con "/v1/..."
+        return $this->baseHost() . $path;
     }
 
     /**
-     * Genera contenuto testuale strutturato per un singolo item.
-     * Ritorna: ['caption'=>string, 'hashtags'=>array, 'cta'=>string, 'image_prompt'=>string]
+     * TESTO (usa Responses API): ritorna array con caption/hashtags/cta/image_prompt
+     * Docs: POST /v1/responses. :contentReference[oaicite:2]{index=2}
      */
     public function generateContent(array $context): array
     {
-        $system = <<<SYS
-Sei un social media strategist e copywriter italiano.
-Devi produrre contenuti pronti per pubblicazione, coerenti col brand e con l'obiettivo.
-Rispondi SOLO in JSON valido, senza testo extra.
-Chiavi obbligatorie:
-- caption (string)
-- hashtags (array di string)
-- cta (string)
-- image_prompt (string)
-SYS;
+        $model = (string) (config('openai.text_model') ?: env('OPENAI_TEXT_MODEL') ?: 'gpt-4.1-mini');
+        $timeout = (int) (config('openai.timeout') ?: 60);
 
-        $payload = [
-            'model' => $this->textModel,
-            'messages' => [
-                ['role' => 'system', 'content' => $system],
-                ['role' => 'user', 'content' => json_encode($context, JSON_UNESCAPED_UNICODE)],
-            ],
-            'max_tokens' => $this->maxTokens,
-            'temperature' => $this->temperature,
+        $instructions =
+            "You are a social media content generator.\n"
+            . "Return ONLY valid JSON with keys:\n"
+            . "- caption (string)\n"
+            . "- hashtags (array of strings)\n"
+            . "- cta (string)\n"
+            . "- image_prompt (string)\n"
+            . "No markdown. No code fences. No extra text.";
+
+        $input = [
+            ['role' => 'system', 'content' => $instructions],
+            ['role' => 'user', 'content' => "Context:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
         ];
 
-        $url = $this->url('chat/completions');
+        $url = $this->url('/v1/responses');
 
-        $res = Http::withToken($this->apiKey)
-            ->timeout(90)
-            ->acceptJson()
-            ->contentType('application/json')
-            ->post($url, $payload);
+        try {
+            $res = Http::withToken($this->apiKey())
+                ->acceptJson()
+                ->asJson()
+                ->timeout($timeout)
+                ->retry(2, 300)
+                ->post($url, [
+                    'model' => $model,
+                    'input' => $input,
+                ]);
 
-        if (!$res->successful()) {
-            throw new RuntimeException("OpenAI text error ({$res->status()}) URL={$url} BODY=" . $res->body());
+            if (!$res->successful()) {
+                throw new RuntimeException("OpenAI text error ({$res->status()}) URL={$url} BODY=" . $res->body());
+            }
+
+            $data = $res->json();
+
+            // Estrai testo: in Responses è dentro output[*].content[*].text
+            $text = $this->extractResponsesText($data);
+            $parsed = $this->safeJsonParse($text);
+            $parsed = is_array($parsed) ? $parsed : [];
+
+            // Normalizza hashtags
+            $hashtags = $parsed['hashtags'] ?? [];
+            if (is_string($hashtags)) {
+                $hashtags = preg_split('/[\s,]+/', trim($hashtags)) ?: [];
+                $hashtags = array_values(array_filter($hashtags));
+            }
+            if (!is_array($hashtags)) $hashtags = [];
+
+            return [
+                'caption' => $parsed['caption'] ?? null,
+                'hashtags' => $hashtags,
+                'cta' => $parsed['cta'] ?? null,
+                'image_prompt' => $parsed['image_prompt'] ?? null,
+            ];
+        } catch (Throwable $e) {
+            Log::error('OpenAiService generateContent failed', [
+                'error' => $e->getMessage(),
+                'model' => $model,
+                'url' => $url,
+            ]);
+            throw $e;
         }
-
-        $content = data_get($res->json(), 'choices.0.message.content');
-        if (!is_string($content) || trim($content) === '') {
-            throw new RuntimeException("OpenAI text: risposta vuota. URL={$url}");
-        }
-
-        $json = $this->extractJson($content);
-        $data = json_decode($json, true);
-
-        if (!is_array($data)) {
-            throw new RuntimeException("OpenAI text: JSON non valido. URL={$url} Raw=" . $content);
-        }
-
-        $hashtags = $data['hashtags'] ?? [];
-        if (!is_array($hashtags)) $hashtags = [];
-
-        $hashtags = array_values(array_filter(array_map(
-            fn($h) => is_string($h) ? trim($h) : '',
-            $hashtags
-        )));
-
-        return [
-            'caption' => (string)($data['caption'] ?? ''),
-            'hashtags' => $hashtags,
-            'cta' => (string)($data['cta'] ?? ''),
-            'image_prompt' => (string)($data['image_prompt'] ?? ''),
-        ];
     }
 
     /**
-     * Genera immagine e ritorna base64 (PNG)
-     * Ritorna: ['b64'=>string, 'mime'=>string]
+     * IMMAGINI: per gpt-image-* NON inviare response_format (errore 400).
+     * Per GPT image models, b64_json arriva di default. :contentReference[oaicite:3]{index=3}
      */
-    public function generateImageBase64(string $prompt): array
+    public function generateImageBase64(string $prompt, ?string $modelOverride = null): array
     {
-        $prompt = trim($prompt);
-        if ($prompt === '') {
-            throw new RuntimeException('Image prompt vuoto.');
+        $model = (string) ($modelOverride ?: config('openai.image_model') ?: env('OPENAI_IMAGE_MODEL') ?: 'gpt-image-1');
+        $timeout = (int) (config('openai.timeout_images') ?: 120);
+
+        $url = $this->url('/v1/images/generations');
+
+        try {
+            $res = Http::withToken($this->apiKey())
+                ->acceptJson()
+                ->asJson()
+                ->timeout($timeout)
+                ->retry(2, 500)
+                ->post($url, [
+                    'model' => $model,
+                    'prompt' => $prompt,
+                    'size' => config('openai.image_size') ?: '1024x1024',
+                    // NIENTE response_format qui
+                ]);
+
+            if (!$res->successful()) {
+                throw new RuntimeException("OpenAI image error ({$res->status()}) URL={$url} BODY=" . $res->body());
+            }
+
+            $data = $res->json();
+
+            // GPT image models: data[0].b64_json
+            $b64 = (string) data_get($data, 'data.0.b64_json', '');
+            $b64 = trim($b64);
+
+            if ($b64 === '') {
+                throw new RuntimeException('Missing data.0.b64_json in images response');
+            }
+
+            return [
+                'b64' => $b64,
+                'b64_json' => $b64,
+                'raw' => $data,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('OpenAiService generateImageBase64 failed', [
+                'error' => $e->getMessage(),
+                'model' => $model,
+                'url' => $url,
+            ]);
+            throw $e;
         }
-
-        $payload = [
-            'model' => $this->imageModel,
-            'prompt' => $prompt,
-            'size' => '1024x1024',
-            'response_format' => 'b64_json',
-        ];
-
-        $url = $this->url('images/generations');
-
-        $res = Http::withToken($this->apiKey)
-            ->timeout(120)
-            ->acceptJson()
-            ->contentType('application/json')
-            ->post($url, $payload);
-
-        if (!$res->successful()) {
-            throw new RuntimeException("OpenAI image error ({$res->status()}) URL={$url} BODY=" . $res->body());
-        }
-
-        $b64 = data_get($res->json(), 'data.0.b64_json');
-        if (!is_string($b64) || $b64 === '') {
-            throw new RuntimeException("OpenAI image: b64 mancante. URL={$url}");
-        }
-
-        return ['b64' => $b64, 'mime' => 'image/png'];
     }
 
-    private function url(string $path): string
+    protected function extractResponsesText(array $response): string
     {
-        $path = ltrim($path, '/');
-        return $this->baseUrl . '/' . $path;
+        $out = $response['output'] ?? [];
+        if (!is_array($out)) return '';
+
+        $chunks = [];
+
+        foreach ($out as $item) {
+            $content = $item['content'] ?? null;
+            if (!is_array($content)) continue;
+
+            foreach ($content as $c) {
+                // vari formati: {type:"output_text", text:"..."} o {type:"text", text:"..."}
+                $t = $c['text'] ?? null;
+                if (is_string($t) && trim($t) !== '') {
+                    $chunks[] = $t;
+                }
+            }
+        }
+
+        return trim(implode("\n", $chunks));
     }
 
-    private function normalizeBaseUrl(string $baseUrl): string
+    /**
+     * Parsatore JSON robusto (rimuove ```json ... ``` se presenti)
+     */
+    protected function safeJsonParse(string $text): mixed
     {
-        $baseUrl = trim($baseUrl);
-        if ($baseUrl === '') $baseUrl = 'https://api.openai.com/v1';
+        $t = trim($text);
 
-        if (!preg_match('#^https?://#i', $baseUrl)) {
-            $baseUrl = 'https://' . ltrim($baseUrl, '/');
+        if (str_starts_with($t, '```')) {
+            $t = preg_replace('/^```[a-zA-Z]*\s*/', '', $t) ?? $t;
+            $t = preg_replace('/\s*```$/', '', $t) ?? $t;
+            $t = trim($t);
         }
 
-        $baseUrl = rtrim($baseUrl, '/');
+        $decoded = json_decode($t, true);
+        if (json_last_error() === JSON_ERROR_NONE) return $decoded;
 
-        if (!str_ends_with($baseUrl, '/v1')) {
-            $baseUrl .= '/v1';
+        $start = strpos($t, '{');
+        $end = strrpos($t, '}');
+        if ($start !== false && $end !== false && $end > $start) {
+            $slice = substr($t, $start, $end - $start + 1);
+            $decoded2 = json_decode($slice, true);
+            if (json_last_error() === JSON_ERROR_NONE) return $decoded2;
         }
 
-        return $baseUrl;
-    }
-
-    private function extractJson(string $raw): string
-    {
-        $raw = trim($raw);
-        $raw = preg_replace('/^```(?:json)?\s*/i', '', $raw);
-        $raw = preg_replace('/\s*```$/', '', $raw);
-
-        $start = strpos($raw, '{');
-        $end = strrpos($raw, '}');
-
-        if ($start === false || $end === false || $end <= $start) {
-            return $raw;
-        }
-
-        return substr($raw, $start, $end - $start + 1);
+        throw new RuntimeException('Risposta non JSON: ' . mb_substr($text, 0, 500));
     }
 }

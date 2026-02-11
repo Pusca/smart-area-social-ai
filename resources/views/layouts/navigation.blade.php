@@ -110,11 +110,16 @@
             <x-responsive-nav-link :href="route('ai')" :active="request()->routeIs('ai*')">
                 AI Lab
             </x-responsive-nav-link>
+            
 
             <x-responsive-nav-link :href="route('settings')" :active="request()->routeIs('settings')">
                 Impostazioni
             </x-responsive-nav-link>
         </div>
+           <x-nav-link :href="route('content-items.index')" :active="request()->routeIs('content-items.*')">
+                 Content Items
+        </x-nav-link>
+
 
         <!-- Responsive Settings Options -->
         <div class="pt-4 pb-1 border-t border-gray-200">

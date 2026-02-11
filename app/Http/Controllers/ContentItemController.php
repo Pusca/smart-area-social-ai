@@ -8,6 +8,9 @@ use Illuminate\Support\Carbon;
 
 class ContentItemController extends Controller
 {
+    /**
+     * LISTA "POSTS" (la tua pagina attuale) => resources/views/posts/index.blade.php
+     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -20,6 +23,43 @@ class ContentItemController extends Controller
             ->paginate(20);
 
         return view('posts.index', compact('items'));
+    }
+
+    /**
+     * LISTA "CONTENT ITEMS" (nuova galleria con immagini) => resources/views/content-items/index.blade.php
+     */
+    public function gallery(Request $request)
+    {
+        $user = $request->user();
+
+        $q = ContentItem::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->orderByDesc('scheduled_at')
+            ->orderByDesc('id');
+
+        // filtri opzionali (se li aggiungi in futuro)
+        if ($request->filled('status')) {
+            $q->where('status', $request->string('status')->toString());
+        }
+        if ($request->filled('platform')) {
+            $q->where('platform', $request->string('platform')->toString());
+        }
+
+        $items = $q->paginate(24)->withQueryString();
+
+        return view('content-items.index', compact('items'));
+    }
+
+    /**
+     * DETTAGLIO "CONTENT ITEM" (immagine grande) => resources/views/content-items/show.blade.php
+     */
+    public function show(Request $request, ContentItem $contentItem)
+    {
+        $this->authorizeTenant($request, $contentItem);
+
+        return view('content-items.show', [
+            'item' => $contentItem,
+        ]);
     }
 
     public function create(Request $request)

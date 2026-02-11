@@ -38,6 +38,9 @@ class PlanWizardController extends Controller
         return view('wizard.brand');
     }
 
+    /**
+     * ✅ ORA: salva SOLO brand in sessione e poi va a done (senza generare).
+     */
     public function brandStore(Request $request)
     {
         $brand = $request->validate([
@@ -56,9 +59,22 @@ class PlanWizardController extends Controller
 
         session()->put('wizard_brand', $brand);
 
+        // ✅ Non generiamo qui. Andiamo a una pagina di conferma con bottone "Genera".
+        return redirect()->route('wizard.done')->with('status', 'Asset brand salvati ✅');
+    }
+
+    /**
+     * ✅ Nuovo endpoint: parte la generazione del piano quando premi il bottone in done.
+     */
+    public function generate(Request $request)
+    {
+        // CSRF ok, route POST
         return $this->finalize($request);
     }
 
+    /**
+     * Genera piano + items + dispatch job.
+     */
     public function finalize(Request $request)
     {
         $user = Auth::user();
@@ -66,6 +82,11 @@ class PlanWizardController extends Controller
 
         $step1 = session('wizard_step1', []);
         $brand = session('wizard_brand', []);
+
+        // se manca qualcosa, rimandiamo al wizard
+        if (empty($step1) || empty($brand) || empty($brand['business_name'])) {
+            return redirect()->route('wizard.start')->with('status', 'Completa prima il wizard (Step 1 + Brand) ✅');
+        }
 
         // merge: step1 ha priorità, brand completa
         $goal = $step1['goal'] ?? ($brand['goal'] ?? 'Lead');
@@ -157,18 +178,27 @@ class PlanWizardController extends Controller
             GenerateAiForContentItem::dispatch($it->id);
         }
 
+        // pulizia sessione wizard e salva plan_id per done
         session()->forget(['wizard_step1', 'wizard_brand']);
+        session()->put('plan_id', $plan->id);
 
-        return redirect()->route('wizard.done')->with('plan_id', $plan->id);
+        return redirect()->route('wizard.done')->with('status', 'Piano creato e messo in coda ✅');
     }
 
     public function done(Request $request)
     {
+        // ✅ ora plan_id lo teniamo in sessione e in più posso mostrare anche lo stato “pre-generazione”
         $planId = $request->session()->get('plan_id');
         $plan = $planId ? ContentPlan::with('items')->find($planId) : null;
 
+        // Mostriamo anche i dati raccolti dal wizard se ancora non hai generato
+        $step1 = session('wizard_step1', []);
+        $brand = session('wizard_brand', []);
+
         return view('wizard.done', [
             'plan' => $plan,
+            'step1' => $step1,
+            'brand' => $brand,
         ]);
     }
 }

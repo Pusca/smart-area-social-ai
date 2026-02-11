@@ -1,5 +1,5 @@
 <x-app-layout>
-    {{-- BRAND VIEW v4 OK --}}
+    {{-- BRAND VIEW v5 + ASSETS --}}
 
     <x-slot name="header">
         <div class="flex items-center justify-between">
@@ -22,6 +22,12 @@
                         </p>
                     </div>
 
+                    @if (session('status'))
+                        <div class="mb-6 rounded-lg border border-green-200 bg-green-50 p-4">
+                            <p class="font-medium text-green-800">{{ session('status') }}</p>
+                        </div>
+                    @endif
+
                     @if ($errors->any())
                         <div class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
                             <p class="font-medium text-red-800">Controlla questi campi:</p>
@@ -33,7 +39,7 @@
                         </div>
                     @endif
 
-                    <form method="POST" action="{{ route('wizard.brand.store') }}" class="space-y-8">
+                    <form method="POST" action="{{ route('wizard.brand.store') }}" class="space-y-8" enctype="multipart/form-data">
                         @csrf
 
                         {{-- =======================
@@ -220,6 +226,95 @@
                             </div>
 
                             <p class="mt-1 text-xs text-gray-500">Seleziona almeno 1 formato.</p>
+                        </div>
+
+                        {{-- =======================
+                             ✅ BRAND ASSETS (NUOVO)
+                        ======================== --}}
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 p-5">
+                            <div class="mb-4">
+                                <h4 class="text-base font-semibold text-gray-900">Brand assets (logo & immagini)</h4>
+                                <p class="mt-1 text-sm text-gray-600">
+                                    Carica logo e immagini di riferimento: l’AI cercherà di rispettare colori e stile.
+                                </p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Logo (opzionale)</label>
+                                    <input
+                                        type="file"
+                                        name="logo"
+                                        accept="image/*"
+                                        class="mt-2 block w-full text-sm"
+                                    />
+                                    <p class="mt-1 text-xs text-gray-500">PNG consigliato, sfondo trasparente se possibile.</p>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Immagini azienda (fino a 8)</label>
+                                    <input
+                                        type="file"
+                                        name="images[]"
+                                        accept="image/*"
+                                        multiple
+                                        class="mt-2 block w-full text-sm"
+                                    />
+                                    <p class="mt-1 text-xs text-gray-500">Esempi: prodotti, progetti, mood, palette, reference.</p>
+                                </div>
+                            </div>
+
+                            {{-- Preview assets se passati dal controller --}}
+                            @php
+                                $assets = $assets ?? collect();
+                                $byKind = method_exists($assets, 'groupBy') ? $assets->groupBy('kind') : collect();
+                            @endphp
+
+                            @if ($assets && $assets->count())
+                                <div class="mt-6">
+                                    <div class="text-sm font-medium text-gray-700 mb-2">Assets caricati</div>
+
+                                    <div class="mb-5">
+                                        <div class="text-xs text-gray-500 mb-2">Logo</div>
+                                        <div class="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                                            @foreach(($byKind['logo'] ?? collect()) as $a)
+                                                <div class="border rounded-lg overflow-hidden bg-white">
+                                                    <div class="aspect-square flex items-center justify-center p-2 bg-gray-50">
+                                                        <img src="{{ asset('storage/' . $a->path) }}" class="max-h-full max-w-full" alt="logo">
+                                                    </div>
+                                                    <div class="px-2 py-1 text-[11px] text-gray-500 truncate">
+                                                        {{ $a->original_name ?? $a->path }}
+                                                    </div>
+                                                </div>
+                                            @endforeach
+
+                                            @if(($byKind['logo'] ?? collect())->count() === 0)
+                                                <div class="text-sm text-gray-400">Nessun logo caricato.</div>
+                                            @endif
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div class="text-xs text-gray-500 mb-2">Immagini</div>
+                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                            @foreach(($byKind['image'] ?? collect()) as $a)
+                                                <div class="border rounded-lg overflow-hidden bg-white">
+                                                    <div class="aspect-square overflow-hidden bg-gray-50">
+                                                        <img src="{{ asset('storage/' . $a->path) }}" class="w-full h-full object-cover" alt="image">
+                                                    </div>
+                                                    <div class="px-2 py-1 text-[11px] text-gray-500 truncate">
+                                                        {{ $a->original_name ?? $a->path }}
+                                                    </div>
+                                                </div>
+                                            @endforeach
+
+                                            @if(($byKind['image'] ?? collect())->count() === 0)
+                                                <div class="text-sm text-gray-400">Nessuna immagine caricata.</div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
                         </div>
 
                         <div class="pt-2 flex items-center justify-between">
