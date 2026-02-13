@@ -62,12 +62,6 @@ Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
 
-<<<<<<< HEAD
-    Route::post('ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])
-    ->name('ai.content.generateImage');
-   
-=======
->>>>>>> de43855 (Fix wizard routes + improve dashboard flow)
     // Sezioni (stub)
     Route::view('/notifications', 'notifications')->name('notifications');
     Route::view('/settings', 'settings')->name('settings');
