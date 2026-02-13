@@ -9,7 +9,6 @@ use App\Http\Controllers\ContentItemController;
 use App\Http\Controllers\PlanWizardController;
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AiGenerateController;
-use App\Http\Controllers\WizardBrandController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,50 +30,48 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
 
     Route::view('/dashboard', 'dashboard')->name('dashboard');
 
-    // Calendario e contenuti
+    // Calendario
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
 
+    // Wizard piano editoriale
+    Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');
+    Route::post('/wizard', [PlanWizardController::class, 'store'])->name('wizard.store');
 
-    
-    // La tua pagina "Posts" attuale
-    Route::get('/posts', [ContentItemController::class, 'index'])->name('posts');
+    Route::get('/wizard/brand', [PlanWizardController::class, 'brand'])->name('wizard.brand');
+    Route::post('/wizard/brand', [PlanWizardController::class, 'brandStore'])->name('wizard.brand.store');
 
-    // ✅ Nuova galleria "Content Items" (immagini)
-    Route::get('/content-items', [ContentItemController::class, 'gallery'])->name('content-items.index');
-    Route::get('/content-items/{contentItem}', [ContentItemController::class, 'show'])->name('content-items.show');
+    Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
+    Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
-   // Wizard piano editoriale (Step 1 -> Brand -> Done -> Genera)
-Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');
-Route::post('/wizard', [PlanWizardController::class, 'store'])->name('wizard.store');
-
-Route::get('/wizard/brand', [PlanWizardController::class, 'brand'])->name('wizard.brand');
-Route::post('/wizard/brand', [PlanWizardController::class, 'brandStore'])->name('wizard.brand.store');
-
-Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
-Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
-
-
-    // AI Lab (test)
+    // AI Lab
     Route::get('/ai', [AiController::class, 'index'])->name('ai');
     Route::post('/ai/generate', [AiController::class, 'generate'])->name('ai.generate');
 
     // AI generate
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
+    Route::post('/ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])->name('ai.content.generateImage');
 
     // Sezioni (stub)
     Route::view('/notifications', 'notifications')->name('notifications');
     Route::view('/settings', 'settings')->name('settings');
 
-    // CRUD base contenuti (posts/*)
+    // ✅ Posts (CRUD)
     Route::prefix('posts')->name('posts.')->group(function () {
+        Route::get('/', [ContentItemController::class, 'index'])->name('index'); // ✅ posts.index
+
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');
         Route::post('/', [ContentItemController::class, 'store'])->name('store');
 
         Route::get('/{contentItem}/edit', [ContentItemController::class, 'edit'])->name('edit');
         Route::put('/{contentItem}', [ContentItemController::class, 'update'])->name('update');
-
         Route::delete('/{contentItem}', [ContentItemController::class, 'destroy'])->name('destroy');
+    });
+
+    // ✅ Galleria content items (immagini)
+    Route::prefix('content-items')->name('content-items.')->group(function () {
+        Route::get('/', [ContentItemController::class, 'gallery'])->name('index');
+        Route::get('/{contentItem}', [ContentItemController::class, 'show'])->name('show');
     });
 
     // Push (PWA)
