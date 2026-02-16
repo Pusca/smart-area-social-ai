@@ -17,19 +17,30 @@
                 — dal {{ \Illuminate\Support\Carbon::parse($plan->start_date)->format('d/m/Y') }}
                 al {{ \Illuminate\Support\Carbon::parse($plan->end_date)->format('d/m/Y') }}
             </p>
+
+            @php $itemsCount = $plan->items ? $plan->items->count() : 0; @endphp
+
+            @if($itemsCount === 0)
+                <p class="text-sm text-orange-700 mt-2">
+                    ⚠️ Questo piano esiste ma non ha ancora post generati. Premi “Genera Piano (AI)”.
+                </p>
+            @endif
         @else
             <p class="text-gray-600 mt-3">Brand salvato ✅ Ora puoi generare il piano.</p>
         @endif
     </div>
 
-    {{-- ✅ SE NON ESISTE UN PIANO, MOSTRO IL BOTTONE "GENERA" --}}
-    @if(!$plan)
+    @php
+        $canGenerate = (!$plan) || (($plan->items?->count() ?? 0) === 0);
+    @endphp
+
+    {{-- Bottone genera se non c'è piano o piano senza items --}}
+    @if($canGenerate)
         <div class="bg-white rounded-2xl shadow p-5 border mb-6">
             <div class="text-sm text-gray-600">
                 Conferma e genera il piano editoriale (crea i contenuti e li mette in coda per la generazione AI).
             </div>
 
-            {{-- piccolo riepilogo (opzionale) --}}
             <div class="mt-3 text-xs text-gray-500">
                 <div><b>Brand:</b> {{ $brand['business_name'] ?? '—' }}</div>
                 <div><b>Goal:</b> {{ $step1['goal'] ?? ($brand['goal'] ?? '—') }}</div>
@@ -48,6 +59,10 @@
                 <a href="{{ route('wizard.start') }}" class="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50">
                     Torna al Wizard
                 </a>
+
+                <a href="{{ route('posts.index') }}" class="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50">
+                    Vai ai post
+                </a>
             </div>
 
             <div class="mt-3 text-xs text-gray-400">
@@ -56,7 +71,7 @@
         </div>
     @endif
 
-    {{-- ✅ SE IL PIANO ESISTE, MOSTRO GLI ITEMS + IMMAGINI (come già facevi) --}}
+    {{-- Se piano esiste e ha items, mostra elenco --}}
     @if($plan && $plan->items && $plan->items->count())
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             @foreach($plan->items as $item)
@@ -86,70 +101,6 @@
                             <div class="mt-1">{{ $item->ai_error }}</div>
                         </div>
                     @endif
-
-                    <div class="mt-4 space-y-3">
-                        <div>
-                            <div class="text-xs font-semibold text-gray-500">Caption</div>
-                            <div class="text-sm mt-1 whitespace-pre-line">
-                                {{ $item->ai_caption ?: $item->caption }}
-                            </div>
-                        </div>
-
-                        <div>
-                            <div class="text-xs font-semibold text-gray-500">Hashtags</div>
-                            <div class="text-sm mt-1">
-                                @php
-                                    $tags = $item->ai_hashtags;
-
-                                    // ai_hashtags può essere JSON string o array
-                                    if (is_string($tags)) {
-                                        $decoded = json_decode($tags, true);
-                                        $tags = is_array($decoded) ? $decoded : preg_split('/[\s,]+/', trim($tags));
-                                    }
-                                    if (!is_array($tags)) $tags = [];
-                                @endphp
-
-                                @if(count($tags))
-                                    <div class="flex flex-wrap gap-2">
-                                        @foreach($tags as $t)
-                                            @if(is_string($t) && trim($t) !== '')
-                                                <span class="text-xs px-2 py-1 rounded-full bg-gray-100 border">{{ trim($t) }}</span>
-                                            @endif
-                                        @endforeach
-                                    </div>
-                                @else
-                                    <span class="text-gray-500 text-sm">—</span>
-                                @endif
-                            </div>
-                        </div>
-
-                        <div>
-                            <div class="text-xs font-semibold text-gray-500">CTA</div>
-                            <div class="text-sm mt-1">
-                                {{ $item->ai_cta ?? '—' }}
-                            </div>
-                        </div>
-
-                        <div>
-                            <div class="text-xs font-semibold text-gray-500">Immagine</div>
-
-                            @if($item->ai_image_path)
-                                <img class="mt-2 w-full rounded-xl border" src="{{ asset('storage/'.$item->ai_image_path) }}" alt="AI image">
-                                <div class="text-xs text-gray-500 mt-2 break-words">
-                                    <span class="font-semibold">Prompt:</span> {{ $item->ai_image_prompt ?? '—' }}
-                                </div>
-                            @else
-                                <div class="text-sm text-gray-500 mt-1">In attesa di generazione immagine…</div>
-                                <div class="text-xs text-gray-400 mt-1 break-words">
-                                    Prompt: {{ $item->ai_image_prompt ?? '—' }}
-                                </div>
-                            @endif
-                        </div>
-
-                        <div class="pt-2 text-xs text-gray-400">
-                            Generato: {{ $item->ai_generated_at ? \Illuminate\Support\Carbon::parse($item->ai_generated_at)->format('d/m H:i') : '—' }}
-                        </div>
-                    </div>
                 </div>
             @endforeach
         </div>

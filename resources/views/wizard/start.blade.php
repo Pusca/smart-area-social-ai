@@ -87,7 +87,7 @@
                     </form>
 
                     <p class="mt-4 text-xs text-gray-500">
-                        Nota: abbiamo messo valori “di default” nascosti per sbloccare il flusso. Li sistemiamo nello Step 2.
+                        Nota: in Step 2 imposti goal, tono, piattaforme, formati e numero post per il periodo.
                     </p>
                 </div>
             </div>

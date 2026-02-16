@@ -49,7 +49,7 @@
                         </button>
                     </form>
 
-                    <form method="POST" action="{{ route('ai.content.generateImage', $contentItem) }}">
+                    <form method="POST" action="{{ route('ai.content.generate', $contentItem) }}">
                         @csrf
                         <button type="submit"
                                 class="rounded-lg bg-gray-900 px-3 py-2 text-white text-sm font-semibold hover:bg-black">

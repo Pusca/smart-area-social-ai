@@ -27,7 +27,7 @@ class OpenAiService
 
     protected function apiKey(): string
     {
-        $key = (string) (env('OPENAI_API_KEY') ?: '');
+        $key = (string) (config('openai.api_key') ?: env('OPENAI_API_KEY') ?: '');
         if (trim($key) === '') {
             throw new RuntimeException('Missing OPENAI_API_KEY');
         }

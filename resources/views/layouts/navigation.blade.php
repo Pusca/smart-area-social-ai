@@ -21,7 +21,7 @@
                         Calendario
                     </x-nav-link>
 
-                    <x-nav-link :href="route('posts')" :active="request()->routeIs('posts*')">
+                    <x-nav-link :href="route('posts.index')" :active="request()->routeIs('posts*')">
                         Contenuti
                     </x-nav-link>
 
@@ -99,7 +99,7 @@
                 Calendario
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('posts')" :active="request()->routeIs('posts*')">
+            <x-responsive-nav-link :href="route('posts.index')" :active="request()->routeIs('posts*')">
                 Contenuti
             </x-responsive-nav-link>
 

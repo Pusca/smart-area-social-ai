@@ -35,7 +35,7 @@
                         Calendar
                     </a>
 
-                    <a href="{{ route('posts') }}"
+                    <a href="{{ route('posts.index') }}"
                        class="px-3 py-2 rounded-xl {{ request()->routeIs('posts*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
                         Posts
                     </a>
@@ -88,7 +88,7 @@
                     Calendar
                 </a>
 
-                <a href="{{ route('posts') }}"
+                <a href="{{ route('posts.index') }}"
                    class="py-3 {{ request()->routeIs('posts*') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
                     Posts
                 </a>

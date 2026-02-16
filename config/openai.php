@@ -3,6 +3,7 @@
 return [
     // IMPORTANTISSIMO: SENZA /v1
     'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com'),
+    'api_key' => env('OPENAI_API_KEY'),
 
     'text_model' => env('OPENAI_TEXT_MODEL', 'gpt-4.1-mini'),
     'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-1'),

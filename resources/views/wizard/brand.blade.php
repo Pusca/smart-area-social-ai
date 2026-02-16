@@ -147,7 +147,7 @@
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Post per settimana</label>
+                                <label class="block text-sm font-medium text-gray-700">Post totali nel periodo</label>
                                 <input
                                     type="number"
                                     min="1"
@@ -158,7 +158,7 @@
                                     class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
                                     required
                                 />
-                                <p class="mt-1 text-xs text-gray-500">Consiglio: 4–7 per partire.</p>
+                                <p class="mt-1 text-xs text-gray-500">Consiglio: 4–12 per partire.</p>
                             </div>
                         </div>
 

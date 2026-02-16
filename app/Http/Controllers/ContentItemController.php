@@ -76,7 +76,8 @@ class ContentItemController extends Controller
             'format' => 'required|string|max:50',
             'scheduled_at' => 'nullable|date',
             'title' => 'nullable|string|max:120',
-            'caption' => 'nullable|string',
+            'ai_caption' => 'nullable|string',
+            'ai_image_prompt' => 'nullable|string',
             'status' => 'required|string|max:30',
         ]);
 
@@ -97,13 +98,13 @@ class ContentItemController extends Controller
 
         $item->save();
 
-        return redirect()->route('posts')->with('status', 'Contenuto creato ✅');
+        return redirect()->route('posts.index')->with('status', 'Contenuto creato ✅');
     }
 
     public function edit(Request $request, ContentItem $contentItem)
     {
         $this->authorizeTenant($request, $contentItem);
-        return view('posts.edit', ['item' => $contentItem]);
+        return view('posts.edit', compact('contentItem'));
     }
 
     public function update(Request $request, ContentItem $contentItem)
@@ -115,7 +116,8 @@ class ContentItemController extends Controller
             'format' => 'required|string|max:50',
             'scheduled_at' => 'nullable|date',
             'title' => 'nullable|string|max:120',
-            'caption' => 'nullable|string',
+            'ai_caption' => 'nullable|string',
+            'ai_image_prompt' => 'nullable|string',
             'status' => 'required|string|max:30',
         ]);
 
@@ -123,12 +125,13 @@ class ContentItemController extends Controller
         $contentItem->format = $data['format'];
         $contentItem->status = $data['status'];
         $contentItem->title = $data['title'] ?? null;
-        $contentItem->caption = $data['caption'] ?? null;
+        $contentItem->ai_caption = $data['ai_caption'] ?? null;
+        $contentItem->ai_image_prompt = $data['ai_image_prompt'] ?? null;
         $contentItem->scheduled_at = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
 
         $contentItem->save();
 
-        return redirect()->route('posts')->with('status', 'Contenuto aggiornato ✅');
+        return redirect()->route('posts.index')->with('status', 'Contenuto aggiornato ✅');
     }
 
     public function destroy(Request $request, ContentItem $contentItem)
@@ -136,7 +139,7 @@ class ContentItemController extends Controller
         $this->authorizeTenant($request, $contentItem);
         $contentItem->delete();
 
-        return redirect()->route('posts')->with('status', 'Contenuto eliminato 🗑️');
+        return redirect()->route('posts.index')->with('status', 'Contenuto eliminato 🗑️');
     }
 
     private function authorizeTenant(Request $request, ContentItem $item): void

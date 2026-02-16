@@ -6,7 +6,7 @@
                     <h1 class="text-2xl font-semibold text-gray-900">Nuovo contenuto</h1>
                     <p class="mt-1 text-sm text-gray-600">Crea una bozza o pianifica una pubblicazione.</p>
                 </div>
-                <a href="{{ route('posts') }}"
+                <a href="{{ route('posts.index') }}"
                    class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                     ← Indietro
                 </a>
