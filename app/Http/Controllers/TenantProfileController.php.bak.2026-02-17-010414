@@ -1,0 +1,113 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\BrandAsset;
+use App\Models\TenantProfile;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+
+class TenantProfileController extends Controller
+{
+    public function show(Request $request)
+    {
+        $user = $request->user();
+
+        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
+
+        $assets = BrandAsset::where('tenant_id', $user->tenant_id)
+            ->whereNull('content_plan_id')
+            ->latest('id')
+            ->get();
+
+        return view('wizard.brand', [
+            'profile' => $profile,
+            'assets' => $assets,
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'business_name' => 'required|string|max:120',
+            'industry' => 'nullable|string|max:120',
+            'website' => 'nullable|string|max:255',
+            'notes' => 'nullable|string|max:2000',
+
+            'services' => 'nullable|string|max:2000',
+            'target' => 'nullable|string|max:2000',
+            'cta' => 'nullable|string|max:255',
+
+            'goal' => 'nullable|string|max:120',
+            'tone' => 'nullable|string|max:80',
+            'posts_per_week' => 'nullable|integer|min:1|max:21',
+            'platforms' => 'nullable|array',
+            'platforms.*' => 'string|max:50',
+            'formats' => 'nullable|array',
+            'formats.*' => 'string|max:50',
+
+            'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:4096',
+            'images' => 'nullable|array',
+            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:4096',
+        ]);
+
+        $platforms = array_values(array_unique($data['platforms'] ?? []));
+        $formats = array_values(array_unique($data['formats'] ?? []));
+
+        TenantProfile::updateOrCreate(
+            ['tenant_id' => $user->tenant_id],
+            [
+                'business_name' => $data['business_name'],
+                'industry' => $data['industry'] ?? null,
+                'website' => $data['website'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'services' => $data['services'] ?? null,
+                'target' => $data['target'] ?? null,
+                'cta' => $data['cta'] ?? null,
+
+                'default_goal' => $data['goal'] ?? null,
+                'default_tone' => $data['tone'] ?? null,
+                'default_posts_per_week' => isset($data['posts_per_week']) ? (int)$data['posts_per_week'] : null,
+                'default_platforms' => $platforms ?: null,
+                'default_formats' => $formats ?: null,
+
+                'completed_at' => Carbon::now(),
+            ]
+        );
+
+        if ($request->hasFile('logo')) {
+            $file = $request->file('logo');
+            $path = $file->store('brand-assets/' . $user->tenant_id . '/logo', 'public');
+
+            BrandAsset::create([
+                'tenant_id' => $user->tenant_id,
+                'content_plan_id' => null,
+                'kind' => 'logo',
+                'path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'size' => $file->getSize(),
+                'mime' => $file->getMimeType(),
+            ]);
+        }
+
+        if ($request->hasFile('images')) {
+            foreach ($request->file('images') as $img) {
+                $path = $img->store('brand-assets/' . $user->tenant_id . '/images', 'public');
+
+                BrandAsset::create([
+                    'tenant_id' => $user->tenant_id,
+                    'content_plan_id' => null,
+                    'kind' => 'image',
+                    'path' => $path,
+                    'original_name' => $img->getClientOriginalName(),
+                    'size' => $img->getSize(),
+                    'mime' => $img->getMimeType(),
+                ]);
+            }
+        }
+
+        return redirect()->route('profile.brand')->with('status', 'Profilo attività salvato ✅');
+    }
+}

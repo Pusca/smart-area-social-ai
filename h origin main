@@ -1,0 +1,26 @@
+ .../Controllers/ContentItemController.php   |  17 [32m+[m[31m-[m
+ .../Controllers/PlanWizardController.php    | 374 [32m+++++++++[m[31m-------[m
+ app/Jobs/GenerateAiForContentItem.php       | 123 [31m-----[m
+ app/Services/OpenAiService.php              |   2 [32m+[m[31m-[m
+ bootstrap/cache/.gitignore                  |   0
+ config/openai.php                           |   3 [32m+[m[31m-[m
+ resources/views/dashboard.blade.php         | 210 [32m++++++++[m[31m-[m
+ resources/views/layouts/app.blade.php       |   4 [32m+[m[31m-[m
+ .../views/layouts/navigation.blade.php      |   4 [32m+[m[31m-[m
+ resources/views/posts/create.blade.php      |   2 [32m+[m[31m-[m
+ resources/views/posts/edit.blade.php        |   2 [32m+[m[31m-[m
+ resources/views/wizard/brand.blade.php      |   4 [32m+[m[31m-[m
+ resources/views/wizard/done.blade.php       |  87 [32m+[m[31m---[m
+ resources/views/wizard/start.blade.php      |   2 [32m+[m[31m-[m
+ routes/web.php                              |  23 [32m+[m[31m-[m
+ storage/app/.gitignore                      |   0
+ storage/app/private/.gitignore              |   0
+ storage/app/public/.gitignore               |   0
+ storage/framework/.gitignore                |   0
+ storage/framework/cache/.gitignore          |   0
+ storage/framework/cache/data/.gitignore     |   0
+ storage/framework/sessions/.gitignore       |   0
+ storage/framework/testing/.gitignore        |   0
+ storage/framework/views/.gitignore          |   0
+ storage/logs/.gitignore                     |   0
+ 25 files changed, 459 insertions(+), 398 deletions(-)

@@ -6,29 +6,58 @@ use App\Jobs\GenerateAiForContentItem;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
+use App\Models\TenantProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class PlanWizardController extends Controller
 {
     /**
-     * Step 1 - Wizard start (goal/tone/posts/week + piattaforme ecc.)
+     * Step 1 - Creazione piano (nome + date + override contenuti)
+     * Precompila dai default del TenantProfile.
      */
     public function start(Request $request)
     {
-        $step1 = $request->session()->get('wizard.step1', []);
-        return view('wizard.start', compact('step1'));
+        $user = $request->user();
+
+        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
+
+        // Se non ha profilo tenant, lo mando a completarlo (una volta sola)
+        if (!$profile) {
+            return redirect()->route('profile.brand')
+                ->with('status', 'Prima completa il profilo attività (wizard unico).');
+        }
+
+        // Prefill
+        $defaults = [
+            'name' => 'Piano ' . ($profile->business_name ?? 'Social AI') . ' — ' . Carbon::now()->format('d/m'),
+            'start_date' => Carbon::now()->next(Carbon::MONDAY)->toDateString(),
+            'end_date' => Carbon::now()->next(Carbon::MONDAY)->copy()->addDays(6)->toDateString(),
+
+            'goal' => $profile->default_goal ?? 'Lead + Awareness + Autorità',
+            'tone' => $profile->default_tone ?? 'professionale',
+            'posts_per_week' => $profile->default_posts_per_week ?? 5,
+            'platforms' => $profile->default_platforms ?? ['instagram'],
+            'formats' => $profile->default_formats ?? ['post'],
+        ];
+
+        $step1 = array_merge($defaults, $request->session()->get('plan.step1', []));
+
+        return view('wizard.start', compact('step1', 'profile'));
     }
 
     /**
-     * Salva Step 1 in sessione (SOLO dati serializzabili)
+     * Salva Step 1 piano in sessione
      */
     public function store(Request $request)
     {
         $data = $request->validate([
+            'name' => 'required|string|max:120',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+
             'goal' => 'required|string|max:120',
             'tone' => 'required|string|max:80',
             'posts_per_week' => 'required|integer|min:1|max:21',
@@ -38,155 +67,95 @@ class PlanWizardController extends Controller
             'formats.*' => 'string|max:50',
         ]);
 
-        // Normalizzazioni
         $data['platforms'] = array_values(array_unique($data['platforms'] ?? ['instagram']));
         $data['formats'] = array_values(array_unique($data['formats'] ?? ['post']));
 
-        $request->session()->put('wizard.step1', $data);
+        $request->session()->put('plan.step1', $data);
 
-        return redirect()->route('wizard.brand')->with('status', 'Step 1 salvato ✅');
+        return redirect()->route('wizard.done')->with('status', 'Dati piano salvati ✅ Ora puoi generare.');
     }
 
     /**
-     * Step 2 - Brand page
-     */
-    public function brand(Request $request)
-    {
-        $brand = $request->session()->get('wizard.brand', []);
-        $step1 = $request->session()->get('wizard.step1', []);
-
-        return view('wizard.brand', compact('brand', 'step1'));
-    }
-
-    /**
-     * Salva Brand + Assets:
-     * IMPORTANTISSIMO: non mettiamo MAI UploadedFile in sessione.
-     * Salviamo i file su storage e in sessione mettiamo SOLO path + meta (stringhe/array).
-     */
-    public function brandStore(Request $request)
-    {
-        $data = $request->validate([
-            'business_name' => 'required|string|max:120',
-            'industry' => 'nullable|string|max:120',
-            'website' => 'nullable|string|max:255',
-            'notes' => 'nullable|string|max:2000',
-
-            // assets opzionali
-            'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:4096',
-            'images' => 'nullable|array',
-            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:4096',
-        ]);
-
-        $user = $request->user();
-
-        $brand = [
-            'business_name' => $data['business_name'],
-            'industry' => $data['industry'] ?? null,
-            'website' => $data['website'] ?? null,
-            'notes' => $data['notes'] ?? null,
-        ];
-
-        // Carico su storage (public) e salvo SOLO i path in sessione
-        $assets = [];
-
-        if ($request->hasFile('logo')) {
-            $file = $request->file('logo');
-            $path = $file->store('brand-assets/' . $user->tenant_id . '/logo', 'public');
-            $assets[] = [
-                'type' => 'logo',
-                'path' => $path,
-                'original_name' => $file->getClientOriginalName(),
-            ];
-        }
-
-        if ($request->hasFile('images')) {
-            foreach ($request->file('images') as $img) {
-                $path = $img->store('brand-assets/' . $user->tenant_id . '/images', 'public');
-                $assets[] = [
-                    'type' => 'image',
-                    'path' => $path,
-                    'original_name' => $img->getClientOriginalName(),
-                ];
-            }
-        }
-
-        // Salvo in sessione SOLO roba serializzabile
-        $request->session()->put('wizard.brand', $brand);
-        $request->session()->put('wizard.assets', $assets);
-
-        return redirect()->route('wizard.done')->with('status', 'Brand + assets salvati ✅');
-    }
-
-    /**
-     * Pagina done: se piano non esiste o esiste ma NON ha items -> mostra bottone Genera
+     * Pagina done: mostra bottone "Genera" se piano non esiste o non ha items
      */
     public function done(Request $request)
     {
         $user = $request->user();
 
-        $brand = $request->session()->get('wizard.brand', []);
-        $step1 = $request->session()->get('wizard.step1', []);
-        $planId = $request->session()->get('wizard.plan_id');
+        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
 
+        // step1 piano
+        $step1 = $request->session()->get('plan.step1', []);
+
+        // ultimo piano del tenant (per preview)
+        $planId = $request->session()->get('plan.plan_id');
         $plan = null;
+
         if ($planId) {
-            $plan = ContentPlan::query()
-                ->where('tenant_id', $user->tenant_id)
+            $plan = ContentPlan::where('tenant_id', $user->tenant_id)
                 ->where('id', $planId)
                 ->with('items')
                 ->first();
         }
 
-        // Se non ho plan_id in sessione, prendo l'ultimo piano del tenant (se c'è)
         if (!$plan) {
-            $plan = ContentPlan::query()
-                ->where('tenant_id', $user->tenant_id)
+            $plan = ContentPlan::where('tenant_id', $user->tenant_id)
                 ->latest('id')
                 ->with('items')
                 ->first();
         }
 
-        return view('wizard.done', compact('plan', 'brand', 'step1'));
+        return view('wizard.done', [
+            'plan' => $plan,
+            'profile' => $profile,
+            'step1' => $step1,
+        ]);
     }
 
     /**
-     * Genera piano + items (sempre) + mette in coda la generazione AI (best-effort)
+     * Genera piano + items, usando TenantProfile + override step1
      */
     public function generate(Request $request)
     {
         $user = $request->user();
 
-        $brand = $request->session()->get('wizard.brand', []);
-        $step1 = $request->session()->get('wizard.step1', []);
-        $assets = $request->session()->get('wizard.assets', []);
-
-        if (empty($brand['business_name'])) {
-            return redirect()->route('wizard.brand')->with('status', 'Completa prima il Brand.');
-        }
-        if (empty($step1['goal']) || empty($step1['tone']) || empty($step1['posts_per_week'])) {
-            return redirect()->route('wizard.start')->with('status', 'Completa prima lo Step 1.');
+        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
+        if (!$profile) {
+            return redirect()->route('profile.brand')->with('status', 'Completa prima il profilo attività.');
         }
 
-        $postsPerWeek = (int) $step1['posts_per_week'];
+        $step1 = $request->session()->get('plan.step1', []);
+        if (empty($step1)) {
+            return redirect()->route('wizard.start')->with('status', 'Completa prima i dati del piano.');
+        }
+
+        $start = Carbon::parse($step1['start_date'])->startOfDay();
+        $end = Carbon::parse($step1['end_date'])->startOfDay();
+
+        $postsPerWeek = (int)$step1['posts_per_week'];
         $platforms = $step1['platforms'] ?? ['instagram'];
         $formats = $step1['formats'] ?? ['post'];
 
-        // Piano: prossima settimana (lun-dom)
-        $start = Carbon::now()->startOfDay();
-        $start = $start->next(Carbon::MONDAY); // prossimo lunedì
-        $end = (clone $start)->addDays(6);
-
-        $planName = 'Piano ' . ($brand['business_name'] ?? 'Social') . ' — ' . $start->format('d/m');
+        // assets base tenant
+        $assets = BrandAsset::where('tenant_id', $user->tenant_id)
+            ->whereNull('content_plan_id')
+            ->latest('id')
+            ->get()
+            ->map(fn($a) => [
+                'kind' => $a->kind,
+                'path' => $a->path,
+                'original_name' => $a->original_name,
+            ])->values()->all();
 
         $plan = null;
+        $itemsCreated = 0;
 
         DB::beginTransaction();
         try {
-            // 1) Crea piano
             $plan = ContentPlan::create([
                 'tenant_id' => $user->tenant_id,
                 'created_by' => $user->id,
-                'name' => $planName,
+                'name' => $step1['name'],
                 'start_date' => $start->toDateString(),
                 'end_date' => $end->toDateString(),
                 'status' => 'draft',
@@ -196,21 +165,29 @@ class PlanWizardController extends Controller
                     'posts_per_week' => $postsPerWeek,
                     'platforms' => $platforms,
                     'formats' => $formats,
-                    'brand' => $brand,
+
+                    'tenant_profile' => [
+                        'business_name' => $profile->business_name,
+                        'industry' => $profile->industry,
+                        'website' => $profile->website,
+                        'services' => $profile->services,
+                        'target' => $profile->target,
+                        'cta' => $profile->cta,
+                        'notes' => $profile->notes,
+                    ],
                     'assets' => $assets,
                 ],
             ]);
 
-            // 2) Crea items
-            $itemsCreated = 0;
-
-            // Distribuzione semplice: spalmati sulla settimana
+            // Distribuzione: spalmata nei giorni del range
+            $daysCount = max(1, $start->diffInDays($end) + 1);
             $days = [];
-            for ($i = 0; $i < 7; $i++) $days[] = (clone $start)->addDays($i);
+            for ($i = 0; $i < $daysCount; $i++) {
+                $days[] = (clone $start)->addDays($i);
+            }
 
             for ($i = 0; $i < $postsPerWeek; $i++) {
-                $day = $days[$i % 7];
-                // orari alternati
+                $day = $days[$i % $daysCount];
                 $hour = ($i % 2 === 0) ? 10 : 17;
                 $scheduledAt = (clone $day)->setTime($hour, 0);
 
@@ -225,18 +202,28 @@ class PlanWizardController extends Controller
                     'format' => $format,
                     'scheduled_at' => $scheduledAt,
                     'status' => 'draft',
-                    'title' => Str::limit(($brand['business_name'] ?? 'Brand') . " — {$step1['goal']}", 110, ''),
+                    'title' => Str::limit(($profile->business_name ?? 'Brand') . " — {$step1['goal']}", 110, ''),
                     'caption' => null,
-                    // IMPORTANT: se il tuo Model non ha casts, qui mettiamo stringhe JSON safe:
                     'hashtags' => json_encode([], JSON_UNESCAPED_UNICODE),
                     'assets' => json_encode([], JSON_UNESCAPED_UNICODE),
                     'ai_meta' => json_encode([
-                        'brand' => $brand,
+                        'tenant_profile' => [
+                            'business_name' => $profile->business_name,
+                            'industry' => $profile->industry,
+                            'website' => $profile->website,
+                            'services' => $profile->services,
+                            'target' => $profile->target,
+                            'cta' => $profile->cta,
+                            'notes' => $profile->notes,
+                        ],
                         'assets' => $assets,
                         'plan' => [
                             'goal' => $step1['goal'],
                             'tone' => $step1['tone'],
                             'posts_per_week' => $postsPerWeek,
+                            'platforms' => $platforms,
+                            'formats' => $formats,
+                            'date_range' => [$start->toDateString(), $end->toDateString()],
                         ],
                     ], JSON_UNESCAPED_UNICODE),
                     'ai_status' => 'queued',
@@ -247,22 +234,18 @@ class PlanWizardController extends Controller
 
             DB::commit();
 
-            // 3) Salva plan_id in sessione e manda in coda (best-effort)
-            $request->session()->put('wizard.plan_id', $plan->id);
+            $request->session()->put('plan.plan_id', $plan->id);
 
-            // dispatch best-effort (non deve bloccare)
+            // best-effort queue dispatch
             try {
                 $ids = ContentItem::where('content_plan_id', $plan->id)->pluck('id')->all();
                 foreach ($ids as $id) {
                     GenerateAiForContentItem::dispatch((int)$id);
                 }
-            } catch (\Throwable $e) {
-                // non bloccare la UX
-            }
+            } catch (\Throwable $e) {}
 
-            return redirect()->route('wizard.done')->with('status',
-                "Piano creato ✅ (ID: {$plan->id}) — Items creati: {$itemsCreated}"
-            );
+            return redirect()->route('wizard.done')
+                ->with('status', "Piano creato ✅ (ID: {$plan->id}) — Items creati: {$itemsCreated}");
 
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -270,3 +253,6 @@ class PlanWizardController extends Controller
         }
     }
 }
+
+
+

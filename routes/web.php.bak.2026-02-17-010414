@@ -7,9 +7,9 @@ use App\Http\Controllers\PushController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ContentItemController;
 use App\Http\Controllers\PlanWizardController;
+use App\Http\Controllers\TenantProfileController;
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AiGenerateController;
-use App\Http\Controllers\TenantProfileController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -21,13 +21,15 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
 
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
 
-    // Profilo attività (wizard unico tenant)
+    /**
+     * ✅ Profilo attività (wizard unico tenant)
+     */
     Route::get('/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
     Route::post('/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
-    Route::delete('/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
-        ->name('profile.brand.asset.destroy');
 
-    // Piano editoriale (separato)
+    /**
+     * ✅ Piano editoriale (wizard piani)
+     */
     Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');
     Route::post('/wizard', [PlanWizardController::class, 'store'])->name('wizard.store');
     Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
@@ -45,19 +47,17 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::view('/notifications', 'notifications')->name('notifications');
     Route::view('/settings', 'settings')->name('settings');
 
-    // Posts
+    // Posts CRUD
     Route::prefix('posts')->name('posts.')->group(function () {
         Route::get('/', [ContentItemController::class, 'index'])->name('index');
-
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');
         Route::post('/', [ContentItemController::class, 'store'])->name('store');
-
         Route::get('/{contentItem}/edit', [ContentItemController::class, 'edit'])->name('edit');
         Route::put('/{contentItem}', [ContentItemController::class, 'update'])->name('update');
         Route::delete('/{contentItem}', [ContentItemController::class, 'destroy'])->name('destroy');
     });
 
-    // Galleria content items (immagini)
+    // Content items gallery
     Route::prefix('content-items')->name('content-items.')->group(function () {
         Route::get('/', [ContentItemController::class, 'gallery'])->name('index');
         Route::get('/{contentItem}', [ContentItemController::class, 'show'])->name('show');

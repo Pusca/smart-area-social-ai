@@ -73,38 +73,44 @@
 
     </div>
 
-    {{-- Bottom nav (mobile) --}}
-    <nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
-        <div class="max-w-7xl mx-auto px-4">
-            <div class="grid grid-cols-5 text-center text-xs">
+   {{-- Bottom nav (mobile) --}}
+<nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
+    <div class="max-w-7xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
+        <div class="grid grid-cols-5 text-center text-xs gap-1 py-2">
 
-                <a href="{{ route('dashboard') }}"
-                   class="py-3 {{ request()->routeIs('dashboard') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                    Home
-                </a>
+            <a href="{{ route('dashboard') }}"
+               class="touch-manipulation select-none rounded-xl px-2 py-3
+               {{ request()->routeIs('dashboard') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Home
+            </a>
 
-                <a href="{{ route('calendar') }}"
-                   class="py-3 {{ request()->routeIs('calendar') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                    Calendar
-                </a>
+            <a href="{{ route('calendar') }}"
+               class="touch-manipulation select-none rounded-xl px-2 py-3
+               {{ request()->routeIs('calendar') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Calendar
+            </a>
 
-                <a href="{{ route('posts.index') }}"
-                   class="py-3 {{ request()->routeIs('posts*') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                    Posts
-                </a>
+            <a href="{{ route('posts.index') }}"
+               class="touch-manipulation select-none rounded-xl px-2 py-3
+               {{ request()->routeIs('posts*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Posts
+            </a>
 
-                <a href="{{ route('wizard.start') }}"
-                   class="py-3 {{ request()->routeIs('wizard.*') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                    Wizard
-                </a>
+            <a href="{{ route('wizard.start') }}"
+               class="touch-manipulation select-none rounded-xl px-2 py-3
+               {{ request()->routeIs('wizard.*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Wizard
+            </a>
 
-                <a href="{{ route('settings') }}"
-                   class="py-3 {{ request()->routeIs('settings') ? 'text-indigo-600 font-semibold' : 'text-gray-600' }}">
-                    Settings
-                </a>
+            <a href="{{ route('settings') }}"
+               class="touch-manipulation select-none rounded-xl px-2 py-3
+               {{ request()->routeIs('settings') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Settings
+            </a>
 
-            </div>
         </div>
-    </nav>
+    </div>
+</nav>
+
 </body>
 </html>
