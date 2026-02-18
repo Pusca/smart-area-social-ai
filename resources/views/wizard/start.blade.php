@@ -106,7 +106,7 @@
                                 <input
                                     type="number"
                                     min="1"
-                                    max="21"
+                                    max="31"
                                     step="1"
                                     name="posts_per_week"
                                     value="{{ old('posts_per_week', $step1['posts_per_week'] ?? 5) }}"
@@ -184,5 +184,4 @@
         </div>
     </div>
 </x-app-layout>
-
 

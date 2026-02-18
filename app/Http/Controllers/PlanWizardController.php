@@ -7,6 +7,8 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\MemoryBuilderService;
+use App\Services\StrategyBrainService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -14,29 +16,27 @@ use Illuminate\Support\Str;
 
 class PlanWizardController extends Controller
 {
-    /**
-     * Step 1 - Creazione piano (nome + date + override contenuti)
-     * Precompila dai default del TenantProfile.
-     */
+    public function __construct(
+        private readonly StrategyBrainService $brain,
+        private readonly MemoryBuilderService $memoryBuilder
+    ) {
+    }
+
     public function start(Request $request)
     {
         $user = $request->user();
 
         $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
-
-        // Se non ha profilo tenant, lo mando a completarlo (una volta sola)
         if (!$profile) {
             return redirect()->route('profile.brand')
-                ->with('status', 'Prima completa il profilo attività (wizard unico).');
+                ->with('status', 'Prima completa il profilo attivita.');
         }
 
-        // Prefill
         $defaults = [
-            'name' => 'Piano ' . ($profile->business_name ?? 'Social AI') . ' — ' . Carbon::now()->format('d/m'),
+            'name' => 'Piano ' . ($profile->business_name ?? 'Social AI') . ' - ' . Carbon::now()->format('d/m'),
             'start_date' => Carbon::now()->next(Carbon::MONDAY)->toDateString(),
             'end_date' => Carbon::now()->next(Carbon::MONDAY)->copy()->addDays(6)->toDateString(),
-
-            'goal' => $profile->default_goal ?? 'Lead + Awareness + Autorità',
+            'goal' => $profile->default_goal ?? 'Lead + Awareness + Autorita',
             'tone' => $profile->default_tone ?? 'professionale',
             'posts_per_week' => $profile->default_posts_per_week ?? 5,
             'platforms' => $profile->default_platforms ?? ['instagram'],
@@ -48,22 +48,18 @@ class PlanWizardController extends Controller
         return view('wizard.start', compact('step1', 'profile'));
     }
 
-    /**
-     * Salva Step 1 piano in sessione
-     */
     public function store(Request $request)
     {
         $data = $request->validate([
             'name' => 'required|string|max:120',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
-
-            'goal' => 'required|string|max:120',
+            'goal' => 'required|string|max:300',
             'tone' => 'required|string|max:80',
-            'posts_per_week' => 'required|integer|min:1|max:21',
-            'platforms' => 'nullable|array',
+            'posts_per_week' => 'required|integer|min:1|max:31',
+            'platforms' => 'nullable|array|min:1',
             'platforms.*' => 'string|max:50',
-            'formats' => 'nullable|array',
+            'formats' => 'nullable|array|min:1',
             'formats.*' => 'string|max:50',
         ]);
 
@@ -72,56 +68,56 @@ class PlanWizardController extends Controller
 
         $request->session()->put('plan.step1', $data);
 
-        return redirect()->route('wizard.done')->with('status', 'Dati piano salvati ✅ Ora puoi generare.');
+        return redirect()->route('wizard.done')->with('status', 'Dati piano salvati. Ora puoi generare.');
     }
 
-    /**
-     * Pagina done: mostra bottone "Genera" se piano non esiste o non ha items
-     */
     public function done(Request $request)
     {
         $user = $request->user();
+        $step1 = $request->session()->get('plan.step1', []);
 
         $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
 
-        // step1 piano
-        $step1 = $request->session()->get('plan.step1', []);
-
-        // ultimo piano del tenant (per preview)
         $planId = $request->session()->get('plan.plan_id');
-        $plan = null;
+        $planQuery = ContentPlan::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->with(['items' => fn ($q) => $q->orderBy('scheduled_at')->orderBy('id')]);
 
-        if ($planId) {
-            $plan = ContentPlan::where('tenant_id', $user->tenant_id)
-                ->where('id', $planId)
-                ->with('items')
-                ->first();
-        }
+        $plan = $planId
+            ? (clone $planQuery)->where('id', $planId)->first()
+            : null;
 
         if (!$plan) {
-            $plan = ContentPlan::where('tenant_id', $user->tenant_id)
-                ->latest('id')
-                ->with('items')
-                ->first();
+            $plan = (clone $planQuery)->latest('id')->first();
         }
+
+        $strategy = $plan?->strategy ?: data_get($plan?->settings, 'strategy', null);
+        $itemStats = [
+            'total' => $plan?->items->count() ?? 0,
+            'queued' => $plan?->items->whereIn('ai_status', ['queued', 'pending'])->count() ?? 0,
+            'done' => $plan?->items->where('ai_status', 'done')->count() ?? 0,
+            'error' => $plan?->items->where('ai_status', 'error')->count() ?? 0,
+        ];
+
+        $canGenerate = $profile && !empty($step1);
 
         return view('wizard.done', [
             'plan' => $plan,
             'profile' => $profile,
             'step1' => $step1,
+            'strategy' => $strategy,
+            'itemStats' => $itemStats,
+            'canGenerate' => $canGenerate,
         ]);
     }
 
-    /**
-     * Genera piano + items, usando TenantProfile + override step1
-     */
     public function generate(Request $request)
     {
         $user = $request->user();
 
         $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
         if (!$profile) {
-            return redirect()->route('profile.brand')->with('status', 'Completa prima il profilo attività.');
+            return redirect()->route('profile.brand')->with('status', 'Completa prima il profilo attivita.');
         }
 
         $step1 = $request->session()->get('plan.step1', []);
@@ -130,28 +126,65 @@ class PlanWizardController extends Controller
         }
 
         $start = Carbon::parse($step1['start_date'])->startOfDay();
-        $end = Carbon::parse($step1['end_date'])->startOfDay();
+        $end = Carbon::parse($step1['end_date'])->endOfDay();
+        $postsTotal = max(1, (int) ($step1['posts_per_week'] ?? 5));
+        $platforms = array_values($step1['platforms'] ?? ['instagram']);
+        $formats = array_values($step1['formats'] ?? ['post']);
 
-        $postsPerWeek = (int)$step1['posts_per_week'];
-        $platforms = $step1['platforms'] ?? ['instagram'];
-        $formats = $step1['formats'] ?? ['post'];
-
-        // assets base tenant
-        $assets = BrandAsset::where('tenant_id', $user->tenant_id)
+        $assets = BrandAsset::query()
+            ->where('tenant_id', $user->tenant_id)
             ->whereNull('content_plan_id')
             ->latest('id')
+            ->limit(24)
             ->get()
-            ->map(fn($a) => [
-                'kind' => $a->kind,
-                'path' => $a->path,
-                'original_name' => $a->original_name,
-            ])->values()->all();
+            ->map(fn ($asset) => [
+                'id' => $asset->id,
+                'kind' => $asset->kind,
+                'path' => $asset->path,
+                'original_name' => $asset->original_name,
+                'mime' => $asset->mime,
+            ])
+            ->values()
+            ->all();
 
-        $plan = null;
-        $itemsCreated = 0;
+        $memory = $this->memoryBuilder->buildForTenant((int) $user->tenant_id, 40);
 
-        DB::beginTransaction();
+        $preferences = [
+            'goal' => $step1['goal'],
+            'tone' => $step1['tone'],
+            'posts_total' => $postsTotal,
+            'platforms' => $platforms,
+            'formats' => $formats,
+            'date_range' => [$start->toDateString(), $end->toDateString()],
+        ];
+
+        $profileData = [
+            'business_name' => $profile->business_name,
+            'industry' => $profile->industry,
+            'website' => $profile->website,
+            'services' => $profile->services,
+            'target' => $profile->target,
+            'cta' => $profile->cta,
+            'notes' => $profile->notes,
+            'vision' => $profile->vision,
+            'values' => $profile->values,
+            'business_hours' => $profile->business_hours,
+            'seasonal_offers' => $profile->seasonal_offers,
+            'brand_palette' => $profile->brand_palette,
+        ];
+
+        $strategy = $this->brain->buildStrategy([
+            'profile' => $profileData,
+            'assets' => $assets,
+            'memory' => $memory,
+            'preferences' => $preferences,
+        ]);
+
+        $blueprints = $this->brain->buildItemBlueprints($strategy, $preferences, $start, $end, $postsTotal);
+
         try {
+            DB::beginTransaction();
+
             $plan = ContentPlan::create([
                 'tenant_id' => $user->tenant_id,
                 'created_by' => $user->id,
@@ -162,97 +195,84 @@ class PlanWizardController extends Controller
                 'settings' => [
                     'goal' => $step1['goal'],
                     'tone' => $step1['tone'],
-                    'posts_per_week' => $postsPerWeek,
+                    'posts_total' => $postsTotal,
                     'platforms' => $platforms,
                     'formats' => $formats,
-
-                    'tenant_profile' => [
-                        'business_name' => $profile->business_name,
-                        'industry' => $profile->industry,
-                        'website' => $profile->website,
-                        'services' => $profile->services,
-                        'target' => $profile->target,
-                        'cta' => $profile->cta,
-                        'notes' => $profile->notes,
-                    ],
+                    'tenant_profile' => $profileData,
                     'assets' => $assets,
+                    'memory' => $memory,
+                    'strategy' => $strategy,
                 ],
+                'strategy' => $strategy,
             ]);
 
-            // Distribuzione: spalmata nei giorni del range
-            $daysCount = max(1, $start->diffInDays($end) + 1);
-            $days = [];
-            for ($i = 0; $i < $daysCount; $i++) {
-                $days[] = (clone $start)->addDays($i);
-            }
-
-            for ($i = 0; $i < $postsPerWeek; $i++) {
-                $day = $days[$i % $daysCount];
-                $hour = ($i % 2 === 0) ? 10 : 17;
-                $scheduledAt = (clone $day)->setTime($hour, 0);
-
-                $platform = $platforms[$i % max(1, count($platforms))] ?? 'instagram';
-                $format = $formats[$i % max(1, count($formats))] ?? 'post';
-
+            foreach ($blueprints as $blueprint) {
                 ContentItem::create([
                     'tenant_id' => $user->tenant_id,
                     'content_plan_id' => $plan->id,
                     'created_by' => $user->id,
-                    'platform' => $platform,
-                    'format' => $format,
-                    'scheduled_at' => $scheduledAt,
+                    'platform' => $blueprint['platform'],
+                    'format' => $blueprint['format'],
+                    'scheduled_at' => Carbon::parse($blueprint['scheduled_at']),
                     'status' => 'draft',
-                    'title' => Str::limit(($profile->business_name ?? 'Brand') . " — {$step1['goal']}", 110, ''),
+                    'title' => Str::limit(
+                        $blueprint['title_hint'] ?: (($profile->business_name ?? 'Brand') . ' - ' . $blueprint['angle']),
+                        110,
+                        ''
+                    ),
                     'caption' => null,
-                    'hashtags' => json_encode([], JSON_UNESCAPED_UNICODE),
-                    'assets' => json_encode([], JSON_UNESCAPED_UNICODE),
-                    'ai_meta' => json_encode([
-                        'tenant_profile' => [
-                            'business_name' => $profile->business_name,
-                            'industry' => $profile->industry,
-                            'website' => $profile->website,
-                            'services' => $profile->services,
-                            'target' => $profile->target,
-                            'cta' => $profile->cta,
-                            'notes' => $profile->notes,
+                    'hashtags' => [],
+                    'assets' => [],
+                    'ai_meta' => [
+                        'tenant_profile' => $profileData,
+                        'brand_assets' => $assets,
+                        'plan' => $preferences,
+                        'memory_summary' => $memory,
+                        'strategy' => [
+                            'pillars' => $strategy['pillars'] ?? [],
+                            'messaging_map' => $strategy['messaging_map'] ?? [],
+                            'hashtag_strategy' => $strategy['hashtag_strategy'] ?? [],
+                            'brand_references' => $strategy['brand_references'] ?? [],
                         ],
-                        'assets' => $assets,
-                        'plan' => [
-                            'goal' => $step1['goal'],
-                            'tone' => $step1['tone'],
-                            'posts_per_week' => $postsPerWeek,
-                            'platforms' => $platforms,
-                            'formats' => $formats,
-                            'date_range' => [$start->toDateString(), $end->toDateString()],
+                        'item_brain' => [
+                            'pillar' => $blueprint['pillar'],
+                            'angle' => $blueprint['angle'],
+                            'objective' => $blueprint['objective'],
+                            'key_points' => $blueprint['key_points'],
+                            'cta' => $blueprint['cta'],
+                            'image_direction' => $blueprint['image_direction'],
+                            'avoid_list' => $blueprint['avoid_list'],
+                            'campaign' => $blueprint['campaign'],
+                            'campaign_step' => $blueprint['campaign_step'],
                         ],
-                    ], JSON_UNESCAPED_UNICODE),
+                    ],
                     'ai_status' => 'queued',
                 ]);
-
-                $itemsCreated++;
             }
 
             DB::commit();
-
-            $request->session()->put('plan.plan_id', $plan->id);
-
-            // best-effort queue dispatch
-            try {
-                $ids = ContentItem::where('content_plan_id', $plan->id)->pluck('id')->all();
-                foreach ($ids as $id) {
-                    GenerateAiForContentItem::dispatch((int)$id);
-                }
-            } catch (\Throwable $e) {}
-
-            return redirect()->route('wizard.done')
-                ->with('status', "Piano creato ✅ (ID: {$plan->id}) — Items creati: {$itemsCreated}");
-
         } catch (\Throwable $e) {
             DB::rollBack();
-            return redirect()->route('wizard.done')->with('status', 'Errore creazione piano ❌: ' . $e->getMessage());
+            return redirect()->route('wizard.done')->with('status', 'Errore creazione piano: ' . $e->getMessage());
         }
+
+        $request->session()->put('plan.plan_id', $plan->id);
+
+        try {
+            $itemIds = ContentItem::query()
+                ->where('tenant_id', $user->tenant_id)
+                ->where('content_plan_id', $plan->id)
+                ->pluck('id')
+                ->all();
+
+            foreach ($itemIds as $itemId) {
+                GenerateAiForContentItem::dispatch((int) $itemId);
+            }
+        } catch (\Throwable) {
+            // best effort
+        }
+
+        return redirect()->route('wizard.done')
+            ->with('status', "Piano creato (ID: {$plan->id}) con strategia unica e {$postsTotal} item.");
     }
 }
-
-
-

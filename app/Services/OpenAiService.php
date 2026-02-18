@@ -50,7 +50,11 @@ class OpenAiService
         $timeout = (int) (config('openai.timeout') ?: 60);
 
         $instructions =
-            "You are a social media content generator.\n"
+            "You are a senior social media manager.\n"
+            . "Use strategy, brand profile, and item_brain directives from context when present.\n"
+            . "Respect repetition_rules: avoid repeating recent hooks, CTAs, and themes.\n"
+            . "Keep voice coherent with messaging_map tone_rules and do/dont rules.\n"
+            . "Caption must be concrete, specific, and platform-appropriate.\n"
             . "Return ONLY valid JSON with keys:\n"
             . "- caption (string)\n"
             . "- hashtags (array of strings)\n"

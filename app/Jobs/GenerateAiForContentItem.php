@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Services\OpenAiService;
 use Illuminate\Bus\Queueable;
@@ -13,7 +12,6 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use RuntimeException;
 use Throwable;
 
 class GenerateAiForContentItem implements ShouldQueue
@@ -28,55 +26,50 @@ class GenerateAiForContentItem implements ShouldQueue
 
     public function handle(OpenAiService $openAi): void
     {
-        $item = ContentItem::findOrFail($this->contentItemId);
+        $item = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
 
-        // Stato iniziale
         $item->ai_status = 'pending';
         $item->ai_error = null;
-
-        // Modello immagini valido (mai usare modelli testo)
-        $validImageModels = [
-            'gpt-image-1',
-            'gpt-image-1-mini',
-            'gpt-image-1.5',
-            'chatgpt-image-latest',
-            'dall-e-2',
-            'dall-e-3',
-        ];
-
-        $imageModel = (string) (env('OPENAI_IMAGE_MODEL') ?: config('openai.image_model') ?: 'gpt-image-1');
-        $imageModel = trim($imageModel);
-        if ($imageModel === '' || !in_array($imageModel, $validImageModels, true)) {
-            $imageModel = 'gpt-image-1';
-        }
-
-        // Forza a runtime per evitare config cache / vecchi valori
-        config(['openai.image_model' => $imageModel]);
-
-        // Debug header
-        $meta = $item->ai_meta ?? [];
-        if (!is_array($meta)) $meta = [];
-
-        $meta['debug'] = array_merge($meta['debug'] ?? [], [
-            'job' => 'GenerateAiForContentItem::JOBv5',
-            'openai_base_url_config' => config('openai.base_url'),
-            'openai_text_model' => config('openai.text_model'),
-            'openai_image_model_effective' => $imageModel,
-            'time' => now()->toDateTimeString(),
-        ]);
-
-        $item->ai_meta = $meta;
         $item->save();
 
-        // 1) TESTO (hard fail se non va)
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $strategy = data_get($meta, 'strategy', $item->plan?->strategy ?? []);
+        $itemBrain = data_get($meta, 'item_brain', []);
+        $tenantProfile = data_get($meta, 'tenant_profile', data_get($meta, 'brand', []));
+        $memorySummary = data_get($meta, 'memory_summary', []);
+
+        $recentCaptions = ContentItem::query()
+            ->where('tenant_id', $item->tenant_id)
+            ->where('id', '!=', $item->id)
+            ->whereNotNull('ai_caption')
+            ->whereIn('ai_status', ['done', 'pending'])
+            ->orderByDesc('ai_generated_at')
+            ->orderByDesc('id')
+            ->limit(8)
+            ->pluck('ai_caption')
+            ->map(fn ($caption) => Str::limit((string) $caption, 200, ''))
+            ->values()
+            ->all();
+
         try {
             $context = [
-                'brand' => data_get($item, 'ai_meta.brand', []),
-                'plan'  => data_get($item, 'ai_meta.plan', []),
-                'item'  => [
+                'brand' => $tenantProfile,
+                'plan' => data_get($meta, 'plan', []),
+                'strategy' => $strategy,
+                'item_brain' => $itemBrain,
+                'memory_summary' => $memorySummary,
+                'repetition_rules' => [
+                    'avoid_list' => array_values(array_unique(array_filter(array_merge(
+                        (array) data_get($itemBrain, 'avoid_list', []),
+                        (array) data_get($strategy, 'repetition_guard.avoid_terms', []),
+                        (array) data_get($memorySummary, 'avoid_repetition', [])
+                    )))),
+                    'recent_captions' => $recentCaptions,
+                ],
+                'item' => [
                     'platform' => $item->platform,
-                    'format'   => $item->format,
-                    'title'    => $item->title,
+                    'format' => $item->format,
+                    'title' => $item->title,
                     'scheduled_at' => optional($item->scheduled_at)->toDateTimeString(),
                 ],
             ];
@@ -85,18 +78,15 @@ class GenerateAiForContentItem implements ShouldQueue
 
             $item->ai_caption = $gen['caption'] ?? $item->ai_caption;
             $item->ai_hashtags = $gen['hashtags'] ?? [];
-            $item->ai_cta = $gen['cta'] ?? $item->ai_cta;
+            $item->ai_cta = $gen['cta'] ?? ($itemBrain['cta'] ?? $item->ai_cta);
             $item->ai_image_prompt = $gen['image_prompt'] ?? $item->ai_image_prompt;
-
             $item->save();
         } catch (Throwable $e) {
-            $msg = "JOBv4 | TEXT | " . $e->getMessage();
-
             $item->ai_status = 'error';
-            $item->ai_error = $msg;
+            $item->ai_error = 'TEXT: ' . $e->getMessage();
             $item->save();
 
-            Log::error('GenerateAiForContentItem JOBv5 text failed', [
+            Log::error('GenerateAiForContentItem text failed', [
                 'content_item_id' => $item->id,
                 'error' => $e->getMessage(),
             ]);
@@ -104,56 +94,48 @@ class GenerateAiForContentItem implements ShouldQueue
             throw $e;
         }
 
-        // 2) IMMAGINE (best-effort)
         try {
             $prompt = trim((string) ($item->ai_image_prompt ?? ''));
-
-            // fallback prompt se vuoto
             if ($prompt === '') {
-                $brandName = data_get($item, 'ai_meta.brand.business_name', 'Brand');
-                $industry  = data_get($item, 'ai_meta.brand.industry', '');
-                $goal      = data_get($item, 'ai_meta.plan.goal', '');
-                $tone      = data_get($item, 'ai_meta.plan.tone', '');
+                $brandName = data_get($tenantProfile, 'business_name', 'Brand');
+                $industry = data_get($tenantProfile, 'industry', '');
+                $palette = data_get($strategy, 'brand_references.palette', '');
+                $logoPath = data_get($strategy, 'brand_references.logo_path', '');
+                $visualRules = data_get($itemBrain, 'image_direction', 'Visual coerente con il brand.');
 
-                $caption = trim((string) ($item->ai_caption ?? ''));
-                if ($caption === '') $caption = (string) ($item->title ?? '');
+                $prompt = "Create a square social image for {$brandName}. "
+                    . "Industry: {$industry}. "
+                    . "Visual direction: {$visualRules}. "
+                    . "Color palette hint: {$palette}. "
+                    . "Logo reference path: {$logoPath}. "
+                    . "No text overlay. Professional and brand-consistent style.";
 
-                $prompt = "Create a high-quality square social media image (1024x1024) for {$brandName}. "
-                        . "Industry: {$industry}. Goal: {$goal}. Tone: {$tone}. "
-                        . "Platform: {$item->platform}. Format: {$item->format}. "
-                        . "Visual concept based on: {$caption}. "
-                        . "No text in the image, modern minimal design, professional look.";
                 $item->ai_image_prompt = $prompt;
                 $item->save();
             }
 
             $img = $openAi->generateImageBase64($prompt);
-            $bytes = base64_decode($img['b64']);
+            $bytes = base64_decode((string) ($img['b64'] ?? ''), true);
 
-            $filename = 'ai/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.png';
-            Storage::disk('public')->put($filename, $bytes);
-
-            $item->ai_image_path = $filename;
-            $item->save();
+            if ($bytes !== false && $bytes !== '') {
+                $filename = 'ai/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.png';
+                Storage::disk('public')->put($filename, $bytes);
+                $item->ai_image_path = $filename;
+                $item->save();
+            }
         } catch (Throwable $e) {
-            $warn = "JOBv4 | IMAGE | " . $e->getMessage();
-
-            $meta = $item->ai_meta ?? [];
-            if (!is_array($meta)) $meta = [];
-            $meta['image_error'] = $warn;
+            $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+            $meta['image_error'] = $e->getMessage();
             $meta['image_error_at'] = now()->toDateTimeString();
             $item->ai_meta = $meta;
-
-            // non blocchiamo il post, caption resta valida
             $item->save();
 
-            Log::warning('GenerateAiForContentItem JOBv5 image failed', [
+            Log::warning('GenerateAiForContentItem image failed', [
                 'content_item_id' => $item->id,
                 'error' => $e->getMessage(),
             ]);
         }
 
-        // done se testo ok
         $item->ai_status = 'done';
         $item->ai_generated_at = now();
         $item->save();

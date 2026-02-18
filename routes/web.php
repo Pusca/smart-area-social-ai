@@ -24,6 +24,8 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     // Profilo attività (wizard unico tenant)
     Route::get('/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
     Route::post('/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
+    Route::delete('/brand/assets', [TenantProfileController::class, 'destroyAssets'])
+        ->name('profile.brand.assets.destroy');
     Route::delete('/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
         ->name('profile.brand.asset.destroy');
 

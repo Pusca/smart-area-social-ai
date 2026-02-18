@@ -15,10 +15,12 @@ class ContentPlan extends Model
         'end_date',
         'status',
         'settings',
+        'strategy',
     ];
 
     protected $casts = [
         'settings'   => 'array',
+        'strategy'   => 'array',
         'start_date' => 'datetime',
         'end_date'   => 'datetime',
     ];

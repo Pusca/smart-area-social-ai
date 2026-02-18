@@ -1,4 +1,3 @@
-
 @extends('layouts.app')
 
 @section('content')
@@ -14,50 +13,38 @@
 
         @if($profile)
             <p class="text-gray-600 mt-3">
-                Attività: <span class="font-medium">{{ $profile->business_name }}</span>
+                Attivita: <span class="font-medium">{{ $profile->business_name }}</span>
                 <span class="mx-2">•</span>
                 <a class="underline" href="{{ route('profile.brand') }}">Modifica profilo</a>
-            </p>
-        @else
-            <p class="text-gray-600 mt-3">
-                Non hai ancora completato il profilo attività.
-                <a class="underline" href="{{ route('profile.brand') }}">Vai al profilo</a>
             </p>
         @endif
 
         @if($plan)
             <p class="text-gray-600 mt-2">
                 Piano: <span class="font-medium">{{ $plan->name }}</span>
-                — dal {{ \Illuminate\Support\Carbon::parse($plan->start_date)->format('d/m/Y') }}
+                - dal {{ \Illuminate\Support\Carbon::parse($plan->start_date)->format('d/m/Y') }}
                 al {{ \Illuminate\Support\Carbon::parse($plan->end_date)->format('d/m/Y') }}
             </p>
-        @else
-            <p class="text-gray-600 mt-2">Nessun piano ancora generato.</p>
         @endif
     </div>
-
-    @php
-        $itemsCount = $plan?->items?->count() ?? 0;
-        $canGenerate = $profile && (! $plan || $itemsCount === 0);
-    @endphp
 
     @if($canGenerate)
         <div class="bg-white rounded-2xl shadow p-5 border mb-6">
             <div class="text-sm text-gray-600">
-                Conferma e genera i post del piano (li mette in coda per la generazione AI).
+                Generazione piano professionale: una strategia unica + post coerenti in coda AI.
             </div>
 
-            <div class="mt-3 text-xs text-gray-500">
+            <div class="mt-3 text-xs text-gray-500 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div><b>Goal:</b> {{ $step1['goal'] ?? '—' }}</div>
                 <div><b>Tone:</b> {{ $step1['tone'] ?? '—' }}</div>
                 <div><b>Posts:</b> {{ $step1['posts_per_week'] ?? '—' }}</div>
             </div>
 
-            <div class="mt-4 flex items-center gap-3">
+            <div class="mt-4 flex flex-wrap items-center gap-3">
                 <form method="POST" action="{{ route('wizard.generate') }}">
                     @csrf
                     <button type="submit" class="px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-900">
-                        Genera Piano (AI)
+                        Genera Piano (Strategy Brain)
                     </button>
                 </form>
 
@@ -71,19 +58,62 @@
             </div>
 
             <div class="mt-3 text-xs text-gray-400">
-                Nota: per far partire la coda tieni acceso <span class="font-mono">php artisan queue:work</span>
+                Per elaborare in background tieni attivo <span class="font-mono">php artisan queue:work</span>
             </div>
         </div>
     @endif
 
-    @if($plan && $itemsCount > 0)
-        <div class="mb-4 flex gap-2">
-            <a href="{{ route('posts.index') }}" class="px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-900">
-                Vai alla lista post
-            </a>
-            <a href="{{ route('wizard.start') }}" class="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50">
-                + Nuovo piano
-            </a>
+    @if($strategy)
+        <div class="bg-white rounded-2xl shadow p-5 border mb-6">
+            <div class="flex items-center justify-between gap-3">
+                <h2 class="text-lg font-semibold">Strategia del piano</h2>
+                <a href="{{ route('posts.index') }}" class="text-sm underline">Vai ai post</a>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                    <div class="text-sm font-semibold text-gray-700 mb-2">Pillars</div>
+                    <div class="space-y-2">
+                        @foreach(($strategy['pillars'] ?? []) as $pillar)
+                            <div class="rounded-xl border border-gray-200 p-3">
+                                <div class="text-sm font-semibold">{{ $pillar['name'] ?? 'Pillar' }}</div>
+                                <div class="text-xs text-gray-600 mt-1">Objective: {{ $pillar['objective'] ?? '—' }}</div>
+                                <div class="text-xs text-gray-500 mt-1">
+                                    {{ implode(', ', array_slice($pillar['topics'] ?? [], 0, 4)) }}
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div>
+                    <div class="text-sm font-semibold text-gray-700 mb-2">Sequenze / micro-campagne</div>
+                    <div class="space-y-2">
+                        @foreach(array_slice($strategy['campaigns'] ?? [], 0, 3) as $campaign)
+                            <div class="rounded-xl border border-gray-200 p-3">
+                                <div class="text-sm font-semibold">{{ $campaign['name'] ?? 'Campagna' }}</div>
+                                <div class="mt-2 text-xs text-gray-600 space-y-1">
+                                    @foreach(($campaign['steps'] ?? []) as $step)
+                                        <div>
+                                            Step {{ $step['step'] ?? '?' }}:
+                                            {{ $step['angle'] ?? ($step['hook'] ?? '—') }}
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if($plan && ($itemStats['total'] ?? 0) > 0)
+        <div class="mb-4 text-sm text-gray-600">
+            Items: {{ $itemStats['total'] ?? 0 }}
+            • done {{ $itemStats['done'] ?? 0 }}
+            • queued {{ $itemStats['queued'] ?? 0 }}
+            • error {{ $itemStats['error'] ?? 0 }}
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -107,19 +137,9 @@
                             AI: {{ $item->ai_status ?? '—' }}
                         </div>
                     </div>
-
-                    @if($item->ai_status === 'error' && $item->ai_error)
-                        <div class="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
-                            <div class="font-medium">Errore AI</div>
-                            <div class="mt-1">{{ $item->ai_error }}</div>
-                        </div>
-                    @endif
                 </div>
             @endforeach
         </div>
     @endif
 </div>
 @endsection
-
-
-

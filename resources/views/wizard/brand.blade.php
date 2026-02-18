@@ -141,6 +141,59 @@
                                     placeholder="Extra info: posizionamento, punti di forza, differenziatori..."
                                 >{{ old('notes', $profile?->notes ?? '') }}</textarea>
                             </div>
+
+                            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Vision / Mission</label>
+                                    <textarea
+                                        name="vision"
+                                        rows="3"
+                                        class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                        placeholder="Es. diventare il riferimento locale per ..."
+                                    >{{ old('vision', $profile?->vision ?? '') }}</textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Valori brand</label>
+                                    <textarea
+                                        name="values"
+                                        rows="3"
+                                        class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                        placeholder="Es. trasparenza, rapidita, qualità ..."
+                                    >{{ old('values', $profile?->values ?? '') }}</textarea>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Orari business (opzionale)</label>
+                                    <textarea
+                                        name="business_hours"
+                                        rows="2"
+                                        class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                        placeholder="Lun-Ven 9:00-18:00; Sab 9:00-13:00"
+                                    >{{ old('business_hours', $profile?->business_hours ?? '') }}</textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Palette brand (opzionale)</label>
+                                    <input
+                                        type="text"
+                                        name="brand_palette"
+                                        value="{{ old('brand_palette', $profile?->brand_palette ?? '') }}"
+                                        placeholder="Es. #0F172A, #2563EB, #F59E0B"
+                                        class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700">Offerte/promozioni periodo (opzionale)</label>
+                                <textarea
+                                    name="seasonal_offers"
+                                    rows="3"
+                                    class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                    placeholder="Es. promo marzo, bundle, sconto primo mese..."
+                                >{{ old('seasonal_offers', $profile?->seasonal_offers ?? '') }}</textarea>
+                            </div>
                         </div>
 
                         {{-- DEFAULT CONTENUTI --}}
@@ -322,6 +375,7 @@
 
                             <button type="button"
                                     id="bulkDeleteBtn"
+                                    data-bulk-url="{{ route('profile.brand.assets.destroy') }}"
                                     class="rounded-xl px-4 py-2 text-sm font-semibold bg-red-600 text-white hover:bg-red-700">
                                 Elimina selezionati
                             </button>
@@ -474,32 +528,31 @@
                     btnBulkDelete.textContent = 'Eliminazione...';
 
                     try {
-                        // Esegui DELETE uno per uno (semplice e robusto)
-                        for (const cb of items) {
-                            const url = cb.getAttribute('data-destroy-url');
-                            if (!url) continue;
-
-                            const form = new FormData();
-                            form.append('_method', 'DELETE');
-
-                            const res = await fetch(url, {
-                                method: 'POST',
-                                headers: {
-                                    'X-CSRF-TOKEN': csrf,
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                },
-                                body: form
-                            });
-
-                            if (!res.ok) {
-                                // Se uno fallisce, fermiamo e mostriamo errore
-                                console.error('Delete failed', url, res.status);
-                                alert('Errore eliminazione su uno degli asset. Controlla i log.');
-                                break;
-                            }
+                        const bulkUrl = btnBulkDelete.getAttribute('data-bulk-url');
+                        if (!bulkUrl) {
+                            throw new Error('Bulk URL missing');
                         }
 
-                        // refresh
+                        const form = new FormData();
+                        form.append('_method', 'DELETE');
+
+                        for (const cb of items) {
+                            form.append('asset_ids[]', cb.value);
+                        }
+
+                        const res = await fetch(bulkUrl, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-TOKEN': csrf,
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: form
+                        });
+
+                        if (!res.ok) {
+                            throw new Error(`Bulk delete failed: ${res.status}`);
+                        }
+
                         window.location.reload();
                     } catch (e) {
                         console.error(e);

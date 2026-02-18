@@ -34,6 +34,11 @@ class TenantProfileController extends Controller
             'industry' => 'nullable|string|max:120',
             'website' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:2000',
+            'vision' => 'nullable|string|max:2000',
+            'values' => 'nullable|string|max:2000',
+            'business_hours' => 'nullable|string|max:1000',
+            'seasonal_offers' => 'nullable|string|max:2000',
+            'brand_palette' => 'nullable|string|max:255',
 
             'services' => 'nullable|string|max:2000',
             'target' => 'nullable|string|max:2000',
@@ -62,6 +67,11 @@ class TenantProfileController extends Controller
                     'industry' => $data['industry'] ?? null,
                     'website' => $data['website'] ?? null,
                     'notes' => $data['notes'] ?? null,
+                    'vision' => $data['vision'] ?? null,
+                    'values' => $data['values'] ?? null,
+                    'business_hours' => $data['business_hours'] ?? null,
+                    'seasonal_offers' => $data['seasonal_offers'] ?? null,
+                    'brand_palette' => $data['brand_palette'] ?? null,
 
                     'services' => $data['services'] ?? null,
                     'target' => $data['target'] ?? null,
@@ -117,6 +127,31 @@ class TenantProfileController extends Controller
             DB::rollBack();
             return redirect()->route('profile.brand')->with('status', 'Errore salvataggio ❌: ' . $e->getMessage());
         }
+    }
+
+    public function destroyAssets(Request $request)
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'asset_ids' => 'required|array|min:1',
+            'asset_ids.*' => 'integer',
+        ]);
+
+        $assets = BrandAsset::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->whereNull('content_plan_id')
+            ->whereIn('id', $data['asset_ids'])
+            ->get();
+
+        foreach ($assets as $asset) {
+            if ($asset->path) {
+                Storage::disk('public')->delete($asset->path);
+            }
+            $asset->delete();
+        }
+
+        return redirect()->route('profile.brand')->with('status', 'Assets selezionati eliminati ✅');
     }
 
     /**
