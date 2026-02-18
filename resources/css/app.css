@@ -2,3 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 @import "./ui.css";
+
+@layer base {
+    :root {
+        --sa-bg: #f4f7fb;
+        --sa-surface: #ffffff;
+        --sa-surface-soft: #f8fafc;
+        --sa-border: #dbe4f0;
+        --sa-text: #0f172a;
+        --sa-text-muted: #475569;
+        --sa-primary: #0f766e;
+        --sa-primary-strong: #115e59;
+        --sa-accent: #2563eb;
+        --sa-success: #059669;
+        --sa-warning: #d97706;
+        --sa-danger: #dc2626;
+        --sa-ring: rgba(37, 99, 235, 0.3);
+    }
+
+    body {
+        color: var(--sa-text);
+        background:
+            radial-gradient(1200px 600px at 100% -10%, rgba(37, 99, 235, 0.08), transparent 60%),
+            radial-gradient(900px 500px at -10% 0%, rgba(15, 118, 110, 0.08), transparent 55%),
+            var(--sa-bg);
+    }
+
+    a {
+        color: inherit;
+    }
+
+    ::selection {
+        background: rgba(37, 99, 235, 0.18);
+    }
+}
