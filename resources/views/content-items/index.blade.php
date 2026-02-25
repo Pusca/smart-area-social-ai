@@ -3,7 +3,7 @@
     <x-slot name="header">
         <div class="flex items-center justify-between gap-4">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                Content Items
+                Galleria contenuti
             </h2>
 
             <div class="text-sm text-gray-500">
@@ -55,6 +55,19 @@
 
                                 <div class="mt-2 font-semibold text-gray-800 line-clamp-2">
                                     {{ $item->title }}
+                                </div>
+
+                                <div class="mt-2 flex flex-wrap gap-1 text-[11px]">
+                                    @if($item->rubric)
+                                        <span class="px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">
+                                            {{ $item->rubric }}
+                                        </span>
+                                    @endif
+                                    @if($item->series_key)
+                                        <span class="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                                            Serie {{ $item->episode_number ? 'Ep. '.$item->episode_number : '' }}
+                                        </span>
+                                    @endif
                                 </div>
 
                                 <div class="mt-1 text-sm text-gray-500">

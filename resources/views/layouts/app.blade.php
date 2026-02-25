@@ -20,29 +20,32 @@
         <header class="hidden sm:block bg-white border-b sticky top-0 z-40">
             <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">
-                        S
-                    </div>
                     <div class="leading-tight">
-                        <div class="font-semibold">{{ config('app.name', 'Smartera Social AI') }}</div>
+                        <x-application-logo class="h-8 w-auto" />
                         <div class="text-xs text-gray-500">Dashboard</div>
                     </div>
                 </div>
 
                 <nav class="flex items-center gap-2 text-sm">
+                    <a href="{{ route('wizard.done') }}"
+                       id="global-ai-status"
+                       class="hidden px-3 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 font-semibold">
+                        Generazione AI in corso...
+                    </a>
+
                     <a href="{{ route('dashboard') }}"
                        class="px-3 py-2 rounded-xl {{ request()->routeIs('dashboard') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Home
+                        Dashboard
                     </a>
 
                     <a href="{{ route('calendar') }}"
                        class="px-3 py-2 rounded-xl {{ request()->routeIs('calendar') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Calendar
+                        Calendario
                     </a>
 
                     <a href="{{ route('posts.index') }}"
                        class="px-3 py-2 rounded-xl {{ request()->routeIs('posts*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Posts
+                        Contenuti
                     </a>
 
                     <a href="{{ route('wizard.start') }}"
@@ -52,7 +55,7 @@
 
                     <a href="{{ route('settings') }}"
                        class="px-3 py-2 rounded-xl {{ request()->routeIs('settings') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Settings
+                        Impostazioni
                     </a>
                 </nav>
             </div>
@@ -78,6 +81,10 @@
 
     </div>
 
+    <div id="ai-complete-toast" class="hidden fixed bottom-20 right-4 z-[60] rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 shadow">
+        Generazione contenuti completata.
+    </div>
+
    {{-- Bottom nav (mobile) --}}
 <nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
     <div class="max-w-7xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
@@ -86,19 +93,19 @@
             <a href="{{ route('dashboard') }}"
                class="touch-manipulation select-none rounded-xl px-2 py-3
                {{ request()->routeIs('dashboard') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Home
+                Dashboard
             </a>
 
             <a href="{{ route('calendar') }}"
                class="touch-manipulation select-none rounded-xl px-2 py-3
                {{ request()->routeIs('calendar') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Calendar
+                Calendario
             </a>
 
             <a href="{{ route('posts.index') }}"
                class="touch-manipulation select-none rounded-xl px-2 py-3
                {{ request()->routeIs('posts*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Posts
+                Contenuti
             </a>
 
             <a href="{{ route('wizard.start') }}"
@@ -110,7 +117,7 @@
             <a href="{{ route('settings') }}"
                class="touch-manipulation select-none rounded-xl px-2 py-3
                {{ request()->routeIs('settings') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Settings
+                Impostazioni
             </a>
 
         </div>
@@ -118,6 +125,51 @@
 </nav>
 
 <script>
+(function () {
+    const statusEl = document.getElementById('global-ai-status');
+    const toastEl = document.getElementById('ai-complete-toast');
+    if (!statusEl || !toastEl) return;
+
+    const storageKey = 'sa_ai_generation_active';
+
+    const showToast = () => {
+        toastEl.classList.remove('hidden');
+        setTimeout(() => toastEl.classList.add('hidden'), 4500);
+    };
+
+    const poll = async () => {
+        try {
+            const res = await fetch('{{ route('wizard.progress') }}', {
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin',
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const counts = data.counts || {};
+            const active = !!data.active;
+            const completed = !!data.completed;
+
+            if (active) {
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = `Generazione AI: ${counts.done ?? 0}/${counts.total ?? 0}`;
+                localStorage.setItem(storageKey, '1');
+                return;
+            }
+
+            statusEl.classList.add('hidden');
+            if (completed && localStorage.getItem(storageKey) === '1') {
+                localStorage.removeItem(storageKey);
+                showToast();
+            }
+        } catch (e) {
+            // noop
+        }
+    };
+
+    poll();
+    setInterval(poll, 6000);
+})();
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
         navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function (err) {

@@ -20,6 +20,7 @@ class ContentItem extends Model
         'assets' => 'array',
         'ai_meta' => 'array',
         'ai_hashtags' => 'array',
+        'source_refs' => 'array',
     ];
 
     public function plan(): BelongsTo

@@ -36,15 +36,15 @@
 
             <div class="mt-3 text-xs text-gray-500 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div><b>Goal:</b> {{ $step1['goal'] ?? '—' }}</div>
-                <div><b>Tone:</b> {{ $step1['tone'] ?? '—' }}</div>
-                <div><b>Posts:</b> {{ $step1['posts_per_week'] ?? '—' }}</div>
+                <div><b>Tono:</b> {{ $step1['tone'] ?? '—' }}</div>
+                <div><b>Post:</b> {{ $step1['posts_per_week'] ?? '—' }}</div>
             </div>
 
             <div class="mt-4 flex flex-wrap items-center gap-3">
                 <form method="POST" action="{{ route('wizard.generate') }}">
                     @csrf
                     <button type="submit" class="px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-900">
-                        Genera Piano (Strategy Brain)
+                        Genera Piano
                     </button>
                 </form>
 
@@ -58,7 +58,7 @@
             </div>
 
             <div class="mt-3 text-xs text-gray-400">
-                Per elaborare in background tieni attivo <span class="font-mono">php artisan queue:work</span>
+                Generazione in background attiva: puoi navigare liberamente nell'app durante l'elaborazione.
             </div>
         </div>
     @endif
@@ -72,12 +72,12 @@
 
             <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
-                    <div class="text-sm font-semibold text-gray-700 mb-2">Pillars</div>
+                    <div class="text-sm font-semibold text-gray-700 mb-2">Pilastri</div>
                     <div class="space-y-2">
                         @foreach(($strategy['pillars'] ?? []) as $pillar)
                             <div class="rounded-xl border border-gray-200 p-3">
-                                <div class="text-sm font-semibold">{{ $pillar['name'] ?? 'Pillar' }}</div>
-                                <div class="text-xs text-gray-600 mt-1">Objective: {{ $pillar['objective'] ?? '—' }}</div>
+                                <div class="text-sm font-semibold">{{ $pillar['name'] ?? 'Pilastro' }}</div>
+                                <div class="text-xs text-gray-600 mt-1">Obiettivo: {{ $pillar['objective'] ?? '—' }}</div>
                                 <div class="text-xs text-gray-500 mt-1">
                                     {{ implode(', ', array_slice($pillar['topics'] ?? [], 0, 4)) }}
                                 </div>
@@ -109,11 +109,11 @@
     @endif
 
     @if($plan && ($itemStats['total'] ?? 0) > 0)
-        <div class="mb-4 text-sm text-gray-600">
-            Items: {{ $itemStats['total'] ?? 0 }}
-            • done {{ $itemStats['done'] ?? 0 }}
-            • queued {{ $itemStats['queued'] ?? 0 }}
-            • error {{ $itemStats['error'] ?? 0 }}
+        <div id="wizard-progress-line" class="mb-4 text-sm text-gray-600">
+            Contenuti: {{ $itemStats['total'] ?? 0 }}
+            • completati {{ $itemStats['done'] ?? 0 }}
+            • in coda {{ $itemStats['queued'] ?? 0 }}
+            • errori {{ $itemStats['error'] ?? 0 }}
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -142,4 +142,35 @@
         </div>
     @endif
 </div>
+
+@if($plan)
+<script>
+(function () {
+    const line = document.getElementById('wizard-progress-line');
+    if (!line) return;
+    const url = '{{ route('wizard.progress.plan', $plan) }}';
+    const doneLabel = 'completati';
+    const queuedLabel = 'in coda';
+    const errorLabel = 'errori';
+    const totalLabel = 'Contenuti';
+
+    const poll = async () => {
+        try {
+            const res = await fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+            if (!res.ok) return;
+            const data = await res.json();
+            const c = data.counts || {};
+            line.textContent = `${totalLabel}: ${c.total ?? 0} • ${doneLabel} ${c.done ?? 0} • ${queuedLabel} ${(c.queued ?? 0) + (c.pending ?? 0)} • ${errorLabel} ${c.error ?? 0}`;
+        } catch (e) {
+            // noop
+        }
+    };
+
+    poll();
+    setInterval(poll, 5000);
+})();
+</script>
+@endif
 @endsection
+
+

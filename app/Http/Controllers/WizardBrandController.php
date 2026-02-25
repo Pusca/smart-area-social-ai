@@ -3,34 +3,29 @@
 namespace App\Http\Controllers;
 
 use App\Models\BrandAsset;
-use App\Models\ContentPlan;
+use App\Models\TenantProfile;
+use App\Services\Editorial\EditorialStrategyService;
 use Illuminate\Http\Request;
 
 class WizardBrandController extends Controller
 {
+    public function __construct(
+        private readonly EditorialStrategyService $editorialStrategyService
+    ) {
+    }
+
     public function brand(Request $request)
     {
         $user = $request->user();
 
-        // aggancia gli asset al piano più recente del tenant (se esiste)
-        $plan = ContentPlan::query()
-            ->where('tenant_id', $user->tenant_id)
-            ->orderByDesc('id')
-            ->first();
-
         $assets = BrandAsset::query()
             ->where('tenant_id', $user->tenant_id)
-            ->where(function ($q) use ($plan) {
-                $q->whereNull('content_plan_id');
-                if ($plan) {
-                    $q->orWhere('content_plan_id', $plan->id);
-                }
-            })
+            ->whereNull('content_plan_id')
             ->orderByDesc('id')
             ->get();
 
         return view('wizard.brand', [
-            'plan' => $plan,
+            'plan' => null,
             'assets' => $assets,
         ]);
     }
@@ -45,11 +40,6 @@ class WizardBrandController extends Controller
             'images.*' => 'nullable|image|max:6144',  // 6MB cad.
         ]);
 
-        $plan = ContentPlan::query()
-            ->where('tenant_id', $user->tenant_id)
-            ->orderByDesc('id')
-            ->first();
-
         // LOGO
         if ($request->hasFile('logo')) {
             $file = $request->file('logo');
@@ -61,7 +51,7 @@ class WizardBrandController extends Controller
 
             BrandAsset::create([
                 'tenant_id' => $user->tenant_id,
-                'content_plan_id' => $plan?->id,
+                'content_plan_id' => null,
                 'kind' => 'logo',
                 'path' => $path,
                 'original_name' => $file->getClientOriginalName(),
@@ -82,7 +72,7 @@ class WizardBrandController extends Controller
 
                 BrandAsset::create([
                     'tenant_id' => $user->tenant_id,
-                    'content_plan_id' => $plan?->id,
+                    'content_plan_id' => null,
                     'kind' => 'image',
                     'path' => $path,
                     'original_name' => $file->getClientOriginalName(),
@@ -90,6 +80,11 @@ class WizardBrandController extends Controller
                     'mime' => $file->getMimeType(),
                 ]);
             }
+        }
+
+        $profile = TenantProfile::query()->where('tenant_id', $user->tenant_id)->first();
+        if ($profile) {
+            $this->editorialStrategyService->refreshForTenant((int) $user->tenant_id, $profile);
         }
 
         return redirect()

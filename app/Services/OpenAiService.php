@@ -27,7 +27,8 @@ class OpenAiService
 
     protected function apiKey(): string
     {
-        $key = (string) (config('openai.api_key') ?: env('OPENAI_API_KEY') ?: '');
+        // Prefer env at runtime to reduce stale-key issues with long-lived workers.
+        $key = (string) (env('OPENAI_API_KEY') ?: config('openai.api_key') ?: '');
         if (trim($key) === '') {
             throw new RuntimeException('Missing OPENAI_API_KEY');
         }
@@ -50,21 +51,27 @@ class OpenAiService
         $timeout = (int) (config('openai.timeout') ?: 60);
 
         $instructions =
-            "You are a senior social media manager.\n"
-            . "Use strategy, brand profile, and item_brain directives from context when present.\n"
-            . "Respect repetition_rules: avoid repeating recent hooks, CTAs, and themes.\n"
-            . "Keep voice coherent with messaging_map tone_rules and do/dont rules.\n"
-            . "Caption must be concrete, specific, and platform-appropriate.\n"
-            . "Return ONLY valid JSON with keys:\n"
+            "Sei una social media manager senior.\n"
+            . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
+            . "Rispetta repetition_rules: evita ripetizioni di hook, CTA e temi recenti.\n"
+            . "Ogni post deve essere autosufficiente: comprensibile e utile anche da solo.\n"
+            . "Mantieni comunque continuita strategica con campagne/serie quando presenti.\n"
+            . "Ogni output deve essere distinto dai post recenti e dagli altri del piano.\n"
+            . "Mantieni tono coerente con messaging_map tone_rules e regole do/dont.\n"
+            . "Caption concreta, specifica e adatta alla piattaforma.\n"
+            . "Usa item_brain.uniqueness_key come vincolo creativo anti-duplicato.\n"
+            . "Il prompt immagine deve evitare loghi finti, watermark e testo sovraimpresso.\n"
+            . "Testo, CTA, hashtag e prompt immagine devono essere in italiano.\n"
+            . "Restituisci SOLO JSON valido con chiavi:\n"
             . "- caption (string)\n"
             . "- hashtags (array of strings)\n"
             . "- cta (string)\n"
             . "- image_prompt (string)\n"
-            . "No markdown. No code fences. No extra text.";
+            . "Niente markdown. Niente code fences. Nessun testo extra.";
 
         $input = [
             ['role' => 'system', 'content' => $instructions],
-            ['role' => 'user', 'content' => "Context:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
+            ['role' => 'user', 'content' => "Contesto:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
         ];
 
         $url = $this->url('/v1/responses');
@@ -163,6 +170,70 @@ class OpenAiService
                 'error' => $e->getMessage(),
                 'model' => $model,
                 'url' => $url,
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Image edit/variation partendo da una o più immagini locali.
+     * Ritorna b64_json coerente con Images API.
+     */
+    public function generateImageEditBase64(string $prompt, array $imageAbsolutePaths, ?string $modelOverride = null): array
+    {
+        $model = (string) ($modelOverride ?: config('openai.image_model') ?: env('OPENAI_IMAGE_MODEL') ?: 'gpt-image-1');
+        $timeout = (int) (config('openai.timeout_images') ?: 120);
+        $url = $this->url('/v1/images/edits');
+
+        $paths = array_values(array_filter($imageAbsolutePaths, fn ($p) => is_string($p) && is_file($p)));
+        if (empty($paths)) {
+            throw new RuntimeException('No valid image file provided for image edit.');
+        }
+
+        try {
+            $req = Http::withToken($this->apiKey())
+                ->acceptJson()
+                ->timeout($timeout)
+                ->retry(1, 400);
+
+            foreach ($paths as $idx => $path) {
+                $filename = basename($path);
+                $mime = mime_content_type($path) ?: 'application/octet-stream';
+                $req = $req->attach('image[]', file_get_contents($path), $filename, ['Content-Type' => $mime]);
+                if ($idx >= 2) {
+                    break;
+                }
+            }
+
+            $res = $req->post($url, [
+                'model' => $model,
+                'prompt' => $prompt,
+                'size' => config('openai.image_size') ?: '1024x1024',
+            ]);
+
+            if (!$res->successful()) {
+                throw new RuntimeException("OpenAI image edit error ({$res->status()}) URL={$url} BODY=" . $res->body());
+            }
+
+            $data = $res->json();
+            $b64 = (string) data_get($data, 'data.0.b64_json', '');
+            $b64 = trim($b64);
+
+            if ($b64 === '') {
+                throw new RuntimeException('Missing data.0.b64_json in image edit response');
+            }
+
+            return [
+                'b64' => $b64,
+                'b64_json' => $b64,
+                'raw' => $data,
+            ];
+        } catch (Throwable $e) {
+            Log::warning('OpenAiService generateImageEditBase64 failed', [
+                'error' => $e->getMessage(),
+                'model' => $model,
+                'url' => $url,
+                'images_count' => count($paths),
             ]);
             throw $e;
         }

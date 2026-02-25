@@ -15,9 +15,15 @@ class AiGenerateController extends Controller
         $contentItem->ai_error = null;
         $contentItem->save();
 
-        GenerateAiForContentItem::dispatch($contentItem->id);
+        if (app()->environment('local')) {
+            GenerateAiForContentItem::dispatchSync($contentItem->id);
+        } else {
+            GenerateAiForContentItem::dispatch($contentItem->id);
+        }
 
-        return back()->with('status', 'Rigenerazione AI messa in coda (JOBv4).');
+        return back()->with('status', app()->environment('local')
+            ? 'Rigenerazione AI completata (sync locale).'
+            : 'Rigenerazione AI messa in coda (JOBv4).');
     }
 
     public function generatePlan(ContentPlan $contentPlan)
@@ -32,7 +38,7 @@ class AiGenerateController extends Controller
             GenerateAiForContentItem::dispatch($item->id);
         }
 
-        return back()->with('status', 'Rigenerazione AI del piano messa in coda (JOBv4).');
+        return back()->with('status', 'Rigenerazione AI del piano messa in coda (background).');
     }
 
     public function generateImage(ContentItem $contentItem)
@@ -41,8 +47,14 @@ class AiGenerateController extends Controller
         $contentItem->ai_error = null;
         $contentItem->save();
 
-        GenerateAiImageForContentItem::dispatch($contentItem->id);
+        if (app()->environment('local')) {
+            GenerateAiImageForContentItem::dispatchSync($contentItem->id);
+        } else {
+            GenerateAiImageForContentItem::dispatch($contentItem->id);
+        }
 
-        return back()->with('status', 'Rigenerazione IMMAGINE messa in coda.');
+        return back()->with('status', app()->environment('local')
+            ? 'Rigenerazione IMMAGINE completata (sync locale).'
+            : 'Rigenerazione IMMAGINE messa in coda.');
     }
 }

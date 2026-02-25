@@ -1,101 +1,67 @@
-<x-guest-layout>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {{-- Left --}}
-        <div class="pt-2">
-            <div class="inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1 text-xs text-gray-600">
-                <span class="h-2 w-2 rounded-full bg-green-500"></span>
-                Social AI · Workspace
-            </div>
+﻿<x-guest-layout>
+    <div class="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden">
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(0,231,255,0.18),transparent_35%),radial-gradient(circle_at_80%_5%,rgba(106,92,255,0.18),transparent_32%),radial-gradient(circle_at_85%_80%,rgba(182,76,255,0.2),transparent_38%)]"></div>
+        <div class="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(11,15,26,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(11,15,26,0.08)_1px,transparent_1px)] [background-size:44px_44px]"></div>
 
-            <h1 class="mt-6 text-3xl sm:text-4xl font-bold tracking-tight">
-                Gestisci contenuti e piani
-                <span class="text-gray-500">in modo semplice.</span>
-            </h1>
+        <section class="relative w-full max-w-3xl">
+            <div class="rounded-[2.25rem] border border-white/60 bg-white/75 p-8 shadow-[0_28px_90px_-40px_rgba(11,15,26,0.7)] backdrop-blur-xl sm:p-12">
+                <p class="text-center text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                    Futuristic Content Studio
+                </p>
+                <h1 class="mt-4 text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                    Crea. Automatizza. Pubblica.
+                </h1>
 
-            <p class="mt-3 text-gray-600 max-w-xl">
-                Accedi al workspace per creare piani, post e gestire la coda AI.
-            </p>
+                <div class="mt-8 flex justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 220" role="img" aria-label="Social Ai logo" class="h-20 w-auto sm:h-24">
+                        <defs>
+                            <linearGradient id="homeTech" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0" stop-color="#00E7FF"/>
+                                <stop offset="0.55" stop-color="#6A5CFF"/>
+                                <stop offset="1" stop-color="#B64CFF"/>
+                            </linearGradient>
+                            <filter id="homeSoftGlow" x="-40%" y="-40%" width="180%" height="180%">
+                                <feGaussianBlur stdDeviation="2.6" result="b"/>
+                                <feColorMatrix in="b" type="matrix"
+                                    values="1 0 0 0 0
+                                            0 1 0 0 0
+                                            0 0 1 0 0
+                                            0 0 0 .28 0" result="g"/>
+                                <feMerge>
+                                    <feMergeNode in="g"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
 
-            <div class="mt-6 flex flex-col sm:flex-row gap-3">
-                @if (Route::has('login'))
-                    <a href="{{ route('login') }}"
-                       class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800">
-                        Accedi
-                    </a>
-                @endif
-
-                @if (Route::has('register'))
-                    <a href="{{ route('register') }}"
-                       class="inline-flex items-center justify-center rounded-xl border bg-white px-5 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50">
-                        Crea account
-                    </a>
-                @endif
-            </div>
-
-            <div class="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl">
-                <div class="rounded-2xl border bg-white p-4">
-                    <div class="text-xs text-gray-500">Piani</div>
-                    <div class="mt-1 text-sm font-semibold">Wizard rapido</div>
-                </div>
-                <div class="rounded-2xl border bg-white p-4">
-                    <div class="text-xs text-gray-500">Post</div>
-                    <div class="mt-1 text-sm font-semibold">CRUD & preview</div>
-                </div>
-                <div class="rounded-2xl border bg-white p-4">
-                    <div class="text-xs text-gray-500">AI</div>
-                    <div class="mt-1 text-sm font-semibold">Queue ready</div>
-                </div>
-            </div>
-        </div>
-
-        {{-- Right: app preview --}}
-        <div class="rounded-3xl border bg-white shadow-sm overflow-hidden">
-            <div class="border-b bg-gray-50 px-5 py-4 flex items-center justify-between">
-                <div class="text-sm font-semibold">Preview</div>
-                <div class="text-xs text-gray-500">Dashboard</div>
-            </div>
-
-            <div class="p-5 space-y-4">
-                <div class="rounded-2xl border bg-white p-4">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <div class="text-xs text-gray-500">Ultimo piano</div>
-                            <div class="mt-1 font-semibold">Prossima settimana</div>
-                        </div>
-                        <span class="text-xs rounded-full border bg-gray-50 px-2 py-1 text-gray-600">draft</span>
-                    </div>
+                        <text x="490" y="140"
+                            text-anchor="middle"
+                            font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Inter, Roboto, Arial"
+                            font-size="112"
+                            font-weight="760"
+                            letter-spacing="-2.4">
+                            <tspan fill="#0B0F1A">Social </tspan>
+                            <tspan fill="url(#homeTech)" filter="url(#homeSoftGlow)" font-weight="920">Ai</tspan>
+                        </text>
+                    </svg>
                 </div>
 
-                <div class="rounded-2xl border bg-white p-4">
-                    <div class="text-xs text-gray-500">Coda AI</div>
-                    <div class="mt-2 h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-                        <div class="h-full w-2/3 bg-gray-900"></div>
-                    </div>
-                    <div class="mt-2 text-xs text-gray-500">In lavorazione</div>
-                </div>
+                <div class="mt-10 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                    @if (Route::has('login'))
+                        <a href="{{ route('login') }}"
+                           class="inline-flex min-w-44 items-center justify-center rounded-2xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sa-ring)]">
+                            Accedi
+                        </a>
+                    @endif
 
-                <div class="rounded-2xl border bg-white p-4">
-                    <div class="text-xs text-gray-500">Ultimi post</div>
-                    <div class="mt-3 space-y-2">
-                        <div class="flex items-center justify-between rounded-xl border bg-gray-50 px-3 py-2">
-                            <div class="text-sm font-medium">Instagram · Post</div>
-                            <span class="text-xs text-gray-500">queued</span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-xl border bg-gray-50 px-3 py-2">
-                            <div class="text-sm font-medium">LinkedIn · Post</div>
-                            <span class="text-xs text-gray-500">draft</span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-xl border bg-gray-50 px-3 py-2">
-                            <div class="text-sm font-medium">TikTok · Reel</div>
-                            <span class="text-xs text-gray-500">done</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="text-xs text-gray-500">
-                    Stile app: pulito, leggibile, senza effetti.
+                    @if (Route::has('register'))
+                        <a href="{{ route('register') }}"
+                           class="inline-flex min-w-44 items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sa-ring)]">
+                            Registrati
+                        </a>
+                    @endif
                 </div>
             </div>
-        </div>
+        </section>
     </div>
 </x-guest-layout>

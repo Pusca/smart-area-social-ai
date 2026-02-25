@@ -3,11 +3,8 @@
         <div class="rounded-3xl border bg-white shadow-sm overflow-hidden">
             <div class="border-b bg-gray-50 px-6 py-5">
                 <div class="flex items-center gap-3">
-                    <div class="h-10 w-10 rounded-2xl bg-gray-900 text-white grid place-items-center font-bold tracking-tight">
-                        SA
-                    </div>
                     <div>
-                        <div class="text-sm font-semibold">{{ config('app.name', 'Social AI') }}</div>
+                        <x-application-logo class="h-8 w-auto" />
                         <div class="text-xs text-gray-500">Accedi al workspace</div>
                     </div>
                 </div>

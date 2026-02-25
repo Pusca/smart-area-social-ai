@@ -12,7 +12,7 @@
 <div class="max-w-6xl mx-auto p-6">
     <div class="flex items-start justify-between gap-4 mb-6">
         <div>
-            <h1 class="text-2xl font-bold">Posts</h1>
+            <h1 class="text-2xl font-bold">Contenuti</h1>
             <p class="text-gray-600 mt-1">Gestisci i contenuti. Puoi anche eliminare quelli di test per non fare confusione.</p>
         </div>
 
@@ -60,6 +60,23 @@
                             </div>
                             <div class="mt-1 font-semibold text-lg">
                                 {{ $item->title ?? ('Post #' . ($item->id ?? '')) }}
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                                @if(!empty($item->rubric))
+                                    <span class="px-2 py-1 rounded-full bg-sky-100 text-sky-700">
+                                        Rubrica: {{ $item->rubric }}
+                                    </span>
+                                @endif
+                                @if(!empty($item->series_key))
+                                    <span class="px-2 py-1 rounded-full bg-violet-100 text-violet-700">
+                                        Serie {{ $item->episode_number ? 'Ep. '.$item->episode_number : '' }}
+                                    </span>
+                                @endif
+                                @if(!empty($item->pillar))
+                                    <span class="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                                        {{ $item->pillar }}
+                                    </span>
+                                @endif
                             </div>
                         </div>
 

@@ -6,8 +6,7 @@
                 <!-- Logo -->
                 <div class="shrink-0 flex items-center">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                        <x-application-logo class="block h-9 w-auto fill-current text-gray-800" />
-                        <span class="hidden sm:inline text-sm font-semibold text-gray-900"> Social AI</span>
+                        <x-application-logo class="block h-8 w-auto" />
                     </a>
                 </div>
 
@@ -117,7 +116,7 @@
             </x-responsive-nav-link>
         </div>
            <x-nav-link :href="route('content-items.index')" :active="request()->routeIs('content-items.*')">
-                 Content Items
+                 Galleria contenuti
         </x-nav-link>
 
 

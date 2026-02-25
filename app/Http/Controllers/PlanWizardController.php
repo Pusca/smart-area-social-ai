@@ -7,18 +7,23 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\Editorial\ContentGenerator;
+use App\Services\Editorial\ContentHistoryAnalyzer;
+use App\Services\Editorial\EditorialPlanBuilder;
+use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
-use App\Services\StrategyBrainService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Artisan;
 
 class PlanWizardController extends Controller
 {
     public function __construct(
-        private readonly StrategyBrainService $brain,
-        private readonly MemoryBuilderService $memoryBuilder
+        private readonly MemoryBuilderService $memoryBuilder,
+        private readonly EditorialStrategyService $editorialStrategyService,
+        private readonly ContentHistoryAnalyzer $historyAnalyzer,
+        private readonly EditorialPlanBuilder $editorialPlanBuilder,
+        private readonly ContentGenerator $contentGenerator
     ) {
     }
 
@@ -111,6 +116,77 @@ class PlanWizardController extends Controller
         ]);
     }
 
+    public function progress(Request $request, ?ContentPlan $contentPlan = null)
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+
+        $plan = $contentPlan;
+        if ($plan) {
+            if ((int) $plan->tenant_id !== $tenantId) {
+                abort(403);
+            }
+        } else {
+            $plan = ContentPlan::query()
+                ->where('tenant_id', $tenantId)
+                ->latest('id')
+                ->first();
+        }
+
+        if (!$plan) {
+            return response()->json([
+                'has_plan' => false,
+                'active' => false,
+                'counts' => [
+                    'total' => 0,
+                    'queued' => 0,
+                    'pending' => 0,
+                    'done' => 0,
+                    'error' => 0,
+                ],
+            ]);
+        }
+
+        $counts = [
+            'total' => ContentItem::query()->where('content_plan_id', $plan->id)->count(),
+            'queued' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'queued')->count(),
+            'pending' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'pending')->count(),
+            'done' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'done')->count(),
+            'error' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'error')->count(),
+        ];
+
+        // In ambiente locale drena 1 job per poll, così non resta bloccato in queued se manca worker persistente.
+        if (app()->environment('local') && (($counts['queued'] + $counts['pending']) > 0)) {
+            try {
+                Artisan::call('queue:work', [
+                    'connection' => 'database',
+                    '--queue' => 'default',
+                    '--once' => true,
+                    '--tries' => 1,
+                    '--timeout' => 180,
+                ]);
+            } catch (\Throwable) {
+                // best effort
+            }
+
+            $counts = [
+                'total' => ContentItem::query()->where('content_plan_id', $plan->id)->count(),
+                'queued' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'queued')->count(),
+                'pending' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'pending')->count(),
+                'done' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'done')->count(),
+                'error' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'error')->count(),
+            ];
+        }
+
+        return response()->json([
+            'has_plan' => true,
+            'plan_id' => (int) $plan->id,
+            'active' => (($counts['queued'] + $counts['pending']) > 0),
+            'completed' => ($counts['total'] > 0 && ($counts['queued'] + $counts['pending']) === 0),
+            'counts' => $counts,
+            'completed_at' => now()->toDateTimeString(),
+        ]);
+    }
+
     public function generate(Request $request)
     {
         $user = $request->user();
@@ -130,6 +206,8 @@ class PlanWizardController extends Controller
         $postsTotal = max(1, (int) ($step1['posts_per_week'] ?? 5));
         $platforms = array_values($step1['platforms'] ?? ['instagram']);
         $formats = array_values($step1['formats'] ?? ['post']);
+        $refreshFutureOnly = $request->boolean('refresh_future_only');
+        $overrideFuture = $request->boolean('override_future');
 
         $assets = BrandAsset::query()
             ->where('tenant_id', $user->tenant_id)
@@ -149,15 +227,6 @@ class PlanWizardController extends Controller
 
         $memory = $this->memoryBuilder->buildForTenant((int) $user->tenant_id, 40);
 
-        $preferences = [
-            'goal' => $step1['goal'],
-            'tone' => $step1['tone'],
-            'posts_total' => $postsTotal,
-            'platforms' => $platforms,
-            'formats' => $formats,
-            'date_range' => [$start->toDateString(), $end->toDateString()],
-        ];
-
         $profileData = [
             'business_name' => $profile->business_name,
             'industry' => $profile->industry,
@@ -173,87 +242,169 @@ class PlanWizardController extends Controller
             'brand_palette' => $profile->brand_palette,
         ];
 
-        $strategy = $this->brain->buildStrategy([
-            'profile' => $profileData,
-            'assets' => $assets,
-            'memory' => $memory,
-            'preferences' => $preferences,
-        ]);
+        $strategyModel = $this->editorialStrategyService->refreshForTenant((int) $user->tenant_id, $profile);
+        $strategy = [
+            'brand_voice' => $strategyModel->brand_voice ?? [],
+            'pillars' => $strategyModel->pillars ?? [],
+            'rubrics' => $strategyModel->rubrics ?? [],
+            'cta_rules' => $strategyModel->cta_rules ?? [],
+            'constraints' => $strategyModel->constraints ?? [],
+            'brand_references' => $this->buildBrandReferences($profileData, $assets),
+        ];
 
-        $blueprints = $this->brain->buildItemBlueprints($strategy, $preferences, $start, $end, $postsTotal);
+        $history = $this->historyAnalyzer->snapshot(
+            (int) $user->tenant_id,
+            (int) config('editorial.history_limit', 120)
+        );
+
+        $period = [
+            'start' => $start->toDateString(),
+            'end' => $end->toDateString(),
+            'total_posts' => $postsTotal,
+        ];
+
+        $itemsToGenerate = [];
+        $newPlan = null;
 
         try {
-            DB::beginTransaction();
+            if ($refreshFutureOnly) {
+                $planId = $request->session()->get('plan.plan_id');
+                $plan = ContentPlan::query()
+                    ->where('tenant_id', $user->tenant_id)
+                    ->when($planId, fn ($q) => $q->where('id', $planId))
+                    ->latest('id')
+                    ->first();
 
-            $plan = ContentPlan::create([
-                'tenant_id' => $user->tenant_id,
-                'created_by' => $user->id,
-                'name' => $step1['name'],
-                'start_date' => $start->toDateString(),
-                'end_date' => $end->toDateString(),
-                'status' => 'draft',
-                'settings' => [
-                    'goal' => $step1['goal'],
-                    'tone' => $step1['tone'],
-                    'posts_total' => $postsTotal,
-                    'platforms' => $platforms,
-                    'formats' => $formats,
-                    'tenant_profile' => $profileData,
-                    'assets' => $assets,
-                    'memory' => $memory,
-                    'strategy' => $strategy,
-                ],
-                'strategy' => $strategy,
-            ]);
+                if (!$plan) {
+                    $newPlan = ContentPlan::create([
+                        'tenant_id' => $user->tenant_id,
+                        'created_by' => $user->id,
+                        'name' => $step1['name'],
+                        'start_date' => $start->toDateString(),
+                        'end_date' => $end->toDateString(),
+                        'status' => 'draft',
+                        'settings' => [
+                            'goal' => $step1['goal'],
+                            'tone' => $step1['tone'],
+                            'posts_total' => $postsTotal,
+                            'platforms' => $platforms,
+                            'formats' => $formats,
+                            'tenant_profile' => $profileData,
+                            'assets' => $assets,
+                            'memory' => $memory,
+                            'strategy' => $strategy,
+                        ],
+                        'strategy' => $strategy,
+                    ]);
+                    $plan = $newPlan;
+                } else {
+                    if ($overrideFuture) {
+                        ContentItem::query()
+                            ->where('tenant_id', $user->tenant_id)
+                            ->where('content_plan_id', $plan->id)
+                            ->where('scheduled_at', '>=', now())
+                            ->delete();
+                    }
 
-            foreach ($blueprints as $blueprint) {
-                ContentItem::create([
+                    $plan->update([
+                        'name' => $step1['name'],
+                        'start_date' => $start->toDateString(),
+                        'end_date' => $end->toDateString(),
+                        'settings' => array_merge((array) $plan->settings, [
+                            'goal' => $step1['goal'],
+                            'tone' => $step1['tone'],
+                            'posts_total' => $postsTotal,
+                            'platforms' => $platforms,
+                            'formats' => $formats,
+                            'tenant_profile' => $profileData,
+                            'assets' => $assets,
+                            'memory' => $memory,
+                            'strategy' => $strategy,
+                        ]),
+                        'strategy' => $strategy,
+                    ]);
+                }
+
+                $existingFutureCount = ContentItem::query()
+                    ->where('tenant_id', $user->tenant_id)
+                    ->where('content_plan_id', $plan->id)
+                    ->where('scheduled_at', '>=', now())
+                    ->count();
+
+                $missing = max(0, $postsTotal - $existingFutureCount);
+                if ($missing > 0) {
+                    $futureStart = now()->greaterThan($start) ? now()->startOfDay() : $start;
+                    $itemsToGenerate = $this->editorialPlanBuilder->buildPlan(
+                        tenantId: (int) $user->tenant_id,
+                        strategy: $strategy,
+                        history: $history,
+                        period: [
+                            'start' => $futureStart->toDateString(),
+                            'end' => $end->toDateString(),
+                            'total_posts' => $missing,
+                        ],
+                        options: ['platforms' => $platforms, 'formats' => $formats]
+                    );
+                }
+
+                if (!empty($itemsToGenerate)) {
+                    $this->contentGenerator->generateForPlan($plan, $itemsToGenerate, [
+                        'user_id' => (int) $user->id,
+                        'profile_data' => $profileData,
+                        'strategy' => $strategy,
+                        'memory' => $memory,
+                        'assets' => $assets,
+                    ]);
+                }
+            } else {
+                $newPlan = ContentPlan::create([
                     'tenant_id' => $user->tenant_id,
-                    'content_plan_id' => $plan->id,
                     'created_by' => $user->id,
-                    'platform' => $blueprint['platform'],
-                    'format' => $blueprint['format'],
-                    'scheduled_at' => Carbon::parse($blueprint['scheduled_at']),
+                    'name' => $step1['name'],
+                    'start_date' => $start->toDateString(),
+                    'end_date' => $end->toDateString(),
                     'status' => 'draft',
-                    'title' => Str::limit(
-                        $blueprint['title_hint'] ?: (($profile->business_name ?? 'Brand') . ' - ' . $blueprint['angle']),
-                        110,
-                        ''
-                    ),
-                    'caption' => null,
-                    'hashtags' => [],
-                    'assets' => [],
-                    'ai_meta' => [
+                    'settings' => [
+                        'goal' => $step1['goal'],
+                        'tone' => $step1['tone'],
+                        'posts_total' => $postsTotal,
+                        'platforms' => $platforms,
+                        'formats' => $formats,
                         'tenant_profile' => $profileData,
-                        'brand_assets' => $assets,
-                        'plan' => $preferences,
-                        'memory_summary' => $memory,
-                        'strategy' => [
-                            'pillars' => $strategy['pillars'] ?? [],
-                            'messaging_map' => $strategy['messaging_map'] ?? [],
-                            'hashtag_strategy' => $strategy['hashtag_strategy'] ?? [],
-                            'brand_references' => $strategy['brand_references'] ?? [],
-                        ],
-                        'item_brain' => [
-                            'pillar' => $blueprint['pillar'],
-                            'angle' => $blueprint['angle'],
-                            'objective' => $blueprint['objective'],
-                            'key_points' => $blueprint['key_points'],
-                            'cta' => $blueprint['cta'],
-                            'image_direction' => $blueprint['image_direction'],
-                            'avoid_list' => $blueprint['avoid_list'],
-                            'campaign' => $blueprint['campaign'],
-                            'campaign_step' => $blueprint['campaign_step'],
-                        ],
+                        'assets' => $assets,
+                        'memory' => $memory,
+                        'strategy' => $strategy,
                     ],
-                    'ai_status' => 'queued',
+                    'strategy' => $strategy,
+                ]);
+
+                $itemsToGenerate = $this->editorialPlanBuilder->buildPlan(
+                    tenantId: (int) $user->tenant_id,
+                    strategy: $strategy,
+                    history: $history,
+                    period: $period,
+                    options: ['platforms' => $platforms, 'formats' => $formats]
+                );
+
+                $this->contentGenerator->generateForPlan($newPlan, $itemsToGenerate, [
+                    'user_id' => (int) $user->id,
+                    'profile_data' => $profileData,
+                    'strategy' => $strategy,
+                    'memory' => $memory,
+                    'assets' => $assets,
                 ]);
             }
-
-            DB::commit();
         } catch (\Throwable $e) {
-            DB::rollBack();
             return redirect()->route('wizard.done')->with('status', 'Errore creazione piano: ' . $e->getMessage());
+        }
+
+        $plan = $newPlan ?: ContentPlan::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->latest('id')
+            ->first();
+
+        if (!$plan) {
+            return redirect()->route('wizard.done')->with('status', 'Nessun piano disponibile dopo la generazione.');
         }
 
         $request->session()->put('plan.plan_id', $plan->id);
@@ -262,6 +413,7 @@ class PlanWizardController extends Controller
             $itemIds = ContentItem::query()
                 ->where('tenant_id', $user->tenant_id)
                 ->where('content_plan_id', $plan->id)
+                ->where('ai_status', 'queued')
                 ->pluck('id')
                 ->all();
 
@@ -273,6 +425,28 @@ class PlanWizardController extends Controller
         }
 
         return redirect()->route('wizard.done')
-            ->with('status', "Piano creato (ID: {$plan->id}) con strategia unica e {$postsTotal} item.");
+            ->with('status', "Piano aggiornato (ID: {$plan->id}) con logica editoriale avanzata e anti-duplicati.");
+    }
+
+    private function buildBrandReferences(array $profileData, array $assets): array
+    {
+        $logo = null;
+        $images = [];
+
+        foreach ($assets as $asset) {
+            if (($asset['kind'] ?? null) === 'logo' && $logo === null) {
+                $logo = $asset['path'] ?? null;
+            }
+            if (($asset['kind'] ?? null) === 'image' && !empty($asset['path'])) {
+                $images[] = (string) $asset['path'];
+            }
+        }
+
+        return [
+            'business_name' => $profileData['business_name'] ?? null,
+            'palette' => $profileData['brand_palette'] ?? null,
+            'logo_path' => $logo,
+            'reference_images' => array_values(array_unique($images)),
+        ];
     }
 }

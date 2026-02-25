@@ -15,7 +15,7 @@ class StrategyBrainService
         $preferences = $input['preferences'] ?? [];
 
         $tone = (string) ($preferences['tone'] ?? 'professionale');
-        $goal = (string) ($preferences['goal'] ?? 'Awareness e Lead');
+        $goal = (string) ($preferences['goal'] ?? 'Notorieta e Lead');
         $postsTotal = max(1, (int) ($preferences['posts_total'] ?? 5));
 
         $pillars = $this->buildPillars($profile, $memory);
@@ -73,35 +73,73 @@ class StrategyBrainService
 
         $dates = $this->spreadDates($start, $end, $totalPosts);
         $campaignSteps = $this->flattenCampaignSteps($campaigns);
+        $usedAngles = [];
 
         $out = [];
         for ($i = 0; $i < $totalPosts; $i++) {
             $pillar = $pillars[$i % max(1, count($pillars))] ?? [
                 'name' => 'Valore',
-                'objective' => 'Awareness',
+                'objective' => 'Notorieta',
                 'topics' => ['Benefici concreti'],
             ];
             $campaignStep = $campaignSteps[$i % max(1, count($campaignSteps))] ?? null;
             $topic = $pillar['topics'][$i % max(1, count($pillar['topics'] ?? []))] ?? $pillar['name'];
+            $hook = $campaignStep['hook'] ?? ['Insight', 'Checklist', 'Case', 'Errore comune'][$i % 4];
+            $platform = $platforms[$i % max(1, count($platforms))] ?? 'instagram';
+            $format = $formats[$i % max(1, count($formats))] ?? 'post';
+
+            $angleBase = $campaignStep['angle'] ?? "Focus su {$topic}";
+            $angleCandidates = [
+                $angleBase,
+                "{$hook}: {$topic} per {$platform}",
+                "{$topic} - approccio pratico in formato {$format}",
+                "{$pillar['name']}: {$topic} con esempio concreto",
+            ];
+
+            $angle = null;
+            foreach ($angleCandidates as $candidate) {
+                $sig = Str::lower(trim((string) $candidate));
+                if (!in_array($sig, $usedAngles, true)) {
+                    $angle = $candidate;
+                    $usedAngles[] = $sig;
+                    break;
+                }
+            }
+            if (!$angle) {
+                $angle = "{$angleBase} - variante " . ($i + 1);
+                $usedAngles[] = Str::lower($angle);
+            }
+
+            $seriesName = $campaignStep['campaign'] ?? ("Percorso " . $pillar['name']);
+            $seriesStep = (int) ($campaignStep['step'] ?? (($i % 3) + 1));
 
             $out[] = [
                 'pillar' => $pillar['name'],
-                'angle' => $campaignStep['angle'] ?? "Focus su {$topic}",
+                'angle' => $angle,
+                'hook' => $hook,
                 'objective' => $campaignStep['objective'] ?? $pillar['objective'],
                 'key_points' => [
-                    "Problema reale: {$topic}",
-                    'Approccio pratico per il target',
-                    'Prossimo passo semplice e misurabile',
+                    "Contesto completo: perché {$topic} conta per il target.",
+                    "Soluzione concreta: metodo pratico legato a {$pillar['name']}.",
+                    "Azione immediata: un passo misurabile da fare oggi.",
                 ],
                 'cta' => $campaignStep['cta'] ?? 'Scrivici per ricevere una proposta personalizzata.',
-                'image_direction' => $campaignStep['visual'] ?? "Visual coerente con il pillar {$pillar['name']}",
+                'image_direction' => ($campaignStep['visual'] ?? "Visual coerente con il pillar {$pillar['name']}")
+                    . '. Prevedi area pulita per inserimento logo brand.',
                 'avoid_list' => $avoidList,
-                'campaign' => $campaignStep['campaign'] ?? null,
-                'campaign_step' => $campaignStep['step'] ?? null,
-                'platform' => $platforms[$i % max(1, count($platforms))] ?? 'instagram',
-                'format' => $formats[$i % max(1, count($formats))] ?? 'post',
+                'campaign' => $campaignStep['campaign'] ?? $seriesName,
+                'campaign_step' => $campaignStep['step'] ?? $seriesStep,
+                'series_name' => $seriesName,
+                'series_step' => $seriesStep,
+                'standalone_rule' => 'Il post deve essere autosufficiente: contesto, valore e CTA completi anche se letto da solo.',
+                'connection_hint' => $i === 0
+                    ? "Apre la serie {$seriesName}."
+                    : "Collega il tema al post precedente della serie, senza dipendere da esso.",
+                'uniqueness_key' => Str::slug($pillar['name'] . '-' . $topic . '-' . $platform . '-' . $format . '-' . ($i + 1)),
+                'platform' => $platform,
+                'format' => $format,
                 'scheduled_at' => $dates[$i]->toDateTimeString(),
-                'title_hint' => Str::limit($topic . ' - ' . ($campaignStep['hook'] ?? 'contenuto strategico'), 110, ''),
+                'title_hint' => Str::limit($topic . ' - ' . $hook, 110, ''),
             ];
         }
 
@@ -114,7 +152,7 @@ class StrategyBrainService
         $industry = (string) ($profile['industry'] ?? 'settore');
         $base = array_values(array_unique(array_filter(array_merge(
             array_slice($services, 0, 4),
-            ["Education {$industry}", "Proof {$industry}", "Offerte {$industry}"]
+            ["Educazione {$industry}", "Prova sociale {$industry}", "Offerte {$industry}"]
         ))));
 
         if (count($base) < 3) {
@@ -129,7 +167,7 @@ class StrategyBrainService
             $name = Str::title((string) ($base[$i] ?? "Pillar {$i}"));
             $pillars[] = [
                 'name' => $name,
-                'objective' => $i % 3 === 0 ? 'Awareness' : ($i % 3 === 1 ? 'Trust' : 'Lead'),
+                'objective' => $i % 3 === 0 ? 'Notorieta' : ($i % 3 === 1 ? 'Fiducia' : 'Lead'),
                 'topics' => array_values(array_filter([
                     $name,
                     $memoryThemes[$i] ?? null,
@@ -178,23 +216,23 @@ class StrategyBrainService
                 'steps' => [
                     [
                         'step' => 1,
-                        'hook' => 'Pain point',
+                        'hook' => 'Problema',
                         'angle' => "Problema ricorrente su {$pillar['name']}",
-                        'objective' => 'Awareness',
+                        'objective' => 'Notorieta',
                         'cta' => 'Commenta con la tua situazione attuale.',
-                        'visual' => 'Before scenario, contesto reale',
+                        'visual' => 'Scenario iniziale, contesto reale',
                     ],
                     [
                         'step' => 2,
-                        'hook' => 'Method',
+                        'hook' => 'Metodo',
                         'angle' => "Metodo pratico: {$pillar['name']}",
-                        'objective' => 'Trust',
+                        'objective' => 'Fiducia',
                         'cta' => 'Salva il post per usarlo come checklist.',
                         'visual' => 'Processo step-by-step, elementi brand',
                     ],
                     [
                         'step' => 3,
-                        'hook' => 'Offer',
+                        'hook' => 'Offerta',
                         'angle' => "Proposta concreta legata a {$goal}",
                         'objective' => 'Lead',
                         'cta' => 'Scrivici in DM per una consulenza.',

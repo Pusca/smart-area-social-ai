@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BrandAsset;
 use App\Models\TenantProfile;
+use App\Services\Editorial\EditorialStrategyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,11 @@ use Illuminate\Support\Facades\Storage;
 
 class TenantProfileController extends Controller
 {
+    public function __construct(
+        private readonly EditorialStrategyService $editorialStrategyService
+    ) {
+    }
+
     public function show(Request $request)
     {
         $user = $request->user();
@@ -119,6 +125,8 @@ class TenantProfileController extends Controller
                     ]);
                 }
             }
+
+            $this->editorialStrategyService->refreshForTenant((int) $user->tenant_id, $profile);
 
             DB::commit();
             return redirect()->route('profile.brand')->with('status', 'Profilo attività salvato ✅');
