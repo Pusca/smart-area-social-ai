@@ -5,12 +5,11 @@
 ])
 
 @php
-    $height = (int) $size;
-    $width = (int) round($height * 4.45);
+    $size = (int) $size;
 @endphp
 
 @if($showWordmark)
-    <x-application-logo class="{{ $class }}" style="height: {{ $height }}px; width: {{ $width }}px;" />
+    <x-application-logo class="{{ $class }}" style="font-size: {{ max(16, (int) floor($size * 0.42)) }}px;" />
 @else
-    <x-application-logo class="{{ $class }}" style="height: {{ $height }}px; width: {{ $width }}px;" />
+    <x-application-logo variant="icon" class="{{ $class }}" style="height: {{ $size }}px; width: {{ $size }}px;" />
 @endif

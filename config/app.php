@@ -40,6 +40,8 @@ return [
     */
 
     'debug' => (bool) env('APP_DEBUG', false),
+    'demo_mode' => (bool) env('SOCIAL_DEMO_MODE', false),
+    'fixed_hostup_posts' => (bool) env('SOCIAL_FIXED_HOSTUP_POSTS', false),
 
     /*
     |--------------------------------------------------------------------------

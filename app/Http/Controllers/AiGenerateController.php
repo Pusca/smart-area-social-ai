@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateAiForContentItem;
-use App\Jobs\GenerateAiImageForContentItem;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 
@@ -48,13 +47,13 @@ class AiGenerateController extends Controller
         $contentItem->save();
 
         if (app()->environment('local')) {
-            GenerateAiImageForContentItem::dispatchSync($contentItem->id);
+            GenerateAiForContentItem::dispatchSync($contentItem->id);
         } else {
-            GenerateAiImageForContentItem::dispatch($contentItem->id);
+            GenerateAiForContentItem::dispatch($contentItem->id);
         }
 
         return back()->with('status', app()->environment('local')
-            ? 'Rigenerazione IMMAGINE completata (sync locale).'
-            : 'Rigenerazione IMMAGINE messa in coda.');
+            ? 'Rigenerazione visual completata (sync locale).'
+            : 'Rigenerazione visual messa in coda.');
     }
 }

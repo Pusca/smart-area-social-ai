@@ -1,40 +1,29 @@
 <x-app-layout>
-    <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            Notifiche
-        </h2>
-    </x-slot>
-
-    <div class="py-6">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
-
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <p class="text-gray-700">
-                    Questo sarà il centro notifiche interno. Più avanti lo colleghiamo alle Push (PWA).
-                </p>
-            </div>
-
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-900">Attività recente (mock)</h3>
-
-                <div class="mt-4 space-y-3">
-                    <div class="rounded-lg border p-4">
-                        <p class="font-semibold text-gray-900">Post pronto per approvazione</p>
-                        <p class="text-sm text-gray-600 mt-1">“Reel Automazioni & AI” • 2 min fa</p>
-                    </div>
-
-                    <div class="rounded-lg border p-4">
-                        <p class="font-semibold text-gray-900">Pubblicazione completata</p>
-                        <p class="text-sm text-gray-600 mt-1">“Story Case Study” • ieri</p>
-                    </div>
-
-                    <div class="rounded-lg border p-4">
-                        <p class="font-semibold text-gray-900">Connessione social da rinnovare</p>
-                        <p class="text-sm text-gray-600 mt-1">Instagram token scaduto • 3 giorni fa</p>
-                    </div>
-                </div>
-            </div>
-
+    <section class="ui-shell ui-page space-y-5">
+        <div class="ui-card p-6">
+            <div class="ui-kicker">Notification Center</div>
+            <h1 class="mt-2 ui-title-xl">Notifiche</h1>
+            <p class="mt-2 ui-subtitle">Centro eventi operativo collegato ai flussi AI e alla pubblicazione contenuti.</p>
         </div>
-    </div>
+
+        <div class="ui-card p-6">
+            <h2 class="text-lg font-semibold text-text">Attivita recente</h2>
+            <div class="mt-4 space-y-3">
+                <article class="ui-card-soft p-4">
+                    <p class="font-semibold text-text">Post pronto per approvazione</p>
+                    <p class="mt-1 text-sm text-muted">Reel "Automazioni e AI" - 2 min fa</p>
+                </article>
+
+                <article class="ui-card-soft p-4">
+                    <p class="font-semibold text-text">Pubblicazione completata</p>
+                    <p class="mt-1 text-sm text-muted">Story "Case Study locale" - ieri</p>
+                </article>
+
+                <article class="ui-card-soft p-4">
+                    <p class="font-semibold text-text">Connessione social da rinnovare</p>
+                    <p class="mt-1 text-sm text-muted">Token Instagram in scadenza - 3 giorni fa</p>
+                </article>
+            </div>
+        </div>
+    </section>
 </x-app-layout>

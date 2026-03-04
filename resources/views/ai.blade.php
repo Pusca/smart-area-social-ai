@@ -1,130 +1,111 @@
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                AI Lab (Test Generazione Contenuti)
-            </h2>
-            <span class="text-xs text-gray-500">OpenAI → Laravel</span>
+            <h2 class="ui-title-lg">AI Lab</h2>
+            <span class="ui-pill badge-info">Assistente contenuti</span>
         </div>
     </x-slot>
 
-    <div class="py-6">
-        <div class="max-w-5xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white shadow-sm sm:rounded-lg">
-                <div class="p-5 sm:p-6">
-                    <div class="grid gap-6 lg:grid-cols-2">
-                        <!-- FORM -->
-                        <div class="rounded-xl border p-4">
-                            <h3 class="text-base font-semibold text-gray-900">Genera un post</h3>
-                            <p class="text-sm text-gray-500 mt-1">Compila e genera: hook, caption, hashtag, CTA.</p>
+    <section class="ui-shell ui-page space-y-5">
+        <div class="ui-hero p-6">
+            <div class="ui-kicker">Bozza rapida</div>
+            <h1 class="mt-2 ui-title-xl">A cosa serve questa pagina?</h1>
+            <p class="mt-2 ui-subtitle">E un laboratorio: inserisci argomento e obiettivo per ottenere una prima bozza (hook, caption, hashtag e CTA) prima di salvarla nei tuoi post.</p>
+        </div>
 
-                            <form id="aiForm" class="mt-4 space-y-4">
-                                @csrf
+        <div class="ui-card p-5 sm:p-6">
+            <div class="grid gap-6 lg:grid-cols-2">
+                <div class="ui-card-soft border-l-4 p-4" style="border-left-color: var(--primary);">
+                    <h3 class="text-base font-semibold text-text">Input</h3>
+                    <p class="mt-1 text-sm text-muted">Definisci argomento, tono e obiettivo.</p>
 
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700">Argomento</label>
-                                    <input name="topic" type="text" required
-                                           class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                                           placeholder="Es: Automazioni AI per PMI a Venezia (Smartera)">
-                                </div>
+                    <form id="aiForm" class="mt-4 space-y-4">
+                        @csrf
 
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">Piattaforma</label>
-                                        <select name="platform" class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-                                            <option value="instagram">Instagram</option>
-                                            <option value="facebook">Facebook</option>
-                                            <option value="tiktok">TikTok</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">Tono</label>
-                                        <select name="tone" class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-                                            <option value="professionale">Professionale</option>
-                                            <option value="amichevole">Amichevole</option>
-                                            <option value="ironico">Ironico</option>
-                                            <option value="tecnico">Tecnico</option>
-                                            <option value="commerciale">Commerciale</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">Obiettivo</label>
-                                        <select name="goal" class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-                                            <option value="lead">Lead</option>
-                                            <option value="brand">Brand</option>
-                                            <option value="engagement">Engagement</option>
-                                            <option value="vendita">Vendita</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700">Lingua</label>
-                                        <select name="lang" class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-                                            <option value="it">Italiano</option>
-                                            <option value="en">English</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <button id="btnGen" type="submit"
-                                        class="inline-flex items-center justify-center w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
-                                    Genera con AI
-                                </button>
-
-                                <p id="status" class="text-sm text-gray-500"></p>
-                            </form>
+                        <div>
+                            <label class="ui-label">Argomento</label>
+                            <input name="topic" type="text" required class="ui-input" placeholder="Es: Automazioni AI per PMI locali">
                         </div>
 
-                        <!-- OUTPUT -->
-                        <div class="rounded-xl border p-4">
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-base font-semibold text-gray-900">Output</h3>
-                                <button id="copyAll" type="button"
-                                        class="text-xs rounded-md border px-2 py-1 hover:bg-gray-50">
-                                    Copia tutto
-                                </button>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="ui-label">Piattaforma</label>
+                                <select name="platform" class="ui-input">
+                                    <option value="instagram">Instagram</option>
+                                    <option value="facebook">Facebook</option>
+                                    <option value="tiktok">TikTok</option>
+                                </select>
                             </div>
-
-                            <div id="outWrap" class="mt-4 space-y-3 hidden">
-                                <div class="rounded-lg bg-gray-50 p-3">
-                                    <div class="text-xs text-gray-500">Hook</div>
-                                    <div id="outHook" class="mt-1 font-medium text-gray-900"></div>
-                                </div>
-
-                                <div class="rounded-lg bg-gray-50 p-3">
-                                    <div class="text-xs text-gray-500">Caption</div>
-                                    <div id="outCaption" class="mt-1 whitespace-pre-wrap text-gray-900"></div>
-                                </div>
-
-                                <div class="rounded-lg bg-gray-50 p-3">
-                                    <div class="text-xs text-gray-500">Hashtag</div>
-                                    <div id="outTags" class="mt-1 text-gray-900"></div>
-                                </div>
-
-                                <div class="rounded-lg bg-gray-50 p-3">
-                                    <div class="text-xs text-gray-500">CTA</div>
-                                    <div id="outCta" class="mt-1 text-gray-900"></div>
-                                </div>
-
-                                <div class="rounded-lg bg-gray-50 p-3">
-                                    <div class="text-xs text-gray-500">Notes</div>
-                                    <div id="outNotes" class="mt-1 text-gray-900"></div>
-                                </div>
+                            <div>
+                                <label class="ui-label">Tono</label>
+                                <select name="tone" class="ui-input">
+                                    <option value="professionale">Professionale</option>
+                                    <option value="amichevole">Amichevole</option>
+                                    <option value="ironico">Ironico</option>
+                                    <option value="tecnico">Tecnico</option>
+                                    <option value="commerciale">Commerciale</option>
+                                </select>
                             </div>
+                        </div>
 
-                            <pre id="raw" class="mt-4 text-xs bg-black text-white rounded-lg p-3 overflow-auto hidden"></pre>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="ui-label">Obiettivo</label>
+                                <select name="goal" class="ui-input">
+                                    <option value="lead">Lead</option>
+                                    <option value="brand">Brand</option>
+                                    <option value="engagement">Engagement</option>
+                                    <option value="vendita">Vendita</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="ui-label">Lingua</label>
+                                <select name="lang" class="ui-input">
+                                    <option value="it">Italiano</option>
+                                    <option value="en">English</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button id="btnGen" type="submit" class="ui-btn-primary w-full">Genera bozza</button>
+                        <p id="status" class="text-sm text-muted"></p>
+                    </form>
+                </div>
+
+                <div class="ui-card-soft border-l-4 p-4" style="border-left-color: var(--accent);">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-base font-semibold text-text">Output</h3>
+                        <button id="copyAll" type="button" class="ui-btn-secondary !px-2.5 !py-1.5 !text-xs">Copia tutto</button>
+                    </div>
+
+                    <div id="outWrap" class="mt-4 hidden space-y-3">
+                        <div class="rounded-lg border border-app bg-surface p-3">
+                            <div class="text-xs text-muted">Hook</div>
+                            <div id="outHook" class="mt-1 font-medium text-text"></div>
+                        </div>
+                        <div class="rounded-lg border border-app bg-surface p-3">
+                            <div class="text-xs text-muted">Caption</div>
+                            <div id="outCaption" class="mt-1 whitespace-pre-wrap text-text"></div>
+                        </div>
+                        <div class="rounded-lg border border-app bg-surface p-3">
+                            <div class="text-xs text-muted">Hashtag</div>
+                            <div id="outTags" class="mt-1 text-text"></div>
+                        </div>
+                        <div class="rounded-lg border border-app bg-surface p-3">
+                            <div class="text-xs text-muted">CTA</div>
+                            <div id="outCta" class="mt-1 text-text"></div>
+                        </div>
+                        <div class="rounded-lg border border-app bg-surface p-3">
+                            <div class="text-xs text-muted">Notes</div>
+                            <div id="outNotes" class="mt-1 text-text"></div>
                         </div>
                     </div>
 
-                    <div class="mt-6 text-xs text-gray-500">
-                        Nota: Structured Outputs richiede modelli compatibili (es. gpt-4o-mini e successivi). :contentReference[oaicite:6]{index=6}
-                    </div>
+                    <pre id="raw" class="mt-4 hidden overflow-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100"></pre>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
     <script>
         const form = document.getElementById('aiForm');
@@ -142,21 +123,28 @@
 
         const copyAll = document.getElementById('copyAll');
 
-        function setStatus(msg, isError = false) {
+        function setStatus(msg, state = 'normal') {
+            const classes = {
+                normal: 'text-sm text-muted',
+                success: 'text-sm text-success',
+                warning: 'text-sm text-warning',
+                error: 'text-sm text-danger',
+            };
+
             statusEl.textContent = msg;
-            statusEl.className = 'text-sm ' + (isError ? 'text-red-600' : 'text-gray-500');
+            statusEl.className = classes[state] || classes.normal;
         }
 
         function buildAllText(d) {
             return [
                 `HOOK: ${d.hook}`,
-                ``,
+                '',
                 `CAPTION:\n${d.caption}`,
-                ``,
+                '',
                 `HASHTAGS:\n${(d.hashtags || []).join(' ')}`,
-                ``,
+                '',
                 `CTA: ${d.cta}`,
-                ``,
+                '',
                 `NOTES: ${d.notes}`,
             ].join('\n');
         }
@@ -168,39 +156,44 @@
                 caption: outCaption.textContent,
                 hashtags: outTags.textContent.split(' ').filter(Boolean),
                 cta: outCta.textContent,
-                notes: outNotes.textContent
+                notes: outNotes.textContent,
             });
+
             await navigator.clipboard.writeText(text);
-            setStatus('Copiato ✅');
+            setStatus('Copiato negli appunti.', 'success');
         });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             btn.disabled = true;
-            setStatus('Generazione in corso…');
+            setStatus('Generazione in corso...');
             outWrap.classList.add('hidden');
             raw.classList.add('hidden');
+            raw.textContent = '';
 
             const fd = new FormData(form);
 
             try {
-                const res = await fetch("{{ url('/ai/generate') }}", {
+                const res = await fetch("{{ route('ai.generate') }}", {
                     method: 'POST',
                     headers: {
-                        'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value,
                     },
-                    body: fd
+                    body: fd,
                 });
 
-                const json = await res.json();
+                const contentType = res.headers.get('content-type') || '';
+                const json = contentType.includes('application/json')
+                    ? await res.json()
+                    : { ok: false, error: `Risposta non valida (${res.status})` };
 
                 if (!res.ok || !json.ok) {
-                    throw new Error(json?.error || 'Errore sconosciuto');
+                    throw new Error(json?.error || `Errore ${res.status}`);
                 }
 
-                const d = json.data;
-
+                const d = json.data || {};
                 outHook.textContent = d.hook || '';
                 outCaption.textContent = d.caption || '';
                 outTags.textContent = (d.hashtags || []).join(' ');
@@ -208,11 +201,15 @@
                 outNotes.textContent = d.notes || '';
 
                 outWrap.classList.remove('hidden');
-                setStatus('Fatto ✅');
+                if (json.fallback) {
+                    setStatus('OpenAI non raggiungibile: generata una bozza fallback.', 'warning');
+                } else {
+                    setStatus('Bozza generata.', 'success');
+                }
             } catch (err) {
                 raw.textContent = String(err?.message || err);
                 raw.classList.remove('hidden');
-                setStatus('Errore: controlla raw/log ✅', true);
+                setStatus('Errore durante la generazione.', 'error');
             } finally {
                 btn.disabled = false;
             }

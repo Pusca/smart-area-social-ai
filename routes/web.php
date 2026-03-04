@@ -10,10 +10,16 @@ use App\Http\Controllers\PlanWizardController;
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AiGenerateController;
 use App\Http\Controllers\TenantProfileController;
+use App\Http\Controllers\Admin\AdminDashboardController;
 
 Route::get('/', function () {
     return view('welcome');
 })->name('home');
+
+Route::middleware(['auth', 'platformAdmin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
+    Route::put('/users/{user}/tenant', [AdminDashboardController::class, 'updateUserTenant'])->name('users.tenant.update');
+});
 
 Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
 
@@ -22,11 +28,11 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
 
     // Profilo attività (wizard unico tenant)
-    Route::get('/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
-    Route::post('/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
-    Route::delete('/brand/assets', [TenantProfileController::class, 'destroyAssets'])
+    Route::get('/profile/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
+    Route::post('/profile/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
+    Route::delete('/profile/brand/assets', [TenantProfileController::class, 'destroyAssets'])
         ->name('profile.brand.assets.destroy');
-    Route::delete('/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
+    Route::delete('/profile/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
         ->name('profile.brand.asset.destroy');
 
     // Piano editoriale (separato)

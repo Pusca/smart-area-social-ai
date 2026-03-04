@@ -1,0 +1,7 @@
+﻿<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 640 128' fill='none'>
+  <g transform='translate(0,0)'><rect x='18' y='18' width='92' height='92' rx='20' fill='none' stroke='#334155' stroke-width='3'/>
+<path d='M42 82c-10-5-16-14-16-23 0-12 11-22 25-22 8 0 15 3 20 8M83 82V46h17' stroke='#334155' stroke-width='3' fill='none' stroke-linecap='round'/>
+<path d='M84 60h16' stroke='#0EA5E9' stroke-width='3.2' stroke-linecap='round'/></g>
+  <text x='144' y='78' font-family='Inter,Segoe UI,Arial,sans-serif' font-size='64' font-weight='700' fill='#334155'>Social</text>
+  <text x='364' y='78' font-family='Inter,Segoe UI,Arial,sans-serif' font-size='64' font-weight='800' fill='#0EA5E9'>AI</text>
+</svg>

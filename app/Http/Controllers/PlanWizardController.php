@@ -15,6 +15,7 @@ use App\Services\MemoryBuilderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Storage;
 
 class PlanWizardController extends Controller
 {
@@ -199,6 +200,36 @@ class PlanWizardController extends Controller
         $step1 = $request->session()->get('plan.step1', []);
         if (empty($step1)) {
             return redirect()->route('wizard.start')->with('status', 'Completa prima i dati del piano.');
+        }
+
+        if ($this->useFixedHostupPosts()) {
+            try {
+                $plan = ContentPlan::create([
+                    'tenant_id' => $user->tenant_id,
+                    'created_by' => $user->id,
+                    'name' => $step1['name'],
+                    'start_date' => Carbon::parse($step1['start_date'])->toDateString(),
+                    'end_date' => Carbon::parse($step1['end_date'])->toDateString(),
+                    'status' => 'draft',
+                    'settings' => [
+                        'goal' => $step1['goal'] ?? null,
+                        'tone' => $step1['tone'] ?? null,
+                        'posts_total' => 6,
+                        'platforms' => ['instagram', 'facebook'],
+                        'formats' => ['post', 'reel'],
+                        'mode' => 'fixed_hostup_posts',
+                    ],
+                    'strategy' => [],
+                ]);
+
+                $created = $this->createFixedHostupPosts($plan, (int) $user->tenant_id, (int) $user->id);
+                $request->session()->put('plan.plan_id', $plan->id);
+
+                return redirect()->route('wizard.done')
+                    ->with('status', "Piano demo creato (ID: {$plan->id}) con {$created} contenuti fissi da contenuti-per-i-post.");
+            } catch (\Throwable $e) {
+                return redirect()->route('wizard.done')->with('status', 'Errore creazione piano fisso: ' . $e->getMessage());
+            }
         }
 
         $start = Carbon::parse($step1['start_date'])->startOfDay();
@@ -418,7 +449,11 @@ class PlanWizardController extends Controller
                 ->all();
 
             foreach ($itemIds as $itemId) {
-                GenerateAiForContentItem::dispatch((int) $itemId);
+                if (app()->environment('local')) {
+                    GenerateAiForContentItem::dispatchSync((int) $itemId);
+                } else {
+                    GenerateAiForContentItem::dispatch((int) $itemId);
+                }
             }
         } catch (\Throwable) {
             // best effort
@@ -447,6 +482,210 @@ class PlanWizardController extends Controller
             'palette' => $profileData['brand_palette'] ?? null,
             'logo_path' => $logo,
             'reference_images' => array_values(array_unique($images)),
+        ];
+    }
+
+    private function useFixedHostupPosts(): bool
+    {
+        return (bool) config('app.fixed_hostup_posts', false);
+    }
+
+    private function createFixedHostupPosts(ContentPlan $plan, int $tenantId, int $userId): int
+    {
+        $media = $this->importFixedMediaFromFolder($tenantId);
+        $images = $media['images'];
+        $video = $media['video'];
+
+        if (count($images) < 5) {
+            throw new \RuntimeException('Servono 5 immagini nella cartella contenuti-per-i-post.');
+        }
+        if (!$video) {
+            throw new \RuntimeException('Serve 1 video nella cartella contenuti-per-i-post.');
+        }
+
+        ContentItem::query()->where('content_plan_id', $plan->id)->delete();
+
+        $base = Carbon::parse($plan->start_date ?: now())->startOfDay()->setTime(10, 0, 0);
+        $themes = [
+            [
+                'format' => 'post',
+                'title' => 'Gestione affitti brevi piu semplice',
+                'caption' => 'Gestire affitti brevi in modo efficace non significa fare tutto a mano, ma avere un flusso operativo chiaro. Quando prenotazioni, disponibilita e attivita quotidiane sono organizzate, riduci errori, migliori la qualita del servizio e lavori con maggiore continuita anche nei periodi di alta richiesta.',
+                'cta' => 'Vuoi vedere un flusso operativo piu semplice? Scrivici per una demo.',
+                'hashtags' => ['#Hostup', '#AffittiBrevi', '#GestioneImmobili', '#PropertyManagement', '#Hospitality', '#ShortTermRental', '#Workflow', '#Produttivita'],
+                'image' => $images[0],
+                'assets' => [['type' => 'brand_image', 'path' => $images[0]]],
+            ],
+            [
+                'format' => 'post',
+                'title' => 'Integrazione tra applicazioni',
+                'caption' => 'L integrazione tra applicazioni e la base di una gestione moderna: meno copia e incolla, meno passaggi manuali, meno errori. Quando i sistemi dialogano tra loro, il team risparmia tempo e puo concentrarsi su analisi, ottimizzazione e crescita.',
+                'cta' => 'Ti mostriamo come integrare i tool in modo concreto.',
+                'hashtags' => ['#Hostup', '#Integrazione', '#Automazione', '#Workflow', '#DigitalOperations', '#TechForHospitality', '#Efficienza', '#SistemiIntegrati'],
+                'image' => $images[1],
+                'assets' => [['type' => 'brand_image', 'path' => $images[1]]],
+            ],
+            [
+                'format' => 'post',
+                'title' => 'Prezzi dinamici con piu controllo',
+                'caption' => 'Aggiornare i prezzi in modo dinamico permette di adattarsi alla domanda reale e difendere i margini. Con regole chiare e dati aggiornati, puoi migliorare occupazione e redditivita senza rincorrere continue modifiche manuali.',
+                'cta' => 'Parliamo della tua strategia prezzi attuale.',
+                'hashtags' => ['#Hostup', '#Pricing', '#RevenueManagement', '#AffittiBrevi', '#Crescita', '#Occupazione', '#ADR', '#RevPAR'],
+                'image' => $images[2],
+                'assets' => [['type' => 'brand_image', 'path' => $images[2]]],
+            ],
+            [
+                'format' => 'post',
+                'title' => 'KPI chiari per decisioni migliori',
+                'caption' => 'I KPI non servono solo a fare report: servono a prendere decisioni migliori. Monitorando gli indicatori giusti puoi capire subito cosa sta funzionando, dove intervenire e come migliorare performance operative e risultati economici.',
+                'cta' => 'Ti indichiamo i KPI prioritari per partire.',
+                'hashtags' => ['#Hostup', '#KPI', '#DataDriven', '#Performance', '#ShortTermRental', '#Analytics', '#BusinessIntelligence', '#DecisionMaking'],
+                'image' => $images[3],
+                'assets' => [['type' => 'brand_image', 'path' => $images[3]]],
+            ],
+            [
+                'format' => 'post',
+                'title' => 'Risparmia tempo con HostUp',
+                'caption' => 'Con HostUp automatizzi le attivita piu ripetitive della gestione affitti brevi e recuperi tempo prezioso per concentrarti sulle priorita strategiche. Dalla sincronizzazione dei calendari al monitoraggio delle prenotazioni, il flusso operativo diventa piu veloce, pulito e affidabile.',
+                'cta' => 'Vuoi capire dove puoi risparmiare piu tempo nel tuo flusso attuale? Scrivici.',
+                'hashtags' => ['#HostUp', '#RisparmioTempo', '#AffittiBrevi', '#PropertyManagement', '#Automazione', '#SmartWorking', '#HospitalityTech', '#Workflow'],
+                'image' => $images[4],
+                'assets' => [['type' => 'brand_image', 'path' => $images[4]]],
+            ],
+            [
+                'format' => 'reel',
+                'title' => 'Risparmia tempo ogni settimana',
+                'caption' => 'Risparmiare tempo non significa fare meno, significa togliere attrito operativo. Automatizzare attivita ripetitive permette al team di concentrarsi sulle decisioni che portano valore: servizio, strategia e crescita.',
+                'cta' => 'Contattaci e individuiamo insieme le attivita da automatizzare.',
+                'hashtags' => ['#Hostup', '#RisparmioTempo', '#ReelItalia', '#Automazione', '#Productivity', '#TimeSaving', '#TeamEfficiency', '#SmartWork'],
+                'image' => null,
+                'assets' => [
+                    ['type' => 'brand_video', 'path' => $video],
+                ],
+            ],
+        ];
+
+        $index = 0;
+
+        foreach ($themes as $theme) {
+            $meta = [
+                'demo_locked' => true,
+                'source' => 'contenuti-per-i-post',
+            ];
+
+            if ($theme['format'] === 'reel') {
+                $meta['video_reference'] = ['path' => $video, 'kind' => 'brand_video'];
+            }
+
+            $formattedCaption = trim($theme['caption']) . "\n\n" . implode(' ', $theme['hashtags']);
+
+            ContentItem::query()->create([
+                'tenant_id' => $tenantId,
+                'content_plan_id' => $plan->id,
+                'created_by' => $userId,
+                'platform' => 'instagram,facebook',
+                'format' => $theme['format'],
+                'scheduled_at' => $base->copy()->addDays($index),
+                'status' => 'draft',
+                'title' => $theme['title'],
+                'caption' => null,
+                'hashtags' => [],
+                'assets' => $theme['assets'],
+                'ai_status' => 'done',
+                'ai_caption' => $formattedCaption,
+                'ai_hashtags' => $theme['hashtags'],
+                'ai_cta' => $theme['cta'],
+                'ai_image_prompt' => 'Preset fisso Hostup',
+                'ai_image_path' => $theme['image'],
+                'ai_error' => null,
+                'ai_generated_at' => now(),
+                'ai_meta' => $meta,
+            ]);
+
+            $index++;
+        }
+
+        return $index;
+    }
+
+    private function importFixedMediaFromFolder(int $tenantId): array
+    {
+        $sourceDir = base_path('contenuti-per-i-post');
+        if (!is_dir($sourceDir)) {
+            throw new \RuntimeException('Cartella contenuti-per-i-post non trovata.');
+        }
+
+        $files = collect(glob($sourceDir . DIRECTORY_SEPARATOR . '*'))
+            ->filter(fn ($path) => is_file($path))
+            ->values();
+
+        $imageFiles = $files
+            ->filter(function ($path) {
+                $ext = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+                return in_array($ext, ['png', 'jpg', 'jpeg', 'webp', 'gif'], true);
+            })
+            ->sortBy(fn ($path) => filemtime($path) ?: 0)
+            ->values();
+
+        $videoFiles = $files
+            ->filter(function ($path) {
+                $ext = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+                return in_array($ext, ['mp4', 'mov', 'avi', 'webm', 'm4v'], true);
+            })
+            ->sort()
+            ->values();
+
+        if ($imageFiles->count() < 5 || $videoFiles->count() < 1) {
+            throw new \RuntimeException('La cartella deve contenere 5 immagini e 1 video.');
+        }
+
+        BrandAsset::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('content_plan_id')
+            ->whereIn('kind', ['image', 'video'])
+            ->delete();
+
+        $public = Storage::disk('public');
+        $baseDir = 'brand-assets/' . $tenantId . '/imported';
+
+        $images = [];
+        for ($i = 0; $i < 5; $i++) {
+            $abs = (string) $imageFiles[$i];
+            $name = basename($abs);
+            $path = $baseDir . '/' . $name;
+            $public->put($path, file_get_contents($abs));
+
+            BrandAsset::create([
+                'tenant_id' => $tenantId,
+                'content_plan_id' => null,
+                'kind' => 'image',
+                'path' => $path,
+                'original_name' => $name,
+                'size' => filesize($abs) ?: null,
+                'mime' => mime_content_type($abs) ?: null,
+            ]);
+
+            $images[] = $path;
+        }
+
+        $videoAbs = (string) $videoFiles->last();
+        $videoName = basename($videoAbs);
+        $videoPath = $baseDir . '/' . $videoName;
+        $public->put($videoPath, file_get_contents($videoAbs));
+
+        BrandAsset::create([
+            'tenant_id' => $tenantId,
+            'content_plan_id' => null,
+            'kind' => 'video',
+            'path' => $videoPath,
+            'original_name' => $videoName,
+            'size' => filesize($videoAbs) ?: null,
+            'mime' => mime_content_type($videoAbs) ?: null,
+        ]);
+
+        return [
+            'images' => $images,
+            'video' => $videoPath,
         ];
     }
 }

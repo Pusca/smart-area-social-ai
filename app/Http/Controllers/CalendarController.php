@@ -10,17 +10,23 @@ class CalendarController extends Controller
 {
     public function index(Request $request)
     {
-        $user = $request->user();
-        $tenantId = $user->tenant_id;
-
+        $tenantId = $request->user()->tenant_id;
         $tz = config('app.timezone', 'Europe/Rome');
 
-        // Settimana corrente (Lun → Dom) con navigazione ?week=YYYY-MM-DD
-        $weekStart = $request->query('week')
-            ? Carbon::parse($request->query('week'), $tz)->startOfWeek(Carbon::MONDAY)
-            : now($tz)->startOfWeek(Carbon::MONDAY);
-
-        $weekEnd = (clone $weekStart)->endOfWeek(Carbon::SUNDAY);
+        $anchorRaw = trim((string) ($request->query('date') ?: $request->query('week') ?: now($tz)->toDateString()));
+        $anchor = null;
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $anchorRaw) === 1) {
+            try {
+                $anchor = Carbon::createFromFormat('Y-m-d', $anchorRaw, $tz);
+            } catch (\Throwable) {
+                $anchor = null;
+            }
+        }
+        if (!$anchor) {
+            $anchor = now($tz);
+        }
+        $weekStart = $anchor->copy()->startOfWeek(Carbon::MONDAY);
+        $weekEnd = $anchor->copy()->endOfWeek(Carbon::SUNDAY);
 
         $items = ContentItem::query()
             ->where('tenant_id', $tenantId)
@@ -28,7 +34,6 @@ class CalendarController extends Controller
             ->orderBy('scheduled_at')
             ->get();
 
-        // Raggruppo per giorno (Y-m-d)
         $byDay = [];
         for ($d = $weekStart->copy(); $d->lte($weekEnd); $d->addDay()) {
             $key = $d->format('Y-m-d');
@@ -39,21 +44,27 @@ class CalendarController extends Controller
         }
 
         foreach ($items as $it) {
-            if (!$it->scheduled_at) continue;
-            $key = Carbon::parse($it->scheduled_at, $tz)->format('Y-m-d');
-            if (!isset($byDay[$key])) continue;
+            if (!$it->scheduled_at) {
+                continue;
+            }
+            $key = $it->scheduled_at->copy()->timezone($tz)->format('Y-m-d');
+            if (!isset($byDay[$key])) {
+                continue;
+            }
             $byDay[$key]['items']->push($it);
         }
-
-        $prevWeek = $weekStart->copy()->subWeek()->format('Y-m-d');
-        $nextWeek = $weekStart->copy()->addWeek()->format('Y-m-d');
 
         return view('calendar.index', [
             'weekStart' => $weekStart,
             'weekEnd' => $weekEnd,
-            'prevWeek' => $prevWeek,
-            'nextWeek' => $nextWeek,
+            'prevDate' => $weekStart->copy()->subWeek()->toDateString(),
+            'nextDate' => $weekStart->copy()->addWeek()->toDateString(),
             'byDay' => $byDay,
+            'stats' => [
+                'total' => $items->count(),
+                'scheduled' => $items->where('status', 'scheduled')->count(),
+                'published' => $items->where('status', 'published')->count(),
+            ],
         ]);
     }
 }

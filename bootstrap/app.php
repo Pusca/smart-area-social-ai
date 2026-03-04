@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'hasTenant' => \App\Http\Middleware\EnsureUserHasTenant::class,
+            'platformAdmin' => \App\Http\Middleware\EnsureUserIsPlatformAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
