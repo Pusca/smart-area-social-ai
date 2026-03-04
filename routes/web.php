@@ -26,6 +26,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::view('/dashboard', 'dashboard')->name('dashboard');
 
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
+    Route::redirect('/brand', '/profile/brand', 302)->name('brand.legacy');
 
     // Profilo attività (wizard unico tenant)
     Route::get('/profile/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
