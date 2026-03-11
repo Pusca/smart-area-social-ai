@@ -149,3 +149,14 @@ Argomenti da definire insieme nel passo successivo:
 - retry/log/manual publish nel calendario
 - notifiche push browser da costruire sopra la base eventi gia presente
 - dashboard o report dedicato per leggere i pattern di feedback del tenant
+
+## Nota recente: video AI e moderation fallback
+
+- I reel con `persona pack` reale o contesti wellness/beauty possono essere bloccati da OpenAI video per moderation.
+- Il job video ora deve:
+  - fare un retry con prompt piu sobrio e sicuro
+  - declassare nomi propri e linguaggio sensibile tipo `massaggio tecnico` verso formulazioni piu professionali
+  - fare fallback automatico a `Runway` se OpenAI continua a bloccare e la chiave `RUNWAY_API_KEY` e presente
+- File chiave:
+  - `app/Jobs/GenerateAiForContentItem.php`
+  - `tests/Unit/GenerateAiForContentItemTest.php`

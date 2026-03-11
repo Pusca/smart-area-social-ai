@@ -1254,6 +1254,7 @@ SVG;
                     compositionMeta: $compositionMeta,
                     brandDecision: $brandDecision,
                     videoOptions: $videoOptions,
+                    assetVariables: $assetVariables,
                     providerFallback: [
                         'from' => 'runway',
                         'to' => 'openai',
@@ -1281,8 +1282,42 @@ SVG;
                 compositionMeta: $compositionMeta,
                 brandDecision: $brandDecision,
                 videoOptions: $videoOptions,
+                assetVariables: $assetVariables,
                 providerFallback: null
             );
+        } catch (Throwable $openAiError) {
+            if (!$this->shouldFallbackFromOpenAiToRunway($openAiError)) {
+                throw $openAiError;
+            }
+
+            $runwayResult = $this->generateVideoWithRunway(
+                runway: $runway,
+                openAi: $openAi,
+                item: $item,
+                briefRaw: $briefRaw,
+                fallbackPrompt: $prompt,
+                videoPrompt: $this->buildRunwayVideoFallbackPrompt($videoPrompt, $briefRaw, $referencePaths, $assetVariables),
+                referenceAbs: $referenceAbs,
+                referencePath: $referencePath,
+                referencePaths: $referencePaths,
+                referenceReason: $referenceReason . '_runway_fallback_after_openai_failure',
+                generationReferenceAbsPool: $generationReferenceAbsPool,
+                imageReferencePathPool: $imageReferencePathPool,
+                validationReferenceAbsPool: $validationReferenceAbsPool,
+                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                compositionMeta: $compositionMeta,
+                brandDecision: $brandDecision,
+                videoOptions: $videoOptions
+            );
+
+            $runwayResult['provider_fallback'] = [
+                'from' => 'openai',
+                'to' => 'runway',
+                'reason' => Str::limit($openAiError->getMessage(), 220, ''),
+                'at' => now()->toDateTimeString(),
+            ];
+
+            return $runwayResult;
         } finally {
             if (is_string($preparedRefPath) && $preparedRefPath !== '' && is_file($preparedRefPath)) {
                 @unlink($preparedRefPath);
@@ -1936,6 +1971,7 @@ SVG;
      * @param  array<string, mixed>|null  $compositionMeta
      * @param  array<string, mixed>  $brandDecision
      * @param  array<string, mixed>  $videoOptions
+     * @param  array<string, mixed>  $assetVariables
      * @param  array<string, mixed>|null  $providerFallback
      * @return array<string, mixed>
      */
@@ -1955,142 +1991,162 @@ SVG;
         ?array $compositionMeta,
         array $brandDecision,
         array $videoOptions,
+        array $assetVariables,
         ?array $providerFallback = null
     ): array {
-        $maxAttempts = $mustEnforceExplicitReferences ? 2 : 1;
+        $validationAttempts = $mustEnforceExplicitReferences ? 2 : 1;
         $lastValidation = null;
         $lastError = null;
+        $promptVariants = [$videoPrompt];
+        $moderationRetryPrompt = $this->buildOpenAiVideoModerationRetryPrompt(
+            $videoPrompt,
+            $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
+            $referencePaths,
+            $assetVariables
+        );
+        if ($moderationRetryPrompt !== '' && $moderationRetryPrompt !== $videoPrompt) {
+            $promptVariants[] = $moderationRetryPrompt;
+        }
 
-        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-            $attemptPrompt = $videoPrompt;
-            if ($attempt > 0) {
-                $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
-                $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
-            }
+        foreach ($promptVariants as $promptIndex => $basePrompt) {
+            for ($attempt = 0; $attempt < $validationAttempts; $attempt++) {
+                $attemptPrompt = $basePrompt;
+                if ($attempt > 0) {
+                    $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
+                    $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
+                }
 
-            $attemptReferenceAbs = $referenceAbs;
-            $attemptReferencePath = $referencePath;
-            $attemptReferencePaths = $referencePaths;
-            $attemptReferenceReason = $referenceReason;
-            $attemptTempPreparedPath = null;
+                $attemptReferenceAbs = $referenceAbs;
+                $attemptReferencePath = $referencePath;
+                $attemptReferencePaths = $referencePaths;
+                $attemptReferenceReason = $referenceReason;
+                $attemptTempPreparedPath = null;
 
-            try {
-                $job = null;
                 try {
-                    $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
-                } catch (Throwable $videoCreateError) {
-                    $msg = strtolower($videoCreateError->getMessage());
-                    $needsNoRefRetry = str_contains($msg, 'inpaint image must match')
-                        || str_contains($msg, 'inpaint')
-                        || str_contains($msg, 'input_reference');
-
-                    if (!$needsNoRefRetry) {
-                        throw $videoCreateError;
-                    }
-
-                    if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
-                        $fallbackAbs = $generationReferenceAbsPool[0];
-                        $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $videoOptions['size']);
-                        if ($fallbackPrepared) {
-                            $attemptTempPreparedPath = $fallbackPrepared;
-                            $attemptReferenceAbs = $fallbackPrepared;
-                            $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error_normalized';
-                        } else {
-                            $attemptReferenceAbs = $fallbackAbs;
-                            $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error';
-                        }
-
-                        $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
-                        $attemptReferencePaths = array_values(array_filter(
-                            [$attemptReferencePath],
-                            fn ($v) => is_string($v) && $v !== ''
-                        ));
+                    $job = null;
+                    try {
                         $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
-                    } else {
-                        $attemptReferenceAbs = null;
-                        $attemptReferencePath = null;
-                        $attemptReferencePaths = [];
-                        $attemptReferenceReason = 'retry_without_reference_after_inpaint_error';
-                        $job = $openAi->createVideoJob($attemptPrompt, null, $videoOptions);
-                    }
-                }
+                    } catch (Throwable $videoCreateError) {
+                        $msg = strtolower($videoCreateError->getMessage());
+                        $needsNoRefRetry = str_contains($msg, 'inpaint image must match')
+                            || str_contains($msg, 'inpaint')
+                            || str_contains($msg, 'input_reference');
 
-                $videoId = (string) ($job['id'] ?? '');
-                $jobFinal = $openAi->waitForVideoCompletion($videoId);
-                $videoBytes = $openAi->downloadVideoContent($videoId);
-                $thumbBytes = null;
-                try {
-                    $thumbBytes = $openAi->downloadVideoThumbnail($videoId);
-                } catch (Throwable) {
+                        if (!$needsNoRefRetry) {
+                            throw $videoCreateError;
+                        }
+
+                        if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
+                            $fallbackAbs = $generationReferenceAbsPool[0];
+                            $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $videoOptions['size']);
+                            if ($fallbackPrepared) {
+                                $attemptTempPreparedPath = $fallbackPrepared;
+                                $attemptReferenceAbs = $fallbackPrepared;
+                                $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error_normalized';
+                            } else {
+                                $attemptReferenceAbs = $fallbackAbs;
+                                $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error';
+                            }
+
+                            $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
+                            $attemptReferencePaths = array_values(array_filter(
+                                [$attemptReferencePath],
+                                fn ($v) => is_string($v) && $v !== ''
+                            ));
+                            $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
+                        } else {
+                            $attemptReferenceAbs = null;
+                            $attemptReferencePath = null;
+                            $attemptReferencePaths = [];
+                            $attemptReferenceReason = 'retry_without_reference_after_inpaint_error';
+                            $job = $openAi->createVideoJob($attemptPrompt, null, $videoOptions);
+                        }
+                    }
+
+                    $videoId = (string) ($job['id'] ?? '');
+                    $jobFinal = $openAi->waitForVideoCompletion($videoId);
+                    $videoBytes = $openAi->downloadVideoContent($videoId);
                     $thumbBytes = null;
-                }
-
-                $validation = null;
-                if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
-                    $tmpDir = storage_path('app/tmp');
-                    if (!is_dir($tmpDir)) {
-                        @mkdir($tmpDir, 0775, true);
-                    }
-                    $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
-                    @file_put_contents($tmpThumbPath, $thumbBytes);
-                    if (is_file($tmpThumbPath)) {
-                        $validation = $openAi->validateVideoFrameWithReferences(
-                            brief: $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
-                            frameAbsolutePath: $tmpThumbPath,
-                            referenceAbsolutePaths: !empty($validationReferenceAbsPool)
-                                ? $validationReferenceAbsPool
-                                : array_slice($generationReferenceAbsPool, 0, 4)
-                        );
-                        @unlink($tmpThumbPath);
+                    try {
+                        $thumbBytes = $openAi->downloadVideoThumbnail($videoId);
+                    } catch (Throwable) {
+                        $thumbBytes = null;
                     }
 
-                    if (is_array($validation)) {
-                        $lastValidation = $validation;
-                        $allPresent = (bool) ($validation['all_present'] ?? false);
-                        if (!$allPresent && ($attempt + 1) < $maxAttempts) {
-                            continue;
+                    $validation = null;
+                    if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
+                        $tmpDir = storage_path('app/tmp');
+                        if (!is_dir($tmpDir)) {
+                            @mkdir($tmpDir, 0775, true);
                         }
-                        if (!$allPresent) {
-                            $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
+                        $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
+                        @file_put_contents($tmpThumbPath, $thumbBytes);
+                        if (is_file($tmpThumbPath)) {
+                            $validation = $openAi->validateVideoFrameWithReferences(
+                                brief: $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
+                                frameAbsolutePath: $tmpThumbPath,
+                                referenceAbsolutePaths: !empty($validationReferenceAbsPool)
+                                    ? $validationReferenceAbsPool
+                                    : array_slice($generationReferenceAbsPool, 0, 4)
+                            );
+                            @unlink($tmpThumbPath);
+                        }
+
+                        if (is_array($validation)) {
+                            $lastValidation = $validation;
+                            $allPresent = (bool) ($validation['all_present'] ?? false);
+                            if (!$allPresent && ($attempt + 1) < $validationAttempts) {
+                                continue;
+                            }
+                            if (!$allPresent) {
+                                $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
+                            }
                         }
                     }
-                }
 
-                $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
-                $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
-                Storage::disk('public')->put($videoPath, $videoBytes);
+                    $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
+                    $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
+                    Storage::disk('public')->put($videoPath, $videoBytes);
 
-                $thumbPath = null;
-                if (is_string($thumbBytes) && $thumbBytes !== '') {
-                    $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
-                    $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
-                    Storage::disk('public')->put($thumbPath, $thumbBytes);
-                }
+                    $thumbPath = null;
+                    if (is_string($thumbBytes) && $thumbBytes !== '') {
+                        $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
+                        $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
+                        Storage::disk('public')->put($thumbPath, $thumbBytes);
+                    }
 
-                return [
-                    'source' => 'sora_video_generation',
-                    'provider' => 'openai',
-                    'video_id' => $videoId,
-                    'video_path' => $videoPath,
-                    'thumbnail_path' => $thumbPath,
-                    'reference_path' => $attemptReferencePath,
-                    'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
-                    'reference_reason' => $attemptReferenceReason,
-                    'reference_validation' => $validation ?? $lastValidation,
-                    'composition_reference' => $compositionMeta,
-                    'generation_attempts' => $attempt + 1,
-                    'job_status' => (string) ($jobFinal['status'] ?? 'completed'),
-                    'brand_selection' => $brandDecision,
-                    'provider_fallback' => $providerFallback,
-                ];
-            } catch (Throwable $attemptError) {
-                $lastError = $attemptError;
-                if (($attempt + 1) >= $maxAttempts) {
-                    throw $attemptError;
-                }
-            } finally {
-                if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
-                    @unlink($attemptTempPreparedPath);
+                    return [
+                        'source' => 'sora_video_generation',
+                        'provider' => 'openai',
+                        'video_id' => $videoId,
+                        'video_path' => $videoPath,
+                        'thumbnail_path' => $thumbPath,
+                        'reference_path' => $attemptReferencePath,
+                        'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
+                        'reference_reason' => $attemptReferenceReason,
+                        'reference_validation' => $validation ?? $lastValidation,
+                        'composition_reference' => $compositionMeta,
+                        'generation_attempts' => $attempt + 1 + ($promptIndex * $validationAttempts),
+                        'job_status' => (string) ($jobFinal['status'] ?? 'completed'),
+                        'brand_selection' => $brandDecision,
+                        'provider_fallback' => $providerFallback,
+                    ];
+                } catch (Throwable $attemptError) {
+                    $lastError = $attemptError;
+                    if ($this->isOpenAiVideoModerationBlock($attemptError)) {
+                        if (($promptIndex + 1) < count($promptVariants)) {
+                            break;
+                        }
+                        throw $attemptError;
+                    }
+
+                    if (($attempt + 1) >= $validationAttempts) {
+                        throw $attemptError;
+                    }
+                } finally {
+                    if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
+                        @unlink($attemptTempPreparedPath);
+                    }
                 }
             }
         }
@@ -2143,6 +2199,192 @@ SVG;
         }
 
         return $prompt;
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function buildOpenAiVideoModerationRetryPrompt(
+        string $videoPrompt,
+        string $briefRaw,
+        array $referencePaths,
+        array $assetVariables
+    ): string {
+        $safePrompt = $this->buildSafeCommercialVideoPrompt($videoPrompt, $briefRaw, $referencePaths, $assetVariables);
+        if ($safePrompt === '') {
+            return '';
+        }
+
+        return $safePrompt . ' Retry di sicurezza: mantieni il contenuto pulito, professionale e rispettoso.';
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function buildRunwayVideoFallbackPrompt(
+        string $videoPrompt,
+        string $briefRaw,
+        array $referencePaths,
+        array $assetVariables
+    ): string {
+        $safePrompt = $this->buildSafeCommercialVideoPrompt($videoPrompt, $briefRaw, $referencePaths, $assetVariables);
+        if ($safePrompt === '') {
+            return $videoPrompt;
+        }
+
+        return $safePrompt . ' Output desiderato: reel sociale credibile, fluido e vendibile.';
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function buildSafeCommercialVideoPrompt(
+        string $videoPrompt,
+        string $briefRaw,
+        array $referencePaths,
+        array $assetVariables
+    ): string {
+        $source = $this->sanitizeVideoPromptForSafety($briefRaw !== '' ? $briefRaw : $videoPrompt, $assetVariables);
+        $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+        $referenceCount = count(array_filter($referencePaths, fn ($path) => is_string($path) && $path !== ''));
+
+        $parts = [
+            'Crea un breve video verticale 9:16 realistico, pulito e adatto ai social.',
+            'Una scena chiara per volta, movimenti morbidi, luce naturale e tono professionale.',
+            'Niente nudita, niente sensualita, niente contatto ambiguo, niente focus insistito sul corpo, niente close-up estremi, niente testo o watermark.',
+        ];
+
+        if ($hasPersonVariable) {
+            $parts[] = 'Se compare una persona di riferimento del brand, trattala come soggetto adulto e professionale, con abbigliamento adeguato, postura naturale e gesti rispettosi.';
+        }
+
+        if ($this->needsWellnessSafetyLanguage($source)) {
+            $parts[] = 'Se il contesto e wellness o beauty, rappresentalo come trattamento professionale e rispettoso in un ambiente curato, senza sensualizzare la scena.';
+        }
+
+        if ($referenceCount > 1) {
+            $parts[] = 'Se hai piu riferimenti, usali come scene coerenti e separate, non come collage o fusione impossibile.';
+        }
+
+        if ($source !== '') {
+            $parts[] = 'Sintesi contenuto: ' . Str::limit($source, 240, '');
+        }
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), 760, '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function sanitizeVideoPromptForSafety(string $text, array $assetVariables): string
+    {
+        $sanitized = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        if ($sanitized === '') {
+            return '';
+        }
+
+        foreach ($this->personVariableNames($assetVariables) as $name) {
+            $pattern = '/\b' . preg_quote($name, '/') . '\b/ui';
+            $sanitized = (string) preg_replace($pattern, 'la persona di riferimento del brand', $sanitized);
+        }
+
+        $replacements = [
+            '/\bmassaggi?\s+tecnic[ioae]+\b/ui' => 'trattamento professionale',
+            '/\bmassaggi?\b/ui' => 'trattamento benessere',
+            '/\bmassage\b/ui' => 'wellness treatment',
+            '/\bmassaging\b/ui' => 'performing a wellness treatment',
+            '/\bschiena\b/ui' => 'parte alta del corpo',
+            '/\bspalle\b/ui' => 'parte alta del corpo',
+            '/\bback\b/ui' => 'upper body',
+            '/\bshoulders\b/ui' => 'upper body',
+            '/\btocco\b/ui' => 'gesto professionale',
+            '/\btouch\b/ui' => 'professional technique',
+            '/\bcliente\b/ui' => 'cliente adulto',
+            '/\bclient\b/ui' => 'adult client',
+        ];
+
+        foreach ($replacements as $pattern => $replacement) {
+            $sanitized = (string) preg_replace($pattern, $replacement, $sanitized);
+        }
+
+        $sanitized = trim(preg_replace('/\s+/u', ' ', $sanitized) ?? $sanitized);
+
+        return Str::limit($sanitized, 260, '');
+    }
+
+    private function isOpenAiVideoModerationBlock(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+        if ($message === '') {
+            return false;
+        }
+
+        return str_contains($message, 'blocked by our moderation system')
+            || str_contains($message, 'moderation system')
+            || str_contains($message, 'safety system')
+            || str_contains($message, 'content policy')
+            || str_contains($message, 'policy violation')
+            || str_contains($message, 'disallowed content');
+    }
+
+    private function shouldFallbackFromOpenAiToRunway(Throwable $error): bool
+    {
+        return $this->hasConfiguredRunwayVideoFallback()
+            && $this->isOpenAiVideoModerationBlock($error);
+    }
+
+    private function hasConfiguredRunwayVideoFallback(): bool
+    {
+        return trim((string) (config('runway.api_key') ?: env('RUNWAY_API_KEY') ?: '')) !== '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function hasPersonAssetVariable(array $assetVariables): bool
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+
+        foreach ($resolved as $row) {
+            if (strtolower(trim((string) ($row['kind'] ?? 'custom'))) === 'person') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function needsWellnessSafetyLanguage(string $text): bool
+    {
+        $normalized = Str::lower($this->normalizeText($text));
+
+        foreach (['massagg', 'trattamento', 'wellness', 'spa', 'olist', 'beauty', 'benessere'] as $needle) {
+            if ($needle !== '' && str_contains($normalized, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<int, string>
+     */
+    private function personVariableNames(array $assetVariables): array
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+
+        return collect($resolved)
+            ->filter(fn ($row) => strtolower(trim((string) ($row['kind'] ?? 'custom'))) === 'person')
+            ->map(fn ($row) => trim((string) ($row['name'] ?? '')))
+            ->filter(fn (string $name) => $name !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function targetVideoSecondsForFormat(ContentItem $item): string

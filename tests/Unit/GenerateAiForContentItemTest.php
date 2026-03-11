@@ -85,4 +85,58 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringNotContainsString('4:5', $prompt);
         $this->assertStringContainsString('Sala 1', $prompt);
     }
+
+    public function test_it_detects_openai_video_moderation_blocks(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'isOpenAiVideoModerationBlock');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, new RuntimeException('Video generation failed: Your request was blocked by our moderation system.')));
+        $this->assertTrue($method->invoke($job, new RuntimeException('OpenAI video create error (400) BODY={"error":{"message":"content policy violation"}}')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('Video generation timeout after 420s')));
+    }
+
+    public function test_it_builds_a_moderation_safe_video_prompt_for_guided_person_wellness_content(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildOpenAiVideoModerationRetryPrompt');
+        $method->setAccessible(true);
+
+        $prompt = $method->invoke(
+            $job,
+            'Sequenza video di Giorgia che esegue un massaggio tecnico sulle spalle e schiena del cliente.',
+            'Un video di Giorgia per far capire quanto e brava a fare i massaggi tecnici.',
+            ['brand-assets/11/persona/front.jpg'],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                        'profile' => [
+                            'role' => 'Titolare',
+                        ],
+                    ],
+                ],
+            ]
+        );
+
+        $this->assertStringNotContainsString('Giorgia', $prompt);
+        $this->assertStringNotContainsString('massaggio tecnico', strtolower($prompt));
+        $this->assertStringContainsString('trattamento professionale', strtolower($prompt));
+        $this->assertStringContainsString('persona di riferimento del brand', strtolower($prompt));
+        $this->assertStringContainsString('senza sensualizzare la scena', strtolower($prompt));
+    }
+
+    public function test_it_marks_openai_moderation_failures_as_runway_fallback_candidates_when_runway_is_configured(): void
+    {
+        config()->set('runway.api_key', 'runway-test-key');
+
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldFallbackFromOpenAiToRunway');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, new RuntimeException('Video generation failed: Your request was blocked by our moderation system.')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('Video generation timeout after 420s')));
+    }
 }
