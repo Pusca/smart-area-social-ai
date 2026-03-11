@@ -104,6 +104,8 @@ class OpenAiService
             . "Il prompt immagine deve descrivere un visual da post social: stop-scroll, leggibile anche da miniatura, con gerarchia visiva forte e soggetto principale chiaro.\n"
             . "Se il formato e video, genera anche video_prompt: breve, chiaro, compatibile con generazione video, centrato su scene, movimento, ordine delle inquadrature, transizioni e fedelta dei riferimenti reali.\n"
             . "Se il formato e video, video_prompt NON deve includere istruzioni da immagine statica come 4:5 feed, miniatura, singolo frame hero o composizione da post fermo.\n"
+            . "Se il formato e video e il contesto riguarda wellness, beauty, massaggi, trattamenti corpo o una persona reale del brand, scrivi video_prompt in modo professionale e sobrio: evita linguaggio sensuale, parti del corpo enfatizzate, touch insistito, close-up ambigui o tono intimo.\n"
+            . "Per wellness e beauty descrivi il servizio come trattamento professionale, atmosfera curata, gesto tecnico, accoglienza e relax, senza scivolare in contenuti che possano sembrare adult o sensuali.\n"
             . "Se il formato e video, genera anche voiceover: massimo 2-3 frasi brevi, parlabili, naturali, senza hashtag, senza elenco puntato, senza CTA aggressiva e senza leggere il prompt tecnico.\n"
             . "Mantieni coerenza con il feed del brand, ma evita l effetto foto corporate generica o immagine da catalogo non pensata per i social.\n"
             . "Rispetta repetition_rules: evita ripetizioni di hook, CTA e temi recenti.\n"

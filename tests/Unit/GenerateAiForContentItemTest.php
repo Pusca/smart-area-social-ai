@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Jobs\GenerateAiForContentItem;
+use Illuminate\Support\Facades\Storage;
 use ReflectionMethod;
 use RuntimeException;
 use Tests\TestCase;
@@ -126,6 +127,53 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringContainsString('trattamento professionale', strtolower($prompt));
         $this->assertStringContainsString('persona di riferimento del brand', strtolower($prompt));
         $this->assertStringContainsString('senza sensualizzare la scena', strtolower($prompt));
+    }
+
+    public function test_it_prepares_openai_video_prompt_safely_before_execution_for_wellness_persona_content(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'prepareOpenAiVideoPromptForExecution');
+        $method->setAccessible(true);
+
+        $prompt = $method->invoke(
+            $job,
+            'Sequenza video di Giorgia che esegue un massaggio tecnico sulle spalle e schiena del cliente.',
+            'Un video di Giorgia per far capire quanto e brava a fare i massaggi tecnici.',
+            ['brand-assets/11/persona/front.jpg'],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                        'profile' => [
+                            'role' => 'Titolare',
+                        ],
+                    ],
+                ],
+            ]
+        );
+
+        $this->assertStringNotContainsString('Giorgia', $prompt);
+        $this->assertStringNotContainsString('massaggio tecnico', strtolower($prompt));
+        $this->assertStringContainsString('trattamento professionale', strtolower($prompt));
+    }
+
+    public function test_it_filters_non_image_reference_paths_from_visual_reference_pool(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('brand-assets/11/persona/front.jpg', 'img');
+        Storage::disk('public')->put('brand-assets/11/persona/reference.mp4', 'vid');
+
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'filterReferenceImagePaths');
+        $method->setAccessible(true);
+
+        $paths = $method->invoke($job, [
+            'brand-assets/11/persona/front.jpg',
+            'brand-assets/11/persona/reference.mp4',
+        ]);
+
+        $this->assertSame(['brand-assets/11/persona/front.jpg'], $paths);
     }
 
 }

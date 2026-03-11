@@ -156,7 +156,10 @@ Argomenti da definire insieme nel passo successivo:
 - Il job video ora deve:
   - fare un retry con prompt piu sobrio e sicuro
   - declassare nomi propri e linguaggio sensibile tipo `massaggio tecnico` verso formulazioni piu professionali
-- non cambiare provider automaticamente se l utente ha scelto `OpenAI`: dopo il retry sicuro resta su OpenAI e, se ancora bloccato, fallisce in modo esplicito
+  - applicare questo guard rail gia prima della chiamata a OpenAI nei casi `persona reale + wellness/beauty`
+  - filtrare i riferimenti visuali in modo che nelle image references non entrino file video del persona pack
+  - non cambiare provider automaticamente se l utente ha scelto `OpenAI`: dopo il retry sicuro resta su OpenAI e, se ancora bloccato, fallisce in modo esplicito
 - File chiave:
   - `app/Jobs/GenerateAiForContentItem.php`
+  - `app/Services/OpenAiService.php`
   - `tests/Unit/GenerateAiForContentItemTest.php`

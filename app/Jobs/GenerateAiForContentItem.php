@@ -268,7 +268,7 @@ class GenerateAiForContentItem implements ShouldQueue
             if (is_string($selectedBrandImage) && $selectedBrandImage !== '' && !in_array($selectedBrandImage, $selectedBrandImagePaths, true)) {
                 array_unshift($selectedBrandImagePaths, $selectedBrandImage);
             }
-            $selectedBrandImagePaths = array_values(array_unique($selectedBrandImagePaths));
+            $selectedBrandImagePaths = $this->filterReferenceImagePaths(array_values(array_unique($selectedBrandImagePaths)));
             $selectedBrandImagePaths = $this->stabilizeReferencePathsForFeedback(
                 $selectedBrandImagePaths,
                 $activeFeedbackRequest,
@@ -1202,6 +1202,12 @@ SVG;
             'size' => $this->targetVideoSizeForFormat($item),
         ];
         $videoProvider = $this->resolveVideoProvider($meta);
+        $openAiExecutionPrompt = $this->prepareOpenAiVideoPromptForExecution(
+            $videoPrompt,
+            $briefRaw !== '' ? $briefRaw : $prompt,
+            $referencePaths,
+            $assetVariables
+        );
 
         if (is_string($referenceAbs) && $referenceAbs !== '') {
             $prepared = $this->prepareVideoReferenceForSize($referenceAbs, (string) $videoOptions['size']);
@@ -1242,7 +1248,7 @@ SVG;
                     openAi: $openAi,
                     briefRaw: $briefRaw,
                     fallbackPrompt: $prompt,
-                    videoPrompt: $this->buildOpenAiVideoFallbackPrompt($videoPrompt, $briefRaw, $referencePaths),
+                    videoPrompt: $this->buildOpenAiVideoFallbackPrompt($openAiExecutionPrompt, $briefRaw, $referencePaths),
                     referenceAbs: $referenceAbs,
                     referencePath: $referencePath,
                     referencePaths: $referencePaths,
@@ -1270,7 +1276,7 @@ SVG;
                 openAi: $openAi,
                 briefRaw: $briefRaw,
                 fallbackPrompt: $prompt,
-                videoPrompt: $videoPrompt,
+                videoPrompt: $videoProvider === 'openai' ? $openAiExecutionPrompt : $videoPrompt,
                 referenceAbs: $referenceAbs,
                 referencePath: $referencePath,
                 referencePaths: $referencePaths,
@@ -2190,6 +2196,25 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
+    private function prepareOpenAiVideoPromptForExecution(
+        string $videoPrompt,
+        string $briefRaw,
+        array $referencePaths,
+        array $assetVariables
+    ): string {
+        if (!$this->shouldUseOpenAiVideoModerationGuard($videoPrompt, $briefRaw, $assetVariables)) {
+            return $videoPrompt;
+        }
+
+        $safePrompt = $this->buildSafeCommercialVideoPrompt($videoPrompt, $briefRaw, $referencePaths, $assetVariables);
+
+        return $safePrompt !== '' ? $safePrompt : $videoPrompt;
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<string, mixed>  $assetVariables
+     */
     private function buildSafeCommercialVideoPrompt(
         string $videoPrompt,
         string $briefRaw,
@@ -2282,6 +2307,30 @@ SVG;
     /**
      * @param  array<string, mixed>  $assetVariables
      */
+    private function shouldUseOpenAiVideoModerationGuard(string $videoPrompt, string $briefRaw, array $assetVariables): bool
+    {
+        $source = trim($videoPrompt . ' ' . $briefRaw);
+        if ($source === '') {
+            return false;
+        }
+
+        if ($this->hasPersonAssetVariable($assetVariables) && $this->needsWellnessSafetyLanguage($source)) {
+            return true;
+        }
+
+        $normalized = Str::lower($this->normalizeText($source));
+        foreach (['spalle', 'schiena', 'touch', 'tocco', 'massagg', 'corpo', 'body'] as $needle) {
+            if (str_contains($normalized, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     */
     private function hasPersonAssetVariable(array $assetVariables): bool
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
@@ -2323,6 +2372,29 @@ SVG;
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     * @return array<int, string>
+     */
+    private function filterReferenceImagePaths(array $paths): array
+    {
+        $disk = Storage::disk('public');
+        $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'];
+
+        return array_values(array_filter(
+            array_unique(array_map(fn ($path) => trim((string) $path), $paths)),
+            function (string $path) use ($disk, $allowed): bool {
+                if ($path === '' || !$disk->exists($path)) {
+                    return false;
+                }
+
+                $extension = Str::lower(pathinfo($path, PATHINFO_EXTENSION));
+
+                return in_array($extension, $allowed, true);
+            }
+        ));
     }
 
     private function targetVideoSecondsForFormat(ContentItem $item): string
