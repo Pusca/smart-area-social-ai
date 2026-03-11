@@ -4,7 +4,14 @@ namespace App\Jobs;
 
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
+use App\Services\MemoryBuilderService;
+use App\Support\ImagePromptRealismGuard;
+use App\Services\NanoBananaService;
+use App\Services\Notification\WorkspaceNotificationService;
 use App\Services\OpenAiService;
+use App\Services\RunwayService;
+use App\Support\ImageProviderResolver;
+use App\Support\VideoProviderResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -13,6 +20,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 class GenerateAiForContentItem implements ShouldQueue
@@ -26,9 +34,16 @@ class GenerateAiForContentItem implements ShouldQueue
     {
     }
 
-    public function handle(OpenAiService $openAi): void
+    public function handle(
+        OpenAiService $openAi,
+        RunwayService $runway,
+        NanoBananaService $nanoBanana,
+        MemoryBuilderService $memoryBuilder,
+        WorkspaceNotificationService $workspaceNotifications
+    ): void
     {
         $item = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
+        $strictAssetMode = (bool) config('generation.strict_asset_mode', true);
 
         $item->ai_status = 'pending';
         $item->ai_error = null;
@@ -40,10 +55,29 @@ class GenerateAiForContentItem implements ShouldQueue
         $strategy = data_get($meta, 'strategy', $item->plan?->strategy ?? []);
         $itemBrain = data_get($meta, 'item_brain', []);
         $tenantProfile = data_get($meta, 'tenant_profile', data_get($meta, 'brand', []));
-        $memorySummary = data_get($meta, 'memory_summary', []);
+        $memorySummary = $memoryBuilder->buildForTenant((int) $item->tenant_id, 40);
+        $activeFeedbackRequest = $this->normalizeFeedbackRequest((array) data_get($meta, 'feedback_loop.active_request', []));
+        $assetVariables = $this->resolveAssetVariableContext($meta, $strategy);
+        $meta['memory_summary'] = $memorySummary;
+        $meta['image_provider'] = $this->resolveImageProvider($meta);
+        $meta['asset_variables'] = $assetVariables;
+        $meta['asset_variables_catalog'] = (array) ($assetVariables['catalog'] ?? []);
+        $meta['strategy_snapshot'] = [
+            'strategy_id' => data_get($strategy, 'strategy_id'),
+            'strategy_updated_at' => data_get($strategy, 'strategy_updated_at'),
+            'strategy_locked' => (bool) data_get($strategy, 'strategy_locked', false),
+            'analysis_framework' => (array) data_get($strategy, 'analysis_framework', []),
+            'visual_system' => (array) data_get($strategy, 'visual_system', []),
+            'publishing_system' => (array) data_get($strategy, 'publishing_system', []),
+            'strategy_notes' => (string) data_get($strategy, 'strategy_notes', ''),
+            'captured_at' => now()->toDateTimeString(),
+        ];
+        $item->ai_meta = $meta;
+        $item->save();
 
         if ($this->isDemoMode()) {
             $this->applyDemoPreset($item, $tenantProfile, $itemBrain, $meta);
+            $this->notifyAiSuccess($item, $workspaceNotifications);
             return;
         }
 
@@ -87,8 +121,26 @@ class GenerateAiForContentItem implements ShouldQueue
                 'brand' => $tenantProfile,
                 'plan' => data_get($meta, 'plan', []),
                 'strategy' => $strategy,
+                'strategy_blueprint' => [
+                    'analysis_framework' => (array) data_get($strategy, 'analysis_framework', []),
+                    'visual_system' => (array) data_get($strategy, 'visual_system', []),
+                    'publishing_system' => (array) data_get($strategy, 'publishing_system', []),
+                    'notes' => (string) data_get($strategy, 'strategy_notes', ''),
+                ],
                 'item_brain' => $itemBrain,
                 'memory_summary' => $memorySummary,
+                'feedback_loop' => [
+                    'active_request' => $activeFeedbackRequest,
+                    'latest_feedback' => (array) data_get($meta, 'feedback_loop.latest_feedback', []),
+                    'tenant_feedback' => (array) data_get($memorySummary, 'feedback_summary', []),
+                ],
+                'social_publication_context' => $this->buildSocialPublicationContext(
+                    $item,
+                    $itemBrain,
+                    $planTitles,
+                    $planCaptions
+                ),
+                'asset_variables' => $assetVariables,
                 'repetition_rules' => [
                     'avoid_list' => array_values(array_unique(array_filter(array_merge(
                         (array) data_get($itemBrain, 'avoid_list', []),
@@ -155,10 +207,19 @@ class GenerateAiForContentItem implements ShouldQueue
             $item->ai_hashtags = $gen['hashtags'] ?? [];
             $item->ai_cta = $gen['cta'] ?? ($itemBrain['cta'] ?? $item->ai_cta);
             $item->ai_image_prompt = $gen['image_prompt'] ?? $item->ai_image_prompt;
-            $item->ai_meta = array_merge($meta, [
+            $nextMeta = array_merge($meta, [
                 'text_similarity_score' => round($bestScore, 4),
                 'text_uniqueness_checked_at' => now()->toDateTimeString(),
             ]);
+            $generatedVideoPrompt = trim((string) ($gen['video_prompt'] ?? ''));
+            if ($generatedVideoPrompt !== '') {
+                $nextMeta['video_prompt'] = $generatedVideoPrompt;
+            }
+            $generatedVoiceover = trim((string) ($gen['voiceover'] ?? ''));
+            if ($generatedVoiceover !== '') {
+                $nextMeta['video_voiceover'] = $generatedVoiceover;
+            }
+            $item->ai_meta = $nextMeta;
             $item->save();
         } catch (Throwable $e) {
             if ($this->isQuotaOrRateLimitError($e) || $this->isTransientNetworkError($e)) {
@@ -196,6 +257,9 @@ class GenerateAiForContentItem implements ShouldQueue
             $prompt = trim((string) ($item->ai_image_prompt ?? ''));
             $brandImageSources = $this->resolveBrandImageSources($strategy, $meta, (int) $item->tenant_id);
             $brandDecision = $this->decideBrandImageUsage($item, $brandImageSources, $openAi);
+            if ($strictAssetMode && !((bool) ($brandDecision['use_brand'] ?? false))) {
+                throw new \RuntimeException('Strict mode: nessuna immagine brand valida trovata per avviare la generazione.');
+            }
             $selectedBrandImage = $brandDecision['path'] ?? null;
             $selectedBrandImagePaths = array_values(array_filter(array_map(
                 'strval',
@@ -205,6 +269,12 @@ class GenerateAiForContentItem implements ShouldQueue
                 array_unshift($selectedBrandImagePaths, $selectedBrandImage);
             }
             $selectedBrandImagePaths = array_values(array_unique($selectedBrandImagePaths));
+            $selectedBrandImagePaths = $this->stabilizeReferencePathsForFeedback(
+                $selectedBrandImagePaths,
+                $activeFeedbackRequest,
+                $assetVariables
+            );
+            $selectedBrandImage = $selectedBrandImagePaths[0] ?? $selectedBrandImage;
 
             if ($prompt === '') {
                 $brandName = data_get($tenantProfile, 'business_name', 'Brand');
@@ -212,17 +282,57 @@ class GenerateAiForContentItem implements ShouldQueue
                 $palette = data_get($strategy, 'brand_references.palette', '');
                 $logoPath = data_get($strategy, 'brand_references.logo_path', '');
                 $visualRules = data_get($itemBrain, 'image_direction', 'Visual coerente con il brand.');
+                $visualStyle = (string) data_get($strategy, 'visual_system.style', '');
+                $visualMood = (string) data_get($strategy, 'visual_system.mood', '');
+                $visualDo = (string) data_get($strategy, 'visual_system.visual_do', '');
+                $visualDont = (string) data_get($strategy, 'visual_system.visual_dont', '');
+                $logoRule = (string) data_get($strategy, 'visual_system.logo_rule', '');
+                $analysisGoal = (string) data_get($strategy, 'analysis_framework.primary_goal', '');
+                $publishingCadence = (string) data_get($strategy, 'publishing_system.cadence_rule', '');
+                $strategyNotes = (string) data_get($strategy, 'strategy_notes', '');
+                $assetVariableHint = $this->buildAssetVariablePromptHint($assetVariables);
+                $locationEnvelopeHint = $this->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
+                $feedbackVisualHint = $this->feedbackDrivenImageInstruction(
+                    $activeFeedbackRequest,
+                    $selectedBrandImagePaths,
+                    $assetVariables
+                );
+                $socialPublicationHint = $this->socialGraphicSystemInstruction($item, $itemBrain);
 
-                $prompt = "Crea un'immagine social quadrata per {$brandName}. "
+                $prompt = "Crea un'immagine social premium pronta per Instagram feed per {$brandName}. "
                     . "Settore: {$industry}. "
                     . "Direzione visiva: {$visualRules}. "
                     . "Palette colore suggerita: {$palette}. "
+                    . ($analysisGoal !== '' ? "Obiettivo strategico principale: {$analysisGoal}. " : '')
+                    . ($visualStyle !== '' ? "Stile visual: {$visualStyle}. " : '')
+                    . ($visualMood !== '' ? "Mood visual: {$visualMood}. " : '')
+                    . ($visualDo !== '' ? "Regola visual da fare: {$visualDo}. " : '')
+                    . ($visualDont !== '' ? "Regola visual da evitare: {$visualDont}. " : '')
+                    . ($logoRule !== '' ? "Regola logo: {$logoRule}. " : '')
+                    . ($publishingCadence !== '' ? "Coerenza publishing: {$publishingCadence}. " : '')
+                    . ($strategyNotes !== '' ? "Note strategiche: {$strategyNotes}. " : '')
+                    . ($assetVariableHint !== '' ? "Variabili asset obbligatorie: {$assetVariableHint}. " : '')
+                    . ($locationEnvelopeHint !== '' ? $locationEnvelopeHint . ' ' : '')
+                    . ($feedbackVisualHint !== '' ? $feedbackVisualHint . ' ' : '')
+                    . ($socialPublicationHint !== '' ? $socialPublicationHint . ' ' : '')
                     . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
-                    . ($selectedBrandImage ? "Parti dall'immagine brand fornita e adattala creativamente a questa strategia di post. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
+                    . ($selectedBrandImage ? "Parti dai riferimenti brand forniti e trasformali in un visual editoriale strategico, non in una semplice copia della foto originale. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                     . "Non generare loghi finti, nome brand scritto, watermark o testo sovraimpresso nell'immagine. "
                     . "Se è necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
                     . "Stile professionale, coerente con il brand e totalmente in italiano.";
 
+                $item->ai_image_prompt = $prompt;
+                $item->save();
+            }
+
+            $prompt = $this->augmentPromptForInstagramImageExecution(
+                $item,
+                $prompt,
+                $selectedBrandImagePaths,
+                $assetVariables,
+                $activeFeedbackRequest
+            );
+            if ($prompt !== (string) ($item->ai_image_prompt ?? '')) {
                 $item->ai_image_prompt = $prompt;
                 $item->save();
             }
@@ -256,6 +366,8 @@ class GenerateAiForContentItem implements ShouldQueue
             if ($isVideoFormat) {
                 $videoResult = $this->generateVideoAsset(
                     openAi: $openAi,
+                    nanoBanana: $nanoBanana,
+                    runway: $runway,
                     item: $item,
                     prompt: $prompt,
                     selectedBrandImageAbs: $selectedBrandImageAbs,
@@ -270,6 +382,15 @@ class GenerateAiForContentItem implements ShouldQueue
                 $thumbPath = trim((string) ($videoResult['thumbnail_path'] ?? ''));
 
                 if ($videoPath !== '') {
+                    $audioAttach = $this->maybeAttachAudioTrackToVideo(
+                        item: $item,
+                        videoPath: $videoPath,
+                        openAi: $openAi
+                    );
+                    if ((bool) ($audioAttach['applied'] ?? false) && !empty($audioAttach['video_path'])) {
+                        $videoPath = (string) $audioAttach['video_path'];
+                    }
+
                     $gridPreviewPath = $this->createLocalImagePlaceholder($item, $tenantProfile);
                     if (is_string($gridPreviewPath) && trim($gridPreviewPath) !== '') {
                         $item->ai_image_path = $gridPreviewPath;
@@ -280,6 +401,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
                     $metaNow['video_generation'] = [
                         'source' => (string) ($videoResult['source'] ?? 'sora_video'),
+                        'provider' => (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai')),
                         'video_id' => (string) ($videoResult['video_id'] ?? ''),
                         'video_path' => $videoPath,
                         'thumbnail_path' => $thumbPath,
@@ -297,9 +419,13 @@ class GenerateAiForContentItem implements ShouldQueue
                         'reference_validation' => $videoResult['reference_validation'] ?? null,
                         'composition_reference' => $videoResult['composition_reference'] ?? null,
                         'generation_attempts' => (int) ($videoResult['generation_attempts'] ?? 1),
+                        'audio' => $audioAttach,
                         'fallback' => $imageSourceFallback,
+                        'provider_fallback' => $videoResult['provider_fallback'] ?? null,
                         'generated_at' => now()->toDateTimeString(),
                     ];
+                    $metaNow['video_provider_requested'] = VideoProviderResolver::normalize((string) data_get($metaNow, 'video_provider', ''));
+                    $metaNow['video_provider_last_used'] = (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai'));
                     $item->ai_meta = $metaNow;
 
                     $assets = is_array($item->assets) ? $item->assets : [];
@@ -310,6 +436,9 @@ class GenerateAiForContentItem implements ShouldQueue
                         $assets[] = ['type' => 'brand_logo', 'path' => $logoScenePath];
                     }
                     $assets[] = ['type' => 'ai_generated_video', 'path' => $videoPath];
+                    if (!empty($audioAttach['audio_path']) && is_string($audioAttach['audio_path'])) {
+                        $assets[] = ['type' => 'ai_generated_audio', 'path' => (string) $audioAttach['audio_path']];
+                    }
                     if ($thumbPath !== '') {
                         $assets[] = ['type' => 'ai_generated_thumbnail', 'path' => $thumbPath];
                     }
@@ -323,6 +452,9 @@ class GenerateAiForContentItem implements ShouldQueue
                         $attemptPrompt .= ' Crea una composizione visibilmente diversa dai post brand precedenti (nuovo layout, inquadratura e gerarchia visiva).';
                     }
                     $attemptPrompt .= ' Se compaiono scritte visibili nell immagine, devono essere in italiano naturale e corretto.';
+                    $attemptPrompt .= ' ' . $this->instagramVisualOutputInstruction($item);
+                    $attemptPrompt .= ' ' . $this->multiReferenceBlendInstruction($selectedBrandImagePaths);
+                    $attemptPrompt .= ' ' . $this->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
 
                     if (!empty($selectedBrandImageAbsList) || ($logoRequested && $logoSceneAbs)) {
                         try {
@@ -354,7 +486,7 @@ class GenerateAiForContentItem implements ShouldQueue
 
                             if (!empty($selectedBrandImageAbsList)) {
                                 if (count($selectedBrandImageAbsList) > 1) {
-                                    $attemptPrompt .= ' Combina in modo coerente i riferimenti visual multipli forniti (volto, oggetti, ambientazione), mantenendo identita e soggetti riconoscibili.';
+                                    $attemptPrompt .= ' Unifica i riferimenti multipli in un unica scena plausibile da shooting editoriale o campagna social, senza collage o split-screen.';
                                 } else {
                                     $attemptPrompt .= ' Mantieni il DNA visivo riconoscibile dell immagine brand fornita (scena, oggetti, inquadratura) adattandola alla strategia del post.';
                                 }
@@ -362,7 +494,13 @@ class GenerateAiForContentItem implements ShouldQueue
                                 $attemptPrompt .= ' Crea una scena completa da zero, coerente con il brief e con il brand.';
                             }
 
-                            $img = $openAi->generateImageEditBase64($attemptPrompt, $editPaths);
+                            $img = $this->generateImageEditWithProvider(
+                                provider: $this->resolveImageProvider((array) ($item->ai_meta ?? [])),
+                                prompt: $attemptPrompt,
+                                editPaths: $editPaths,
+                                openAi: $openAi,
+                                nanoBanana: $nanoBanana
+                            );
                             if (!empty($selectedBrandImageAbsList)) {
                                 $imageSourceMode = count($selectedBrandImageAbsList) > 1 ? 'brand_multi_image_edit' : 'brand_image_edit';
                                 $brandSourcesUsed = array_values(array_slice($selectedBrandImagePaths, 0, 4));
@@ -374,18 +512,29 @@ class GenerateAiForContentItem implements ShouldQueue
                             }
                         } catch (Throwable $editError) {
                             $imageSourceFallback = 'edit_failed_fallback_to_text_to_image';
-                            $img = $openAi->generateImageBase64($attemptPrompt);
+                            $img = $this->generateImageTextWithProvider(
+                                provider: $this->resolveImageProvider((array) ($item->ai_meta ?? [])),
+                                prompt: $attemptPrompt,
+                                openAi: $openAi,
+                                nanoBanana: $nanoBanana
+                            );
                             $imageSourceMode = 'text_to_image';
                             $brandSourcesUsed = [];
                             $brandSourceUsed = null;
                             $metaFallback = is_array($item->ai_meta) ? $item->ai_meta : [];
                             $metaFallback['image_edit_error'] = Str::limit($editError->getMessage(), 240, '');
                             $metaFallback['image_edit_error_at'] = now()->toDateTimeString();
+                            $metaFallback['image_provider'] = $this->resolveImageProvider($metaFallback);
                             $item->ai_meta = $metaFallback;
                             $item->save();
                         }
                     } else {
-                        $img = $openAi->generateImageBase64($attemptPrompt);
+                        $img = $this->generateImageTextWithProvider(
+                            provider: $this->resolveImageProvider((array) ($item->ai_meta ?? [])),
+                            prompt: $attemptPrompt,
+                            openAi: $openAi,
+                            nanoBanana: $nanoBanana
+                        );
                         $imageSourceMode = 'text_to_image';
                         $brandSourcesUsed = [];
                         $brandSourceUsed = null;
@@ -416,7 +565,10 @@ class GenerateAiForContentItem implements ShouldQueue
                     Storage::disk('public')->put($filename, $bytes);
                     $item->ai_image_path = $filename;
                     $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
+                    $resolvedImageProvider = $this->resolveImageProvider($metaNow);
+                    $metaNow['image_provider'] = $resolvedImageProvider;
                     $metaNow['image_generation'] = [
+                        'provider' => $resolvedImageProvider,
                         'source' => $imageSourceMode,
                         'brand_source_path' => $brandSourceUsed,
                         'brand_source_paths' => $brandSourcesUsed,
@@ -459,6 +611,7 @@ class GenerateAiForContentItem implements ShouldQueue
             $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
             $meta['image_error'] = $e->getMessage();
             $meta['image_error_at'] = now()->toDateTimeString();
+            $meta['image_provider'] = $this->resolveImageProvider($meta);
             $isNet = $this->isTransientNetworkError($e);
             $isBilling = $this->isImageBillingLimitError($e);
 
@@ -493,9 +646,59 @@ class GenerateAiForContentItem implements ShouldQueue
 
         // Overlay usato come garanzia quando il brief chiede il logo e il modello non ha potuto editarlo correttamente.
 
+        if ($strictAssetMode && !$this->hasGeneratedVisualOutput($item)) {
+            $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
+            $baseError = trim((string) ($item->ai_error ?? ''));
+            if ($baseError === '') {
+                $baseError = trim((string) data_get($metaNow, 'image_error', ''));
+            }
+
+            $item->ai_status = 'error';
+            $item->ai_error = $baseError !== ''
+                ? $baseError . ' | STRICT_MODE_NO_VISUAL_OUTPUT'
+                : 'STRICT_MODE_NO_VISUAL_OUTPUT';
+            $item->ai_generated_at = now();
+            $item->save();
+            $this->notifyAiFailure($item, $workspaceNotifications, (string) $item->ai_error);
+            return;
+        }
+
         $item->ai_status = 'done';
         $item->ai_generated_at = now();
+        $this->markFeedbackRequestAsApplied($item);
         $item->save();
+        $this->notifyAiSuccess($item, $workspaceNotifications);
+    }
+
+    public function failed(Throwable $e): void
+    {
+        $item = ContentItem::query()->find($this->contentItemId);
+        if (!$item) {
+            return;
+        }
+
+        $item->ai_status = 'error';
+        if (trim((string) $item->ai_error) === '') {
+            $item->ai_error = 'JOB: ' . $e->getMessage();
+        }
+        $item->save();
+
+        app(WorkspaceNotificationService::class)->notifyTenant(
+            (int) $item->tenant_id,
+            'Generazione contenuto non riuscita',
+            $this->contentNotificationLabel($item) . ' non e stato generato correttamente. Controlla il dettaglio tecnico e riprova.',
+            [
+                'level' => 'error',
+                'icon' => 'ai-error',
+                'action_url' => route('posts.edit', $item),
+                'action_label' => 'Apri contenuto',
+                'context_type' => 'content_item',
+                'context_id' => (int) $item->id,
+                'meta' => [
+                    'ai_error' => Str::limit((string) $item->ai_error, 220, ''),
+                ],
+            ]
+        );
     }
 
     private function isDemoMode(): bool
@@ -539,7 +742,74 @@ class GenerateAiForContentItem implements ShouldQueue
 
         $item->ai_status = 'done';
         $item->ai_generated_at = now();
+        $this->markFeedbackRequestAsApplied($item);
         $item->save();
+    }
+
+    private function markFeedbackRequestAsApplied(ContentItem $item): void
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $active = data_get($meta, 'feedback_loop.active_request');
+
+        if (!is_array($active) || empty($active)) {
+            return;
+        }
+
+        $active['applied_at'] = now()->toDateTimeString();
+        $meta['feedback_loop']['last_applied'] = $active;
+        $meta['feedback_loop']['active_request'] = null;
+        $item->ai_meta = $meta;
+    }
+
+    private function notifyAiSuccess(ContentItem $item, WorkspaceNotificationService $workspaceNotifications): void
+    {
+        $workspaceNotifications->notifyTenant(
+            (int) $item->tenant_id,
+            'Contenuto pronto',
+            $this->contentNotificationLabel($item) . ' e pronto da rivedere o approvare.',
+            [
+                'level' => 'success',
+                'icon' => 'ai-done',
+                'action_url' => route('posts.edit', $item),
+                'action_label' => 'Apri contenuto',
+                'context_type' => 'content_item',
+                'context_id' => (int) $item->id,
+                'meta' => [
+                    'format' => (string) $item->format,
+                    'platform' => (string) $item->platform,
+                ],
+            ]
+        );
+    }
+
+    private function notifyAiFailure(
+        ContentItem $item,
+        WorkspaceNotificationService $workspaceNotifications,
+        string $reason
+    ): void {
+        $workspaceNotifications->notifyTenant(
+            (int) $item->tenant_id,
+            'Generazione contenuto non riuscita',
+            $this->contentNotificationLabel($item) . ' ha richiesto un intervento. Puoi rigenerarlo o correggere il prompt.',
+            [
+                'level' => 'error',
+                'icon' => 'ai-error',
+                'action_url' => route('posts.edit', $item),
+                'action_label' => 'Apri contenuto',
+                'context_type' => 'content_item',
+                'context_id' => (int) $item->id,
+                'meta' => [
+                    'ai_error' => Str::limit($reason, 220, ''),
+                ],
+            ]
+        );
+    }
+
+    private function contentNotificationLabel(ContentItem $item): string
+    {
+        $title = trim((string) ($item->title ?: $item->content_angle ?: 'Contenuto'));
+
+        return '"' . Str::limit($title, 70, '') . '"';
     }
 
     private function buildDemoPreset(ContentItem $item, array $tenantProfile, array $itemBrain): array
@@ -665,6 +935,7 @@ class GenerateAiForContentItem implements ShouldQueue
 
         $imagePrompt = "Visual social quadrato per {$business}. "
             . "Tema: {$angle}. Stile pulito e professionale, senza testo sovraimpresso. "
+            . "Deve sembrare un post social vero, pensato per il feed e non una foto corporate generica. "
             . "Evita loghi finti, watermark e testo brand inventato. Tutto in italiano.";
 
         return [
@@ -762,6 +1033,8 @@ SVG;
      */
     private function generateVideoAsset(
         OpenAiService $openAi,
+        NanoBananaService $nanoBanana,
+        RunwayService $runway,
         ContentItem $item,
         string $prompt,
         ?string $selectedBrandImageAbs,
@@ -779,10 +1052,26 @@ SVG;
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $briefRaw = trim((string) data_get($meta, 'manual_brief', ''));
         $briefNorm = $this->normalizeText((string) data_get($meta, 'manual_brief', ''));
+        $assetVariables = (array) data_get($meta, 'asset_variables', []);
         $explicitReferencePaths = array_values(array_filter(array_map(
             'strval',
             (array) data_get($meta, 'image_references.selected_paths', [])
         )));
+        $variableReferencePaths = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($meta, 'asset_variables.resolved_asset_paths', [])
+        )));
+        if (empty($variableReferencePaths)) {
+            $variableReferencePaths = collect((array) data_get($meta, 'asset_variables.resolved', []))
+                ->flatMap(fn ($row) => is_array($row) ? (array) ($row['asset_paths'] ?? []) : [])
+                ->map(fn ($path) => (string) $path)
+                ->filter(fn ($path) => $path !== '')
+                ->values()
+                ->all();
+        }
+        if (!empty($variableReferencePaths)) {
+            $explicitReferencePaths = array_values(array_unique(array_merge($explicitReferencePaths, $variableReferencePaths)));
+        }
         $hasExplicitReferences = !empty($explicitReferencePaths);
         $useImageReference = $hasExplicitReferences || $this->shouldUseImageReferenceForVideo($briefNorm);
 
@@ -797,18 +1086,30 @@ SVG;
         if (empty($imageReferencePathPool) && is_string($imageReferencePath) && $imageReferencePath !== '') {
             $imageReferencePathPool = [$imageReferencePath];
         }
-        $mustEnforceExplicitReferences = $hasExplicitReferences && !empty($imageReferenceAbsPool);
+        $locationSequenceMode = $hasExplicitReferences
+            && count($imageReferenceAbsPool) >= 2
+            && $this->hasProtectedLocationEnvelope($assetVariables, $imageReferencePathPool);
+        $mustEnforceExplicitReferences = $hasExplicitReferences && !empty($imageReferenceAbsPool) && !$locationSequenceMode;
         $validationReferenceAbsPool = array_values(array_slice($imageReferenceAbsPool, 0, 4));
         $generationReferenceAbsPool = $imageReferenceAbsPool;
         $compositionReference = null;
         $compositionMeta = null;
 
-        if ($mustEnforceExplicitReferences && count($imageReferenceAbsPool) >= 2) {
+        if ($locationSequenceMode) {
+            $generationReferenceAbsPool = [(string) ($imageReferenceAbsPool[0] ?? '')];
+            $compositionMeta = [
+                'used' => false,
+                'mode' => 'sequential_real_locations',
+                'reference_count' => count($imageReferenceAbsPool),
+            ];
+        } elseif ($mustEnforceExplicitReferences && count($imageReferenceAbsPool) >= 2) {
             $compositionReference = $this->buildLockedVideoSceneReference(
                 openAi: $openAi,
+                nanoBanana: $nanoBanana,
                 brief: $briefRaw !== '' ? $briefRaw : $prompt,
                 prompt: $prompt,
-                referenceAbsPaths: $imageReferenceAbsPool
+                referenceAbsPaths: $imageReferenceAbsPool,
+                assetVariables: $assetVariables
             );
 
             if (is_array($compositionReference) && !empty($compositionReference['abs'])) {
@@ -880,43 +1181,27 @@ SVG;
             }
         }
 
-        $videoPrompt = $prompt;
-        $videoPrompt .= ' Genera un video social fluido, cinematografico e realistico.';
-        $videoPrompt .= ' Evita testo sovraimpresso, watermark, marchi inventati o nome azienda scritto.';
-        $videoPrompt .= ' Se compare testo visibile, deve essere italiano corretto.';
-        $videoPrompt .= ' Non iniziare con una foto statica o freeze frame: apri con una scena dinamica in movimento.';
-        $videoPrompt .= ' Mantieni coerenza con il brief e con i riferimenti utente senza inventare soggetti casuali.';
-
-        if ($logoRequested && $logoAbs) {
-            if ($logoMode === 'background') {
-                $videoPrompt .= ' Mantieni il logo reale nello sfondo come presenza grafica discreta e coerente.';
-            } else {
-                $videoPrompt .= ' Mantieni il logo reale integrato nella scena in modo naturale.';
-            }
-        } else {
-            $videoPrompt .= ' Non aggiungere loghi brand inventati.';
-        }
-
-        if (!empty($generationReferenceAbsPool)) {
-            if (count($generationReferenceAbsPool) > 1) {
-                $videoPrompt .= ' Usa come base combinata i riferimenti visual multipli forniti, mantenendo soggetti e contesto coerenti.';
-            } else {
-                $videoPrompt .= ' Mantieni il DNA visivo dell immagine brand di riferimento (scena, palette, soggetti).';
-            }
-        } elseif ($selectedBrandImageAbs) {
-            $videoPrompt .= ' Riprendi in modo creativo il tema del brief senza copiare un frame fotografico statico.';
-        }
-        if ($mustEnforceExplicitReferences) {
-            $videoPrompt .= ' VINCOLO OBBLIGATORIO: usa TUTTI i soggetti principali delle immagini di riferimento selezionate dall utente.';
-            $videoPrompt .= ' NON sostituire persone, volti, oggetti o veicoli con alternative casuali.';
-            $videoPrompt .= ' Se i riferimenti includono persona e auto, nel video devono comparire entrambe in modo riconoscibile.';
-        }
+        $videoPrompt = $this->buildStrategicVideoPrompt(
+            item: $item,
+            meta: $meta,
+            briefRaw: $briefRaw !== '' ? $briefRaw : $prompt,
+            selectedBrandImageAbs: $selectedBrandImageAbs,
+            generationReferenceAbsPool: $generationReferenceAbsPool,
+            referencePaths: $referencePaths,
+            assetVariables: $assetVariables,
+            logoRequested: $logoRequested,
+            logoAbs: $logoAbs,
+            logoMode: $logoMode,
+            locationSequenceMode: $locationSequenceMode,
+            mustEnforceExplicitReferences: $mustEnforceExplicitReferences
+        );
 
         $videoOptions = [
             'model' => (string) (config('openai.video_model') ?: 'sora-2'),
             'seconds' => $this->targetVideoSecondsForFormat($item),
             'size' => $this->targetVideoSizeForFormat($item),
         ];
+        $videoProvider = $this->resolveVideoProvider($meta);
 
         if (is_string($referenceAbs) && $referenceAbs !== '') {
             $prepared = $this->prepareVideoReferenceForSize($referenceAbs, (string) $videoOptions['size']);
@@ -927,148 +1212,77 @@ SVG;
             }
         }
 
+        if ($videoProvider === 'runway') {
+            try {
+                return $this->generateVideoWithRunway(
+                    runway: $runway,
+                    openAi: $openAi,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $prompt,
+                    videoPrompt: $videoPrompt,
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $referenceReason,
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool,
+                    validationReferenceAbsPool: $validationReferenceAbsPool,
+                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $videoOptions
+                );
+            } catch (Throwable $runwayError) {
+                if (!$this->shouldFallbackFromRunwayToOpenAi($runwayError)) {
+                    throw $runwayError;
+                }
+
+                return $this->generateVideoWithOpenAi(
+                    openAi: $openAi,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $prompt,
+                    videoPrompt: $this->buildOpenAiVideoFallbackPrompt($videoPrompt, $briefRaw, $referencePaths),
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $referenceReason . '_openai_fallback_after_runway_failure',
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool,
+                    validationReferenceAbsPool: $validationReferenceAbsPool,
+                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $videoOptions,
+                    providerFallback: [
+                        'from' => 'runway',
+                        'to' => 'openai',
+                        'reason' => Str::limit($runwayError->getMessage(), 220, ''),
+                        'at' => now()->toDateTimeString(),
+                    ]
+                );
+            }
+        }
+
         try {
-            $maxAttempts = $mustEnforceExplicitReferences ? 2 : 1;
-            $lastValidation = null;
-            $lastError = null;
-
-            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-                $attemptPrompt = $videoPrompt;
-                if ($attempt > 0) {
-                    $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
-                    $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
-                }
-
-                $attemptReferenceAbs = $referenceAbs;
-                $attemptReferencePath = $referencePath;
-                $attemptReferencePaths = $referencePaths;
-                $attemptReferenceReason = $referenceReason;
-                $attemptTempPreparedPath = null;
-
-                try {
-                    $job = null;
-                    try {
-                        $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
-                    } catch (Throwable $videoCreateError) {
-                        $msg = strtolower($videoCreateError->getMessage());
-                        $needsNoRefRetry = str_contains($msg, 'inpaint image must match')
-                            || str_contains($msg, 'inpaint')
-                            || str_contains($msg, 'input_reference');
-
-                        if (!$needsNoRefRetry) {
-                            throw $videoCreateError;
-                        }
-
-                        if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
-                            $fallbackAbs = $generationReferenceAbsPool[0];
-                            $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $videoOptions['size']);
-                            if ($fallbackPrepared) {
-                                $attemptTempPreparedPath = $fallbackPrepared;
-                                $attemptReferenceAbs = $fallbackPrepared;
-                                $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error_normalized';
-                            } else {
-                                $attemptReferenceAbs = $fallbackAbs;
-                                $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error';
-                            }
-
-                            $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
-                            $attemptReferencePaths = array_values(array_filter(
-                                [$attemptReferencePath],
-                                fn ($v) => is_string($v) && $v !== ''
-                            ));
-                            $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
-                        } else {
-                            $attemptReferenceAbs = null;
-                            $attemptReferencePath = null;
-                            $attemptReferencePaths = [];
-                            $attemptReferenceReason = 'retry_without_reference_after_inpaint_error';
-                            $job = $openAi->createVideoJob($attemptPrompt, null, $videoOptions);
-                        }
-                    }
-
-                    $videoId = (string) ($job['id'] ?? '');
-                    $jobFinal = $openAi->waitForVideoCompletion($videoId);
-                    $videoBytes = $openAi->downloadVideoContent($videoId);
-                    $thumbBytes = null;
-                    try {
-                        $thumbBytes = $openAi->downloadVideoThumbnail($videoId);
-                    } catch (Throwable) {
-                        $thumbBytes = null;
-                    }
-
-                    $validation = null;
-                    if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
-                        $tmpDir = storage_path('app/tmp');
-                        if (!is_dir($tmpDir)) {
-                            @mkdir($tmpDir, 0775, true);
-                        }
-                        $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
-                        @file_put_contents($tmpThumbPath, $thumbBytes);
-                        if (is_file($tmpThumbPath)) {
-                            $validation = $openAi->validateVideoFrameWithReferences(
-                                brief: $briefRaw !== '' ? $briefRaw : $prompt,
-                                frameAbsolutePath: $tmpThumbPath,
-                                referenceAbsolutePaths: !empty($validationReferenceAbsPool)
-                                    ? $validationReferenceAbsPool
-                                    : array_slice($generationReferenceAbsPool, 0, 4)
-                            );
-                            @unlink($tmpThumbPath);
-                        }
-
-                        if (is_array($validation)) {
-                            $lastValidation = $validation;
-                            $allPresent = (bool) ($validation['all_present'] ?? false);
-                            if (!$allPresent && ($attempt + 1) < $maxAttempts) {
-                                continue;
-                            }
-                            if (!$allPresent) {
-                                $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
-                            }
-                        }
-                    }
-
-                    $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
-                    $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
-                    Storage::disk('public')->put($videoPath, $videoBytes);
-
-                    $thumbPath = null;
-                    if (is_string($thumbBytes) && $thumbBytes !== '') {
-                        $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
-                        $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
-                        Storage::disk('public')->put($thumbPath, $thumbBytes);
-                    }
-
-                    return [
-                        'source' => 'sora_video_generation',
-                        'video_id' => $videoId,
-                        'video_path' => $videoPath,
-                        'thumbnail_path' => $thumbPath,
-                        'reference_path' => $attemptReferencePath,
-                        'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
-                        'reference_reason' => $attemptReferenceReason,
-                        'reference_validation' => $validation ?? $lastValidation,
-                        'composition_reference' => $compositionMeta,
-                        'generation_attempts' => $attempt + 1,
-                        'job_status' => (string) ($jobFinal['status'] ?? 'completed'),
-                        'brand_selection' => $brandDecision,
-                    ];
-                } catch (Throwable $attemptError) {
-                    $lastError = $attemptError;
-                    if (($attempt + 1) >= $maxAttempts) {
-                        throw $attemptError;
-                    }
-                } finally {
-                    if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
-                        @unlink($attemptTempPreparedPath);
-                    }
-                }
-            }
-
-            if ($lastError instanceof Throwable) {
-                throw $lastError;
-            }
-
-            throw new \RuntimeException('Video generation failed without explicit error.');
+            return $this->generateVideoWithOpenAi(
+                openAi: $openAi,
+                briefRaw: $briefRaw,
+                fallbackPrompt: $prompt,
+                videoPrompt: $videoPrompt,
+                referenceAbs: $referenceAbs,
+                referencePath: $referencePath,
+                referencePaths: $referencePaths,
+                referenceReason: $referenceReason,
+                generationReferenceAbsPool: $generationReferenceAbsPool,
+                imageReferencePathPool: $imageReferencePathPool,
+                validationReferenceAbsPool: $validationReferenceAbsPool,
+                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                compositionMeta: $compositionMeta,
+                brandDecision: $brandDecision,
+                videoOptions: $videoOptions,
+                providerFallback: null
+            );
         } finally {
             if (is_string($preparedRefPath) && $preparedRefPath !== '' && is_file($preparedRefPath)) {
                 @unlink($preparedRefPath);
@@ -1079,6 +1293,856 @@ SVG;
                 }
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<int, string>  $generationReferenceAbsPool
+     * @param  array<int, string>  $referencePaths
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function buildStrategicVideoPrompt(
+        ContentItem $item,
+        array $meta,
+        string $briefRaw,
+        ?string $selectedBrandImageAbs,
+        array $generationReferenceAbsPool,
+        array $referencePaths,
+        array $assetVariables,
+        bool $logoRequested,
+        ?string $logoAbs,
+        string $logoMode,
+        bool $locationSequenceMode,
+        bool $mustEnforceExplicitReferences
+    ): string {
+        $storedVideoPrompt = trim((string) data_get($meta, 'video_prompt', ''));
+        if ($storedVideoPrompt !== '') {
+            $parts = [$storedVideoPrompt];
+        } else {
+            $brandName = trim((string) data_get($meta, 'tenant_profile.business_name', 'Brand'));
+            $industry = trim((string) data_get($meta, 'tenant_profile.industry', ''));
+            $objective = trim((string) data_get($meta, 'item_brain.objective', data_get($meta, 'plan.goal', 'Awareness')));
+            $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
+            $parts = [
+                "Crea un reel video verticale 9:16 per {$brandName}.",
+                $industry !== '' ? "Settore: {$industry}." : '',
+                $briefRaw !== '' ? "Brief prioritario: {$briefRaw}." : '',
+                $objective !== '' ? "Obiettivo: {$objective}." : '',
+                $tone !== '' ? "Tono del brand: {$tone}." : '',
+            ];
+        }
+
+        $parts[] = 'Video social realistico, elegante e vendibile, pensato per Instagram Reel.';
+        $parts[] = 'Apri con un primo secondo forte e dinamico, poi accompagna la scena con movimenti fluidi e naturali.';
+        $parts[] = 'Niente testo in sovraimpressione, niente watermark, niente loghi inventati, niente look da spot corporate.';
+        $parts[] = 'Se compaiono persone, devono sembrare reali, spontanee e coerenti con il contesto.';
+
+        if ($locationSequenceMode) {
+            $locationNames = $this->videoLocationSequenceNames($assetVariables);
+            if (!empty($locationNames)) {
+                $parts[] = 'Le aree reali da mostrare sono: ' . implode(', ', $locationNames) . '.';
+            }
+            $parts[] = 'Queste location sono ambienti reali diversi dello stesso locale: mostrali in sequenza come scene separate e riconoscibili.';
+            $parts[] = 'Non fonderli in un unica stanza, non inventare nuove sale, non cambiare architettura, prospettiva o layout del posto.';
+            $parts[] = 'Usa transizioni naturali tra un ambiente e l altro come in un reel editoriale premium.';
+        } elseif (!empty($generationReferenceAbsPool)) {
+            if (count($referencePaths) > 1) {
+                $parts[] = 'Prendi i riferimenti come base narrativa coerente senza trasformarli in un collage o in una stanza impossibile.';
+            } else {
+                $parts[] = 'Mantieni il DNA visivo reale del luogo o del soggetto di riferimento, migliorando ritmo e resa video.';
+            }
+        } elseif ($selectedBrandImageAbs) {
+            $parts[] = 'Riprendi il tema del brand in modo creativo senza sembrare una foto statica animata.';
+        }
+
+        if ($this->hasProtectedLocationEnvelope($assetVariables, $referencePaths)) {
+            $parts[] = 'Il luogo reale deve restare autentico e riconoscibile.';
+        }
+
+        if ($logoRequested && $logoAbs) {
+            $parts[] = $logoMode === 'background'
+                ? 'Se usi il logo reale, tienilo discreto sullo sfondo senza farlo dominare la scena.'
+                : 'Se usi il logo reale, integralo in modo naturale e plausibile nella scena.';
+        }
+
+        if ($mustEnforceExplicitReferences) {
+            $parts[] = 'Usa i riferimenti richiesti dall utente in modo riconoscibile, senza sostituire i soggetti principali con alternative casuali.';
+        }
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), 900, '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<int, string>
+     */
+    private function videoLocationSequenceNames(array $assetVariables): array
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+        $names = [];
+        foreach ($resolved as $row) {
+            $kind = Str::lower(trim((string) ($row['kind'] ?? 'custom')));
+            if ($kind !== 'location') {
+                continue;
+            }
+
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique(array_slice($names, 0, 4)));
+    }
+
+    private function resolveVideoProvider(array $meta): string
+    {
+        return VideoProviderResolver::normalize((string) data_get($meta, 'video_provider', ''));
+    }
+
+    private function resolveImageProvider(array $meta): string
+    {
+        $source = trim((string) data_get($meta, 'source', ''));
+        $mode = trim((string) data_get($meta, 'plan.mode', ''));
+
+        if (!in_array($source, ['manual_single_content'], true) && $mode !== 'single_manual') {
+            return ImageProviderResolver::default();
+        }
+
+        return ImageProviderResolver::resolve((string) data_get($meta, 'image_provider', ''), ImageProviderResolver::default());
+    }
+
+    private function generateImageTextWithProvider(
+        string $provider,
+        string $prompt,
+        OpenAiService $openAi,
+        NanoBananaService $nanoBanana
+    ): array {
+        if ($provider === 'openai') {
+            return $openAi->generateImageBase64($prompt);
+        }
+
+        return $nanoBanana->generateImageBase64($prompt);
+    }
+
+    /**
+     * @param  array<int, string>  $editPaths
+     */
+    private function generateImageEditWithProvider(
+        string $provider,
+        string $prompt,
+        array $editPaths,
+        OpenAiService $openAi,
+        NanoBananaService $nanoBanana
+    ): array {
+        if ($provider === 'openai') {
+            return $openAi->generateImageEditBase64($prompt, $editPaths);
+        }
+
+        return $nanoBanana->generateImageEditBase64($prompt, $editPaths);
+    }
+
+    /**
+     * @param  array<int, string>  $selectedBrandImagePaths
+     */
+    private function augmentPromptForInstagramImageExecution(
+        ContentItem $item,
+        string $prompt,
+        array $selectedBrandImagePaths,
+        array $assetVariables,
+        array $activeFeedbackRequest = []
+    ): string {
+        $itemBrain = is_array(data_get($item->ai_meta, 'item_brain', []))
+            ? data_get($item->ai_meta, 'item_brain', [])
+            : [];
+        $forcePhotorealism = ImagePromptRealismGuard::shouldForcePhotorealism(
+            (string) data_get($item->ai_meta, 'manual_brief', ''),
+            $prompt
+        );
+        $locationEnvelopeProtected = $this->hasProtectedLocationEnvelope($assetVariables, $selectedBrandImagePaths);
+        $hasExplicitHumanReferences = $this->hasExplicitHumanReferences($assetVariables);
+        $prompt = ImagePromptRealismGuard::sanitize($prompt, $forcePhotorealism);
+
+        $parts = [
+            trim($prompt),
+            $this->instagramVisualOutputInstruction($item),
+            $this->socialGraphicSystemInstruction($item, $itemBrain),
+            $this->multiReferenceBlendInstruction($selectedBrandImagePaths),
+            $this->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths),
+            $this->feedbackDrivenImageInstruction($activeFeedbackRequest, $selectedBrandImagePaths, $assetVariables),
+            ImagePromptRealismGuard::instruction($forcePhotorealism, $locationEnvelopeProtected, $hasExplicitHumanReferences),
+            'Il risultato deve sembrare un contenuto editoriale premium pensato per Instagram, non una demo tecnica.',
+        ];
+
+        return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
+    }
+
+    private function instagramVisualOutputInstruction(ContentItem $item): string
+    {
+        return 'Output finale verticale 4:5, pronto per Instagram feed, con composizione premium, focus principale netto, margini puliti e gerarchia visiva forte. Questo deve sembrare un post social studiato per fermare lo scroll, non una foto corporate generica: soggetto chiaro subito, lettura forte anche da miniatura e resa nativa da feed.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $itemBrain
+     */
+    private function socialGraphicSystemInstruction(ContentItem $item, array $itemBrain): string
+    {
+        $position = $this->positionInPlan($item) + 1;
+        $total = max(1, $this->totalItemsInPlan($item));
+        $seriesName = trim((string) data_get($itemBrain, 'series_name', ''));
+        $connectionHint = trim((string) data_get($itemBrain, 'connection_hint', ''));
+
+        $parts = [
+            "Questo contenuto fa parte di un piano di pubblicazioni social: posizione {$position} di {$total}.",
+            'Il visual deve funzionare come post social vero: stop-scroll, impatto immediato, gerarchia visiva chiara, niente look da brochure o catalogo statico.',
+            'Mantieni coerenza con il feed del brand, ma rendi il contenuto visivamente distinto dai post vicini con un angolo e una composizione pensati per i social.',
+        ];
+
+        if ($seriesName !== '') {
+            $parts[] = "Serie o filone: {$seriesName}.";
+        }
+
+        if ($connectionHint !== '') {
+            $parts[] = "Ruolo nel piano: {$connectionHint}";
+        }
+
+        return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
+    }
+
+    /**
+     * @param  array<int, string>  $selectedBrandImagePaths
+     */
+    private function multiReferenceBlendInstruction(array $selectedBrandImagePaths): string
+    {
+        $paths = array_values(array_filter($selectedBrandImagePaths, fn ($path) => is_string($path) && $path !== ''));
+
+        if (count($paths) < 2) {
+            return 'Se usi un solo riferimento, mantieni il DNA visivo reale ma migliora resa, inquadratura e impatto social.';
+        }
+
+        return 'Se usi piu immagini di riferimento, fondile in un unica scena coerente e credibile: niente collage, niente split-screen, niente griglia, niente foto appoggiate una sopra l altra. Unifica luce, prospettiva, palette, styling e contesto narrativo come se fosse un solo shooting strategico.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackRequest
+     * @param  array<int, string>  $selectedBrandImagePaths
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<int, string>
+     */
+    private function stabilizeReferencePathsForFeedback(
+        array $selectedBrandImagePaths,
+        array $feedbackRequest,
+        array $assetVariables
+    ): array {
+        $paths = array_values(array_filter($selectedBrandImagePaths, fn ($path) => is_string($path) && trim($path) !== ''));
+
+        if (count($paths) < 2) {
+            return $paths;
+        }
+
+        if (!$this->feedbackForcesPrimaryLocationAnchor($feedbackRequest, $assetVariables, $paths)) {
+            return $paths;
+        }
+
+        return [$paths[0]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackRequest
+     * @param  array<int, string>  $selectedBrandImagePaths
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function feedbackDrivenImageInstruction(
+        array $feedbackRequest,
+        array $selectedBrandImagePaths,
+        array $assetVariables
+    ): string {
+        if (!$this->feedbackTargetsVisual($feedbackRequest)) {
+            return '';
+        }
+
+        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $reason = trim((string) ($feedbackRequest['reason'] ?? ''));
+        $parts = [];
+
+        if ($reason !== '') {
+            $parts[] = 'Correzione prioritaria utente da rispettare davvero: ' . $reason . '.';
+        }
+
+        if ($this->feedbackForcesPrimaryLocationAnchor($feedbackRequest, $assetVariables, $selectedBrandImagePaths)) {
+            $parts[] = 'Usa la prima immagine reale come ancora strutturale obbligatoria del luogo.';
+            $parts[] = 'Non inventare nuove sale, muri, finestre, aperture, prospettive o layout diversi.';
+            $parts[] = 'Se esistono altri riferimenti, servono solo per dettagli secondari coerenti, non per fondere ambienti diversi.';
+        }
+
+        if ($category === 'realism') {
+            $parts[] = 'Se aggiungi persone, evita close-up inventati e preferisci figure credibili in media distanza, con volti, mani e postura naturali.';
+        }
+
+        if ($category === 'visual_composition') {
+            $parts[] = 'Cambia davvero composizione, inquadratura e gerarchia visiva, mantenendo pero il luogo autentico se e reale.';
+        }
+
+        return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackRequest
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<int, string>  $selectedBrandImagePaths
+     */
+    private function feedbackForcesPrimaryLocationAnchor(
+        array $feedbackRequest,
+        array $assetVariables,
+        array $selectedBrandImagePaths
+    ): bool {
+        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $reason = $this->normalizeText((string) ($feedbackRequest['reason'] ?? ''));
+
+        if ($category === 'location_integrity') {
+            return true;
+        }
+
+        if (!$this->hasProtectedLocationEnvelope($assetVariables, $selectedBrandImagePaths)) {
+            return false;
+        }
+
+        foreach ([
+            'sala inventata',
+            'altra sala',
+            'ambiente diverso',
+            'non cambiare il locale',
+            'deve rimanere com e',
+            'deve restare com e',
+            'non inventare',
+        ] as $needle) {
+            if ($reason !== '' && str_contains($reason, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackRequest
+     */
+    private function feedbackTargetsVisual(array $feedbackRequest): bool
+    {
+        if (empty($feedbackRequest)) {
+            return false;
+        }
+
+        $scope = Str::lower(trim((string) ($feedbackRequest['scope'] ?? '')));
+        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+
+        if (in_array($scope, ['visual_first', 'full'], true)) {
+            return true;
+        }
+
+        return in_array($category, ['realism', 'visual_composition', 'location_integrity'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackRequest
+     * @return array<string, mixed>
+     */
+    private function normalizeFeedbackRequest(array $feedbackRequest): array
+    {
+        if (empty($feedbackRequest)) {
+            return [];
+        }
+
+        return [
+            'feedback_id' => isset($feedbackRequest['feedback_id']) ? (int) $feedbackRequest['feedback_id'] : null,
+            'sentiment' => trim((string) ($feedbackRequest['sentiment'] ?? '')),
+            'category' => Str::lower(trim((string) ($feedbackRequest['category'] ?? ''))),
+            'scope' => Str::lower(trim((string) ($feedbackRequest['scope'] ?? 'full'))),
+            'reason' => trim((string) ($feedbackRequest['reason'] ?? '')),
+            'action' => trim((string) ($feedbackRequest['action'] ?? '')),
+            'instruction' => trim((string) ($feedbackRequest['instruction'] ?? '')),
+            'created_at' => trim((string) ($feedbackRequest['created_at'] ?? '')),
+            'requested_at' => trim((string) ($feedbackRequest['requested_at'] ?? '')),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<int, string>  $selectedBrandImagePaths
+     */
+    private function locationEnvelopePreservationInstruction(array $assetVariables, array $selectedBrandImagePaths): string
+    {
+        if (!$this->hasProtectedLocationEnvelope($assetVariables, $selectedBrandImagePaths)) {
+            return '';
+        }
+
+        return 'Se tra i riferimenti c e un luogo reale come ufficio, edificio, showroom o punto vendita, quello resta l involucro principale da preservare: mantieni architettura, layout, prospettiva e dettagli distintivi del posto. Puoi aggiungere persone, prodotti, allestimenti, decorazioni e atmosfera coerenti con il brief, ma non trasformare quel luogo in un ambiente diverso.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<int, string>  $selectedBrandImagePaths
+     */
+    private function hasProtectedLocationEnvelope(array $assetVariables, array $selectedBrandImagePaths): bool
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+        if (empty($resolved)) {
+            return false;
+        }
+
+        $selectedLookup = array_fill_keys(
+            array_values(array_filter($selectedBrandImagePaths, fn ($path) => is_string($path) && $path !== '')),
+            true
+        );
+        $matchAnyLocation = empty($selectedLookup);
+
+        foreach ($resolved as $row) {
+            $kind = Str::lower(trim((string) ($row['kind'] ?? 'custom')));
+            $text = Str::lower(trim((string) ($row['name'] ?? '') . ' ' . (string) ($row['description'] ?? '')));
+            $matchesLocation = $kind === 'location'
+                || str_contains($text, 'ufficio')
+                || str_contains($text, 'edificio')
+                || str_contains($text, 'showroom')
+                || str_contains($text, 'negozio')
+                || str_contains($text, 'locale')
+                || str_contains($text, 'ristorante');
+
+            if (!$matchesLocation) {
+                continue;
+            }
+
+            $paths = array_values(array_filter(
+                (array) ($row['asset_paths'] ?? []),
+                fn ($path) => is_string($path) && trim($path) !== ''
+            ));
+
+            if ($matchAnyLocation || empty($paths)) {
+                return true;
+            }
+
+            foreach ($paths as $path) {
+                if (isset($selectedLookup[$path])) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function hasExplicitHumanReferences(array $assetVariables): bool
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+        if (empty($resolved)) {
+            return false;
+        }
+
+        foreach ($resolved as $row) {
+            $kind = Str::lower(trim((string) ($row['kind'] ?? 'custom')));
+            $text = Str::lower(trim((string) ($row['name'] ?? '') . ' ' . (string) ($row['description'] ?? '')));
+
+            if ($kind === 'person') {
+                return true;
+            }
+
+            if (
+                str_contains($text, 'persona')
+                || str_contains($text, 'staff')
+                || str_contains($text, 'team')
+                || str_contains($text, 'chef')
+                || str_contains($text, 'volto')
+                || str_contains($text, 'dipendente')
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<int, string>  $generationReferenceAbsPool
+     * @param  array<int, string>  $imageReferencePathPool
+     * @param  array<int, string>  $validationReferenceAbsPool
+     * @param  array<string, mixed>|null  $compositionMeta
+     * @param  array<string, mixed>  $brandDecision
+     * @param  array<string, mixed>  $videoOptions
+     * @return array<string, mixed>
+     */
+    private function generateVideoWithRunway(
+        RunwayService $runway,
+        OpenAiService $openAi,
+        ContentItem $item,
+        string $briefRaw,
+        string $fallbackPrompt,
+        string $videoPrompt,
+        ?string $referenceAbs,
+        ?string $referencePath,
+        array $referencePaths,
+        string $referenceReason,
+        array $generationReferenceAbsPool,
+        array $imageReferencePathPool,
+        array $validationReferenceAbsPool,
+        bool $mustEnforceExplicitReferences,
+        ?array $compositionMeta,
+        array $brandDecision,
+        array $videoOptions
+    ): array {
+        $runwayOptions = [
+            'model' => (string) (config('runway.model') ?: 'gen4_turbo'),
+            'seconds' => (string) ($videoOptions['seconds'] ?? (string) (config('runway.video_seconds') ?: 8)),
+            'size' => (string) ($videoOptions['size'] ?? config('openai.video_size') ?: '720x1280'),
+        ];
+
+        $maxAttempts = $mustEnforceExplicitReferences ? 2 : 1;
+        $lastValidation = null;
+        $lastError = null;
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $attemptPrompt = $videoPrompt;
+            if ($attempt > 0) {
+                $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
+                $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
+            }
+
+            $attemptReferenceAbs = $referenceAbs;
+            $attemptReferencePath = $referencePath;
+            $attemptReferencePaths = $referencePaths;
+            $attemptReferenceReason = $referenceReason;
+            $attemptTempPreparedPath = null;
+
+            try {
+                try {
+                    $job = $runway->createVideoJob($attemptPrompt, $attemptReferenceAbs, $runwayOptions);
+                } catch (Throwable $videoCreateError) {
+                    if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
+                        $fallbackAbs = $generationReferenceAbsPool[0];
+                        $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $runwayOptions['size']);
+                        if ($fallbackPrepared) {
+                            $attemptTempPreparedPath = $fallbackPrepared;
+                            $attemptReferenceAbs = $fallbackPrepared;
+                            $attemptReferenceReason = 'runway_retry_with_primary_reference_after_error_normalized';
+                        } else {
+                            $attemptReferenceAbs = $fallbackAbs;
+                            $attemptReferenceReason = 'runway_retry_with_primary_reference_after_error';
+                        }
+
+                        $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
+                        $attemptReferencePaths = array_values(array_filter(
+                            [$attemptReferencePath],
+                            fn ($v) => is_string($v) && $v !== ''
+                        ));
+                        $job = $runway->createVideoJob($attemptPrompt, $attemptReferenceAbs, $runwayOptions);
+                    } else {
+                        $attemptReferenceAbs = null;
+                        $attemptReferencePath = null;
+                        $attemptReferencePaths = [];
+                        $attemptReferenceReason = 'runway_retry_without_reference_after_error';
+                        $job = $runway->createVideoJob($attemptPrompt, null, $runwayOptions);
+                    }
+                }
+
+                $videoId = (string) ($job['id'] ?? '');
+                $jobFinal = $runway->waitForVideoCompletion($videoId);
+                $videoBytes = $runway->downloadVideoContent($jobFinal);
+                $thumbBytes = $runway->downloadThumbnailContent($jobFinal);
+
+                $validation = null;
+                if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
+                    $tmpDir = storage_path('app/tmp');
+                    if (!is_dir($tmpDir)) {
+                        @mkdir($tmpDir, 0775, true);
+                    }
+
+                    $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-runway-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
+                    @file_put_contents($tmpThumbPath, $thumbBytes);
+                    if (is_file($tmpThumbPath)) {
+                        $validation = $openAi->validateVideoFrameWithReferences(
+                            brief: $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
+                            frameAbsolutePath: $tmpThumbPath,
+                            referenceAbsolutePaths: !empty($validationReferenceAbsPool)
+                                ? $validationReferenceAbsPool
+                                : array_slice($generationReferenceAbsPool, 0, 4)
+                        );
+                        @unlink($tmpThumbPath);
+                    }
+
+                    if (is_array($validation)) {
+                        $lastValidation = $validation;
+                        $allPresent = (bool) ($validation['all_present'] ?? false);
+                        if (!$allPresent && ($attempt + 1) < $maxAttempts) {
+                            continue;
+                        }
+                        if (!$allPresent) {
+                            $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
+                        }
+                    }
+                }
+
+                $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
+                $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
+                Storage::disk('public')->put($videoPath, $videoBytes);
+
+                $thumbPath = null;
+                if (is_string($thumbBytes) && $thumbBytes !== '') {
+                    $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
+                    $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
+                    Storage::disk('public')->put($thumbPath, $thumbBytes);
+                }
+
+                return [
+                    'source' => 'runway_video_generation',
+                    'provider' => 'runway',
+                    'video_id' => $videoId,
+                    'video_path' => $videoPath,
+                    'thumbnail_path' => $thumbPath,
+                    'reference_path' => $attemptReferencePath,
+                    'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
+                    'reference_reason' => $attemptReferenceReason,
+                    'reference_validation' => $validation ?? $lastValidation,
+                    'composition_reference' => $compositionMeta,
+                    'generation_attempts' => $attempt + 1,
+                    'job_status' => (string) ($jobFinal['status'] ?? data_get($jobFinal, 'task.status', 'completed')),
+                    'brand_selection' => $brandDecision,
+                ];
+            } catch (Throwable $attemptError) {
+                $lastError = $attemptError;
+                if (($attempt + 1) >= $maxAttempts) {
+                    throw $attemptError;
+                }
+            } finally {
+                if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
+                    @unlink($attemptTempPreparedPath);
+                }
+            }
+        }
+
+        if ($lastError instanceof Throwable) {
+            throw $lastError;
+        }
+
+        throw new \RuntimeException('Runway video generation failed without explicit error.');
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<int, string>  $generationReferenceAbsPool
+     * @param  array<int, string>  $imageReferencePathPool
+     * @param  array<int, string>  $validationReferenceAbsPool
+     * @param  array<string, mixed>|null  $compositionMeta
+     * @param  array<string, mixed>  $brandDecision
+     * @param  array<string, mixed>  $videoOptions
+     * @param  array<string, mixed>|null  $providerFallback
+     * @return array<string, mixed>
+     */
+    private function generateVideoWithOpenAi(
+        OpenAiService $openAi,
+        string $briefRaw,
+        string $fallbackPrompt,
+        string $videoPrompt,
+        ?string $referenceAbs,
+        ?string $referencePath,
+        array $referencePaths,
+        string $referenceReason,
+        array $generationReferenceAbsPool,
+        array $imageReferencePathPool,
+        array $validationReferenceAbsPool,
+        bool $mustEnforceExplicitReferences,
+        ?array $compositionMeta,
+        array $brandDecision,
+        array $videoOptions,
+        ?array $providerFallback = null
+    ): array {
+        $maxAttempts = $mustEnforceExplicitReferences ? 2 : 1;
+        $lastValidation = null;
+        $lastError = null;
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $attemptPrompt = $videoPrompt;
+            if ($attempt > 0) {
+                $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
+                $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
+            }
+
+            $attemptReferenceAbs = $referenceAbs;
+            $attemptReferencePath = $referencePath;
+            $attemptReferencePaths = $referencePaths;
+            $attemptReferenceReason = $referenceReason;
+            $attemptTempPreparedPath = null;
+
+            try {
+                $job = null;
+                try {
+                    $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
+                } catch (Throwable $videoCreateError) {
+                    $msg = strtolower($videoCreateError->getMessage());
+                    $needsNoRefRetry = str_contains($msg, 'inpaint image must match')
+                        || str_contains($msg, 'inpaint')
+                        || str_contains($msg, 'input_reference');
+
+                    if (!$needsNoRefRetry) {
+                        throw $videoCreateError;
+                    }
+
+                    if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
+                        $fallbackAbs = $generationReferenceAbsPool[0];
+                        $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $videoOptions['size']);
+                        if ($fallbackPrepared) {
+                            $attemptTempPreparedPath = $fallbackPrepared;
+                            $attemptReferenceAbs = $fallbackPrepared;
+                            $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error_normalized';
+                        } else {
+                            $attemptReferenceAbs = $fallbackAbs;
+                            $attemptReferenceReason = 'retry_with_primary_reference_after_inpaint_error';
+                        }
+
+                        $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
+                        $attemptReferencePaths = array_values(array_filter(
+                            [$attemptReferencePath],
+                            fn ($v) => is_string($v) && $v !== ''
+                        ));
+                        $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
+                    } else {
+                        $attemptReferenceAbs = null;
+                        $attemptReferencePath = null;
+                        $attemptReferencePaths = [];
+                        $attemptReferenceReason = 'retry_without_reference_after_inpaint_error';
+                        $job = $openAi->createVideoJob($attemptPrompt, null, $videoOptions);
+                    }
+                }
+
+                $videoId = (string) ($job['id'] ?? '');
+                $jobFinal = $openAi->waitForVideoCompletion($videoId);
+                $videoBytes = $openAi->downloadVideoContent($videoId);
+                $thumbBytes = null;
+                try {
+                    $thumbBytes = $openAi->downloadVideoThumbnail($videoId);
+                } catch (Throwable) {
+                    $thumbBytes = null;
+                }
+
+                $validation = null;
+                if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
+                    $tmpDir = storage_path('app/tmp');
+                    if (!is_dir($tmpDir)) {
+                        @mkdir($tmpDir, 0775, true);
+                    }
+                    $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
+                    @file_put_contents($tmpThumbPath, $thumbBytes);
+                    if (is_file($tmpThumbPath)) {
+                        $validation = $openAi->validateVideoFrameWithReferences(
+                            brief: $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
+                            frameAbsolutePath: $tmpThumbPath,
+                            referenceAbsolutePaths: !empty($validationReferenceAbsPool)
+                                ? $validationReferenceAbsPool
+                                : array_slice($generationReferenceAbsPool, 0, 4)
+                        );
+                        @unlink($tmpThumbPath);
+                    }
+
+                    if (is_array($validation)) {
+                        $lastValidation = $validation;
+                        $allPresent = (bool) ($validation['all_present'] ?? false);
+                        if (!$allPresent && ($attempt + 1) < $maxAttempts) {
+                            continue;
+                        }
+                        if (!$allPresent) {
+                            $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
+                        }
+                    }
+                }
+
+                $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
+                $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
+                Storage::disk('public')->put($videoPath, $videoBytes);
+
+                $thumbPath = null;
+                if (is_string($thumbBytes) && $thumbBytes !== '') {
+                    $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
+                    $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
+                    Storage::disk('public')->put($thumbPath, $thumbBytes);
+                }
+
+                return [
+                    'source' => 'sora_video_generation',
+                    'provider' => 'openai',
+                    'video_id' => $videoId,
+                    'video_path' => $videoPath,
+                    'thumbnail_path' => $thumbPath,
+                    'reference_path' => $attemptReferencePath,
+                    'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
+                    'reference_reason' => $attemptReferenceReason,
+                    'reference_validation' => $validation ?? $lastValidation,
+                    'composition_reference' => $compositionMeta,
+                    'generation_attempts' => $attempt + 1,
+                    'job_status' => (string) ($jobFinal['status'] ?? 'completed'),
+                    'brand_selection' => $brandDecision,
+                    'provider_fallback' => $providerFallback,
+                ];
+            } catch (Throwable $attemptError) {
+                $lastError = $attemptError;
+                if (($attempt + 1) >= $maxAttempts) {
+                    throw $attemptError;
+                }
+            } finally {
+                if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
+                    @unlink($attemptTempPreparedPath);
+                }
+            }
+        }
+
+        if ($lastError instanceof Throwable) {
+            throw $lastError;
+        }
+
+        throw new \RuntimeException('Video generation failed without explicit error.');
+    }
+
+    private function shouldFallbackFromRunwayToOpenAi(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+
+        if ($message === '') {
+            return false;
+        }
+
+        if (str_contains($message, 'missing runway_api_key')) {
+            return false;
+        }
+
+        if (str_contains($message, 'runway video create error (400)')) {
+            return false;
+        }
+
+        return str_contains($message, 'runway video generation failed')
+            || str_contains($message, 'runway completed payload missing downloadable video url')
+            || str_contains($message, 'runway asset download error')
+            || str_contains($message, 'runway video generation timeout')
+            || str_contains($message, 'curl error')
+            || str_contains($message, 'failed to connect');
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     */
+    private function buildOpenAiVideoFallbackPrompt(string $videoPrompt, string $briefRaw, array $referencePaths): string
+    {
+        $prompt = trim($videoPrompt);
+        $referenceCount = count(array_filter($referencePaths, fn ($path) => is_string($path) && $path !== ''));
+
+        $prompt .= ' Fallback di sicurezza: privilegia un output stabile e pubblicabile.';
+        if ($referenceCount > 1) {
+            $prompt .= ' Se ci sono piu ambienti reali, mostrali in sequenza con transizioni naturali invece di fonderli in un unico spazio impossibile.';
+        }
+        if (trim($briefRaw) !== '') {
+            $prompt .= ' Brief utente prioritario: ' . trim($briefRaw) . '.';
+        }
+
+        return $prompt;
     }
 
     private function targetVideoSecondsForFormat(ContentItem $item): string
@@ -1271,9 +2335,11 @@ SVG;
      */
     private function buildLockedVideoSceneReference(
         OpenAiService $openAi,
+        NanoBananaService $nanoBanana,
         string $brief,
         string $prompt,
-        array $referenceAbsPaths
+        array $referenceAbsPaths,
+        array $assetVariables
     ): ?array {
         $refs = array_values(array_filter(
             array_slice($referenceAbsPaths, 0, 4),
@@ -1293,6 +2359,9 @@ SVG;
             $composePrompt = 'Crea una singola immagine di scena che integri TUTTI i soggetti principali presenti nelle immagini di riferimento.';
             $composePrompt .= ' Non omettere nessun soggetto richiesto.';
             $composePrompt .= ' Mantieni volti, persone, oggetti e veicoli riconoscibili e coerenti con i riferimenti.';
+            $composePrompt .= ' Fai una vera fusione narrativa e visiva in un unica scena plausibile: niente collage, niente split-screen, niente mosaico, niente overlay meccanico.';
+            $composePrompt .= ' Unifica luce, prospettiva, styling e ambientazione come se fosse un solo scatto strategico.';
+            $composePrompt .= ' ' . $this->locationEnvelopePreservationInstruction($assetVariables, []);
             $composePrompt .= ' Niente testo, niente watermark, niente loghi inventati.';
             $composePrompt .= ' Brief: ' . Str::limit(trim($brief !== '' ? $brief : $prompt), 500, '');
             $composePrompt .= ' Direzione creativa: ' . Str::limit(trim($prompt), 380, '');
@@ -1303,7 +2372,7 @@ SVG;
             }
 
             try {
-                $img = $openAi->generateImageEditBase64($composePrompt, $refs);
+                $img = $nanoBanana->generateImageEditBase64($composePrompt, $refs);
                 $bytes = base64_decode((string) ($img['b64'] ?? ''), true);
                 if (!is_string($bytes) || $bytes === '') {
                     continue;
@@ -2143,6 +3212,265 @@ SVG;
         return trim($value);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveAssetVariableContext(array $meta, array $strategy): array
+    {
+        $metaPayload = (array) data_get($meta, 'asset_variables', []);
+
+        $catalog = $this->normalizeAssetVariableRows((array) data_get($metaPayload, 'catalog', []));
+        if (empty($catalog)) {
+            $catalog = $this->normalizeAssetVariableRows((array) data_get($meta, 'asset_variables_catalog', []));
+        }
+        if (empty($catalog)) {
+            $catalog = $this->normalizeAssetVariableRows((array) data_get($strategy, 'brand_references.asset_variables', []));
+        }
+
+        $requestedIds = collect((array) data_get($metaPayload, 'requested_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $detectedIds = collect((array) data_get($metaPayload, 'detected_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $recognizedTerms = array_values(array_unique(array_filter(array_map(
+            fn ($v) => trim((string) $v),
+            (array) data_get($metaPayload, 'recognized_terms', [])
+        ))));
+
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($metaPayload, 'resolved', []));
+
+        if (empty($resolved) && !empty($catalog) && (!empty($requestedIds) || !empty($detectedIds))) {
+            $catalogById = collect($catalog)->keyBy(fn ($row) => (int) ($row['id'] ?? 0));
+            $resolved = collect(array_merge($requestedIds, $detectedIds))
+                ->map(fn (int $id) => $catalogById->get($id))
+                ->filter()
+                ->values()
+                ->all();
+        }
+
+        $brief = $this->normalizeText((string) data_get($meta, 'manual_brief', ''));
+        if ($brief !== '' && !empty($catalog)) {
+            foreach ($catalog as $row) {
+                if (!$this->assetVariableMatchesBrief($brief, $row)) {
+                    continue;
+                }
+
+                $resolved[] = $row;
+                $detectedId = (int) ($row['id'] ?? 0);
+                if ($detectedId > 0) {
+                    $detectedIds[] = $detectedId;
+                }
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($name !== '') {
+                    $recognizedTerms[] = $name;
+                }
+            }
+        }
+
+        $resolved = $this->normalizeAssetVariableRows($resolved);
+
+        $resolvedIds = collect($resolved)
+            ->map(fn ($row) => (int) ($row['id'] ?? 0))
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $resolvedAssetIds = collect($resolved)
+            ->flatMap(fn ($row) => (array) ($row['asset_ids'] ?? []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $resolvedAssetPaths = collect($resolved)
+            ->flatMap(fn ($row) => (array) ($row['asset_paths'] ?? []))
+            ->map(fn ($path) => trim((string) $path))
+            ->filter(fn (string $path) => $path !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $selectionMode = (string) data_get($metaPayload, 'selection_mode', '');
+        if ($selectionMode === '' || $selectionMode === 'none') {
+            $selectionMode = $this->assetVariableSelectionMode(
+                !empty($requestedIds),
+                !empty($detectedIds)
+            );
+        }
+
+        return [
+            'catalog' => $catalog,
+            'requested_ids' => array_values(array_unique($requestedIds)),
+            'detected_ids' => array_values(array_unique($detectedIds)),
+            'resolved_ids' => $resolvedIds,
+            'resolved_asset_ids' => $resolvedAssetIds,
+            'resolved_asset_paths' => $resolvedAssetPaths,
+            'resolved' => $resolved,
+            'recognized_terms' => array_values(array_unique(array_filter($recognizedTerms))),
+            'selection_mode' => $selectionMode,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function buildAssetVariablePromptHint(array $assetVariables): string
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+        if (empty($resolved)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach (array_slice($resolved, 0, 4) as $row) {
+            $name = trim((string) ($row['name'] ?? ''));
+            $slug = trim((string) ($row['slug'] ?? ''));
+            $kind = trim((string) ($row['kind'] ?? 'custom'));
+
+            $label = $name !== '' ? $name : ($slug !== '' ? '@' . $slug : 'variabile');
+            if ($kind !== '') {
+                $label .= ' [' . $kind . ']';
+            }
+
+            $refs = collect((array) ($row['asset_paths'] ?? []))
+                ->map(fn ($path) => trim((string) basename((string) $path)))
+                ->filter(fn (string $v) => $v !== '')
+                ->take(2)
+                ->values()
+                ->all();
+
+            if (!empty($refs)) {
+                $label .= ' refs: ' . implode(', ', $refs);
+            }
+
+            $parts[] = $label;
+        }
+
+        return Str::limit(implode('; ', $parts), 520, '');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeAssetVariableRows(array $rows): array
+    {
+        $out = [];
+        $seen = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $id = isset($row['id']) ? (int) $row['id'] : null;
+            $name = trim((string) ($row['name'] ?? ''));
+            $slug = trim((string) ($row['slug'] ?? Str::slug($name)));
+            if ($name === '' && $slug === '') {
+                continue;
+            }
+
+            $key = ($id && $id > 0) ? ('id:' . $id) : ('slug:' . Str::lower($slug));
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $assetIds = collect((array) ($row['asset_ids'] ?? []))
+                ->map(fn ($value) => (int) $value)
+                ->filter(fn (int $value) => $value > 0)
+                ->unique()
+                ->values()
+                ->all();
+
+            $assetPaths = collect((array) ($row['asset_paths'] ?? []))
+                ->map(fn ($path) => trim((string) $path))
+                ->filter(fn (string $path) => $path !== '')
+                ->unique()
+                ->values()
+                ->all();
+
+            if (empty($assetPaths) && !empty($row['assets']) && is_array($row['assets'])) {
+                $assetPaths = collect((array) $row['assets'])
+                    ->map(fn ($asset) => is_array($asset) ? trim((string) ($asset['path'] ?? '')) : '')
+                    ->filter(fn (string $path) => $path !== '')
+                    ->unique()
+                    ->values()
+                    ->all();
+            }
+
+            $out[] = [
+                'id' => $id && $id > 0 ? $id : null,
+                'name' => $name,
+                'slug' => $slug,
+                'kind' => trim((string) ($row['kind'] ?? 'custom')),
+                'description' => trim((string) ($row['description'] ?? '')),
+                'asset_ids' => $assetIds,
+                'asset_paths' => $assetPaths,
+            ];
+        }
+
+        return array_values($out);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function assetVariableMatchesBrief(string $briefNormalized, array $row): bool
+    {
+        if ($briefNormalized === '') {
+            return false;
+        }
+
+        $name = $this->normalizeText((string) ($row['name'] ?? ''));
+        $slug = $this->normalizeText(str_replace('-', ' ', (string) ($row['slug'] ?? '')));
+
+        if ($name !== '' && str_contains(' ' . $briefNormalized . ' ', ' ' . $name . ' ')) {
+            return true;
+        }
+
+        if ($slug !== '' && str_contains(' ' . $briefNormalized . ' ', ' ' . $slug . ' ')) {
+            return true;
+        }
+
+        $slugCompact = str_replace(' ', '', $slug);
+        if ($slugCompact !== '' && str_contains($briefNormalized, '@' . $slugCompact)) {
+            return true;
+        }
+
+        $nameCompact = str_replace(' ', '', $name);
+        if ($nameCompact !== '' && str_contains($briefNormalized, '@' . $nameCompact)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function assetVariableSelectionMode(bool $hasRequested, bool $hasDetected): string
+    {
+        if ($hasRequested && $hasDetected) {
+            return 'manual+brief';
+        }
+        if ($hasRequested) {
+            return 'manual';
+        }
+        if ($hasDetected) {
+            return 'brief';
+        }
+        return 'none';
+    }
+
     private function resolveBrandImageSources(array $strategy, array $meta, int $tenantId): array
     {
         $paths = (array) data_get($strategy, 'brand_references.reference_images', []);
@@ -2290,6 +3618,21 @@ SVG;
             'strval',
             (array) data_get($meta, 'image_references.selected_paths', [])
         )));
+        $variablePaths = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($meta, 'asset_variables.resolved_asset_paths', [])
+        )));
+        if (empty($variablePaths)) {
+            $variablePaths = collect((array) data_get($meta, 'asset_variables.resolved', []))
+                ->flatMap(fn ($row) => is_array($row) ? (array) ($row['asset_paths'] ?? []) : [])
+                ->map(fn ($path) => (string) $path)
+                ->filter(fn ($path) => $path !== '')
+                ->values()
+                ->all();
+        }
+        if (!empty($variablePaths)) {
+            $paths = array_values(array_unique(array_merge($paths, $variablePaths)));
+        }
 
         if (empty($paths)) {
             return [];
@@ -2473,6 +3816,34 @@ SVG;
             ->where('tenant_id', $item->tenant_id)
             ->where('content_plan_id', $item->content_plan_id)
             ->count();
+    }
+
+    /**
+     * @param  array<string, mixed>  $itemBrain
+     * @param  array<int, string>  $planTitles
+     * @param  array<int, string>  $planCaptions
+     * @return array<string, mixed>
+     */
+    private function buildSocialPublicationContext(
+        ContentItem $item,
+        array $itemBrain,
+        array $planTitles,
+        array $planCaptions
+    ): array {
+        return [
+            'is_social_post' => true,
+            'platforms' => $item->platforms(),
+            'format' => (string) ($item->format ?? 'post'),
+            'feed_position' => $this->positionInPlan($item) + 1,
+            'feed_total' => max(1, $this->totalItemsInPlan($item)),
+            'series_name' => (string) data_get($itemBrain, 'series_name', ''),
+            'series_step' => data_get($itemBrain, 'series_step'),
+            'connection_hint' => (string) data_get($itemBrain, 'connection_hint', ''),
+            'standalone_rule' => (string) data_get($itemBrain, 'standalone_rule', ''),
+            'goal' => 'Creare un contenuto pensato per il feed social: chiaro, memorabile, fermascroll e coerente con l insieme delle pubblicazioni.',
+            'nearby_titles' => array_values(array_slice($planTitles, 0, 5)),
+            'nearby_captions' => array_values(array_slice($planCaptions, 0, 4)),
+        ];
     }
 
     private function positionInPlan(ContentItem $item): int
@@ -2700,6 +4071,435 @@ SVG;
         return $out;
     }
 
+    /**
+     * Arricchisce il video con una traccia audio quando assente:
+     * 1) prova audio da brand video reference
+     * 2) fallback TTS da caption/titolo
+     *
+     * @return array{
+     *   applied:bool,
+     *   reason:string,
+     *   source:string|null,
+     *   video_path:string|null,
+     *   audio_path:string|null,
+     *   error:string|null
+     * }
+     */
+    private function maybeAttachAudioTrackToVideo(ContentItem $item, string $videoPath, OpenAiService $openAi): array
+    {
+        if (!(bool) config('generation.video_auto_audio', true)) {
+            return [
+                'applied' => false,
+                'reason' => 'video_auto_audio_disabled',
+                'source' => null,
+                'video_path' => $videoPath,
+                'audio_path' => null,
+                'error' => null,
+            ];
+        }
+
+        $videoPath = trim($videoPath);
+        if ($videoPath === '') {
+            return [
+                'applied' => false,
+                'reason' => 'missing_video_path',
+                'source' => null,
+                'video_path' => null,
+                'audio_path' => null,
+                'error' => null,
+            ];
+        }
+
+        $publicDisk = Storage::disk('public');
+        if (!$publicDisk->exists($videoPath)) {
+            return [
+                'applied' => false,
+                'reason' => 'video_file_not_found',
+                'source' => null,
+                'video_path' => $videoPath,
+                'audio_path' => null,
+                'error' => null,
+            ];
+        }
+
+        $ffmpeg = $this->resolveFfmpegBinary();
+        $ffprobe = $this->resolveFfprobeBinary($ffmpeg);
+        if (!$this->canRunBinary($ffmpeg)) {
+            return [
+                'applied' => false,
+                'reason' => 'ffmpeg_unavailable',
+                'source' => null,
+                'video_path' => $videoPath,
+                'audio_path' => null,
+                'error' => null,
+            ];
+        }
+        $ffprobeAvailable = $this->canRunBinary($ffprobe);
+
+        $currentProvider = strtolower(trim((string) data_get($item->ai_meta, 'video_provider', '')));
+        if (!$ffprobeAvailable && $currentProvider !== 'runway') {
+            return [
+                'applied' => false,
+                'reason' => 'ffprobe_unavailable_skip_non_runway',
+                'source' => null,
+                'video_path' => $videoPath,
+                'audio_path' => null,
+                'error' => null,
+            ];
+        }
+
+        $videoAbsPath = $publicDisk->path($videoPath);
+        if ($ffprobeAvailable && $this->videoHasAudioStream($videoAbsPath, $ffprobe)) {
+            return [
+                'applied' => false,
+                'reason' => 'video_already_has_audio',
+                'source' => null,
+                'video_path' => $videoPath,
+                'audio_path' => null,
+                'error' => null,
+            ];
+        }
+
+        $tmpDir = storage_path('app/tmp');
+        if (!is_dir($tmpDir)) {
+            @mkdir($tmpDir, 0775, true);
+        }
+
+        $tempAudioAbs = null;
+        $tempMuxedAbs = null;
+        $storedAudioPath = null;
+        $source = null;
+        $error = null;
+
+        try {
+            $brandVideoRefPath = $this->resolveBrandVideoReferencePath($item);
+            if ($brandVideoRefPath !== '' && $publicDisk->exists($brandVideoRefPath)) {
+                $brandVideoAbs = $publicDisk->path($brandVideoRefPath);
+                if (!$ffprobeAvailable || $this->videoHasAudioStream($brandVideoAbs, $ffprobe)) {
+                    $extractedAbs = $tmpDir . DIRECTORY_SEPARATOR . 'brand-audio-' . Str::uuid()->toString() . '.m4a';
+                    if ($this->extractAudioTrackFromVideo($brandVideoAbs, $extractedAbs, $ffmpeg)) {
+                        $tempAudioAbs = $extractedAbs;
+                        $source = 'brand_video_audio';
+                    }
+                }
+            }
+
+            if ($tempAudioAbs === null) {
+                $narration = $this->resolveNarrationTextForVideo($item);
+                if ($narration !== '') {
+                    try {
+                        $speechBytes = $openAi->generateSpeechMp3($narration);
+                        if (is_string($speechBytes) && $speechBytes !== '') {
+                            $storedAudioPath = 'ai/audio/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.mp3';
+                            $publicDisk->put($storedAudioPath, $speechBytes);
+                            if ($publicDisk->exists($storedAudioPath)) {
+                                $tempAudioAbs = $publicDisk->path($storedAudioPath);
+                                $source = 'openai_tts';
+                            }
+                        }
+                    } catch (Throwable $ttsError) {
+                        $error = Str::limit($ttsError->getMessage(), 240, '');
+                    }
+                }
+            }
+
+            if ($tempAudioAbs === null || !is_file($tempAudioAbs)) {
+                return [
+                    'applied' => false,
+                    'reason' => 'no_audio_source_available',
+                    'source' => $source,
+                    'video_path' => $videoPath,
+                    'audio_path' => $storedAudioPath,
+                    'error' => $error,
+                ];
+            }
+
+            $tempMuxedAbs = $tmpDir . DIRECTORY_SEPARATOR . 'video-audio-' . Str::uuid()->toString() . '.mp4';
+            if (!$this->muxVideoWithAudioTrack($videoAbsPath, $tempAudioAbs, $tempMuxedAbs, $ffmpeg)) {
+                return [
+                    'applied' => false,
+                    'reason' => 'mux_failed',
+                    'source' => $source,
+                    'video_path' => $videoPath,
+                    'audio_path' => $storedAudioPath,
+                    'error' => $error,
+                ];
+            }
+
+            $newVideoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.mp4';
+            $bytes = @file_get_contents($tempMuxedAbs);
+            if (!is_string($bytes) || $bytes === '') {
+                return [
+                    'applied' => false,
+                    'reason' => 'mux_output_empty',
+                    'source' => $source,
+                    'video_path' => $videoPath,
+                    'audio_path' => $storedAudioPath,
+                    'error' => $error,
+                ];
+            }
+
+            $publicDisk->put($newVideoPath, $bytes);
+            if (!$publicDisk->exists($newVideoPath)) {
+                return [
+                    'applied' => false,
+                    'reason' => 'mux_output_store_failed',
+                    'source' => $source,
+                    'video_path' => $videoPath,
+                    'audio_path' => $storedAudioPath,
+                    'error' => $error,
+                ];
+            }
+
+            return [
+                'applied' => true,
+                'reason' => 'audio_attached',
+                'source' => $source,
+                'video_path' => $newVideoPath,
+                'audio_path' => $storedAudioPath,
+                'error' => $error,
+            ];
+        } catch (Throwable $e) {
+            return [
+                'applied' => false,
+                'reason' => 'audio_attach_exception',
+                'source' => $source,
+                'video_path' => $videoPath,
+                'audio_path' => $storedAudioPath,
+                'error' => Str::limit($e->getMessage(), 240, ''),
+            ];
+        } finally {
+            if (is_string($tempMuxedAbs) && $tempMuxedAbs !== '' && is_file($tempMuxedAbs)) {
+                @unlink($tempMuxedAbs);
+            }
+
+            if (
+                is_string($tempAudioAbs)
+                && $tempAudioAbs !== ''
+                && is_file($tempAudioAbs)
+                && ($storedAudioPath === null || !str_contains(str_replace('\\', '/', $tempAudioAbs), '/storage/app/public/'))
+            ) {
+                @unlink($tempAudioAbs);
+            }
+        }
+    }
+
+    private function resolveNarrationTextForVideo(ContentItem $item): string
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $voiceover = trim((string) data_get($meta, 'video_voiceover', ''));
+        if ($voiceover !== '') {
+            return $this->sanitizeNarrationText($voiceover);
+        }
+
+        $caption = trim((string) ($item->ai_caption ?? ''));
+        if ($caption === '') {
+            $caption = trim((string) ($item->caption ?? ''));
+        }
+
+        if ($caption !== '') {
+            return $this->sanitizeNarrationText($this->compactCaptionForVoiceover($caption));
+        }
+
+        return '';
+    }
+
+    private function sanitizeNarrationText(string $text): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        if ($text === '') {
+            return '';
+        }
+
+        $text = preg_replace('/#\w+/u', '', $text) ?? $text;
+        $text = preg_replace('/https?:\/\/\S+/iu', '', $text) ?? $text;
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+        $text = trim($text);
+
+        $maxChars = (int) (config('openai.speech_max_chars') ?: 1000);
+        $maxChars = max(200, min(4000, $maxChars));
+        if (mb_strlen($text, 'UTF-8') > $maxChars) {
+            $text = trim(mb_substr($text, 0, $maxChars, 'UTF-8'));
+        }
+
+        return $text;
+    }
+
+    private function compactCaptionForVoiceover(string $caption): string
+    {
+        $text = trim($caption);
+        if ($text === '') {
+            return '';
+        }
+
+        $text = preg_replace('/^[\p{So}\p{Sk}\p{Cf}\s]+/u', '', $text) ?? $text;
+        $text = preg_replace('/\b(contesto|azione|risultato|follow-up)\s*:\s*/iu', '', $text) ?? $text;
+        $text = preg_replace('/#\w+/u', '', $text) ?? $text;
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+        $text = trim($text);
+
+        $sentences = preg_split('/(?<=[\.\!\?])\s+/u', $text) ?: [];
+        $clean = [];
+        foreach ($sentences as $sentence) {
+            $sentence = trim($sentence);
+            if ($sentence === '') {
+                continue;
+            }
+
+            if (preg_match('/\b(contattaci|scrivici|prenota|clicca|salva il post|seguici)\b/iu', $sentence) === 1) {
+                continue;
+            }
+
+            $clean[] = $sentence;
+            if (count($clean) >= 2) {
+                break;
+            }
+        }
+
+        return trim(implode(' ', $clean));
+    }
+
+    private function resolveBrandVideoReferencePath(ContentItem $item): string
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $candidate = trim((string) data_get($meta, 'video_reference.path', ''));
+        if ($candidate !== '') {
+            return $candidate;
+        }
+
+        $assets = is_array($item->assets) ? $item->assets : [];
+        foreach ($assets as $asset) {
+            if (!is_array($asset)) {
+                continue;
+            }
+            $type = strtolower(trim((string) ($asset['type'] ?? '')));
+            $path = trim((string) ($asset['path'] ?? ''));
+            if ($path === '') {
+                continue;
+            }
+            if ($type === 'brand_video') {
+                return $path;
+            }
+        }
+
+        return '';
+    }
+
+    private function extractAudioTrackFromVideo(string $sourceVideoAbs, string $targetAudioAbs, string $ffmpegBinary): bool
+    {
+        $process = new Process([
+            $ffmpegBinary,
+            '-y',
+            '-i',
+            $sourceVideoAbs,
+            '-vn',
+            '-acodec',
+            'aac',
+            '-b:a',
+            '160k',
+            $targetAudioAbs,
+        ]);
+        $process->setTimeout(120);
+        $process->run();
+
+        return $process->isSuccessful() && is_file($targetAudioAbs) && filesize($targetAudioAbs) > 0;
+    }
+
+    private function muxVideoWithAudioTrack(string $sourceVideoAbs, string $audioAbs, string $targetVideoAbs, string $ffmpegBinary): bool
+    {
+        $process = new Process([
+            $ffmpegBinary,
+            '-y',
+            '-i',
+            $sourceVideoAbs,
+            '-i',
+            $audioAbs,
+            '-map',
+            '0:v:0',
+            '-map',
+            '1:a:0',
+            '-c:v',
+            'libx264',
+            '-preset',
+            'veryfast',
+            '-crf',
+            '22',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '160k',
+            '-af',
+            'apad',
+            '-shortest',
+            $targetVideoAbs,
+        ]);
+        $process->setTimeout(240);
+        $process->run();
+
+        return $process->isSuccessful() && is_file($targetVideoAbs) && filesize($targetVideoAbs) > 0;
+    }
+
+    private function videoHasAudioStream(string $videoAbsPath, string $ffprobeBinary): bool
+    {
+        $process = new Process([
+            $ffprobeBinary,
+            '-v',
+            'error',
+            '-select_streams',
+            'a',
+            '-show_entries',
+            'stream=codec_type',
+            '-of',
+            'csv=p=0',
+            $videoAbsPath,
+        ]);
+        $process->setTimeout(30);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            return false;
+        }
+
+        $output = strtolower(trim((string) $process->getOutput()));
+        return $output !== '' && str_contains($output, 'audio');
+    }
+
+    private function resolveFfmpegBinary(): string
+    {
+        $configured = trim((string) config('generation.ffmpeg_binary', ''));
+        return $configured !== '' ? $configured : 'ffmpeg';
+    }
+
+    private function resolveFfprobeBinary(string $ffmpegBinary): string
+    {
+        $configured = trim((string) config('generation.ffprobe_binary', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $normalized = str_replace('\\', '/', $ffmpegBinary);
+        if (str_ends_with(strtolower($normalized), '/ffmpeg.exe')) {
+            return substr($ffmpegBinary, 0, -10) . 'ffprobe.exe';
+        }
+        if (str_ends_with(strtolower($normalized), '/ffmpeg')) {
+            return substr($ffmpegBinary, 0, -6) . 'ffprobe';
+        }
+
+        return 'ffprobe';
+    }
+
+    private function canRunBinary(string $binary): bool
+    {
+        try {
+            $process = new Process([$binary, '-version']);
+            $process->setTimeout(6);
+            $process->run();
+            return $process->isSuccessful();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
     private function attachBrandVideoReference(ContentItem $item): void
     {
         $format = strtolower((string) ($item->format ?? ''));
@@ -2728,6 +4528,33 @@ SVG;
             'kind' => 'brand_video',
         ];
         $item->ai_meta = $meta;
+    }
+
+    private function hasGeneratedVisualOutput(ContentItem $item): bool
+    {
+        $imagePath = trim((string) ($item->ai_image_path ?? ''));
+        if ($imagePath !== '') {
+            return true;
+        }
+
+        $assets = is_array($item->assets) ? $item->assets : [];
+        foreach ($assets as $asset) {
+            if (!is_array($asset)) {
+                continue;
+            }
+
+            $type = strtolower(trim((string) ($asset['type'] ?? '')));
+            $path = trim((string) ($asset['path'] ?? ''));
+            if ($path === '') {
+                continue;
+            }
+
+            if (str_contains($type, 'ai_generated') || $type === 'demo_image') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

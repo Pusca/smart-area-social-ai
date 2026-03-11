@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -86,6 +87,23 @@ class OpenAiService
         $instructions =
             "Sei una social media manager senior.\n"
             . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
+            . "Usa memory_summary.feedback_summary come memoria del gusto del tenant: cio che piace va riutilizzato con intelligenza, cio che non piace va evitato.\n"
+            . "Tratta memory_summary.hard_avoid_rules e feedback_loop.tenant_feedback.recent_objections come vincoli forti.\n"
+            . "Se feedback_loop.active_request e presente, e una correzione prioritaria da applicare subito nella rigenerazione corrente.\n"
+            . "Quando la correzione riguarda il visual, migliora soprattutto prompt immagine e coerenza visuale, preservando il resto se gia valido.\n"
+            . "Quando la correzione riguarda copy o tono, migliora soprattutto caption, CTA e angolo narrativo, preservando il visual se gia coerente.\n"
+            . "Tutto cio che generi e pensato per post social: non brochure, non sito corporate, non stock generico.\n"
+            . "Usa social_publication_context per capire ruolo del contenuto nel feed, nella serie e nell insieme delle pubblicazioni.\n"
+            . "La caption deve sembrare nativa per Instagram/Facebook: hook iniziale, ritmo leggibile, taglio concreto e orientato al comportamento social.\n"
+            . "Il brand descritto nel contesto e l azienda del cliente, non un caso studio di marketing o un cliente di agenzia.\n"
+            . "Non usare strutture da consulenza tipo Contesto, Azione, Risultato o Framework, salvo richiesta esplicita del brief.\n"
+            . "Non inventare metriche, percentuali, recensioni, risultati economici, prenotazioni, numeri o dati se non sono presenti nel contesto reale.\n"
+            . "Per ristoranti, hospitality, retail e attivita locali scrivi come brand reale che parla al suo pubblico: esperienza, atmosfera, proposta, luogo, servizio, dettagli e invito naturale.\n"
+            . "Il prompt immagine deve descrivere un visual da post social: stop-scroll, leggibile anche da miniatura, con gerarchia visiva forte e soggetto principale chiaro.\n"
+            . "Se il formato e video, genera anche video_prompt: breve, chiaro, compatibile con generazione video, centrato su scene, movimento, ordine delle inquadrature, transizioni e fedelta dei riferimenti reali.\n"
+            . "Se il formato e video, video_prompt NON deve includere istruzioni da immagine statica come 4:5 feed, miniatura, singolo frame hero o composizione da post fermo.\n"
+            . "Se il formato e video, genera anche voiceover: massimo 2-3 frasi brevi, parlabili, naturali, senza hashtag, senza elenco puntato, senza CTA aggressiva e senza leggere il prompt tecnico.\n"
+            . "Mantieni coerenza con il feed del brand, ma evita l effetto foto corporate generica o immagine da catalogo non pensata per i social.\n"
             . "Rispetta repetition_rules: evita ripetizioni di hook, CTA e temi recenti.\n"
             . "Ogni post deve essere autosufficiente: comprensibile e utile anche da solo.\n"
             . "Mantieni comunque continuita strategica con campagne/serie quando presenti.\n"
@@ -94,12 +112,18 @@ class OpenAiService
             . "Caption concreta, specifica e adatta alla piattaforma.\n"
             . "Usa item_brain.uniqueness_key come vincolo creativo anti-duplicato.\n"
             . "Il prompt immagine deve evitare loghi finti, watermark e testo sovraimpresso.\n"
+            . "Per default il prompt immagine deve portare verso fotografia editoriale e commerciale fotorealistica, non verso illustrazione o look artificiale.\n"
+            . "Se compaiono persone, devono sembrare reali: volti, occhi, denti, mani, pelle, postura e anatomia credibili.\n"
+            . "Non usare parole come stilizzato, cartoon, CGI, render, 3D o illustrato, salvo richiesta esplicita del brief.\n"
+            . "Se il contesto usa un luogo reale del brand, mantieni il luogo autentico e aggiungi eventuali persone in modo naturale.\n"
             . "Testo, CTA, hashtag e prompt immagine devono essere in italiano.\n"
             . "Restituisci SOLO JSON valido con chiavi:\n"
             . "- caption (string)\n"
             . "- hashtags (array of strings)\n"
             . "- cta (string)\n"
             . "- image_prompt (string)\n"
+            . "- video_prompt (string)\n"
+            . "- voiceover (string)\n"
             . "Niente markdown. Niente code fences. Nessun testo extra.";
 
         $input = [
@@ -141,6 +165,8 @@ class OpenAiService
                 'hashtags' => $hashtags,
                 'cta' => $parsed['cta'] ?? null,
                 'image_prompt' => $parsed['image_prompt'] ?? null,
+                'video_prompt' => $parsed['video_prompt'] ?? null,
+                'voiceover' => $parsed['voiceover'] ?? null,
             ];
         } catch (Throwable $e) {
             Log::error('OpenAiService generateContent failed', [
@@ -259,6 +285,60 @@ class OpenAiService
                 'model' => $model,
                 'url' => $url,
                 'images_count' => count($paths),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Genera voce (mp3) da testo tramite OpenAI TTS.
+     */
+    public function generateSpeechMp3(string $text, ?string $voiceOverride = null, ?string $modelOverride = null): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        if ($text === '') {
+            throw new RuntimeException('Missing text for speech generation.');
+        }
+
+        $maxChars = (int) (config('openai.speech_max_chars') ?: 1000);
+        $maxChars = max(200, min(4000, $maxChars));
+        if (mb_strlen($text, 'UTF-8') > $maxChars) {
+            $text = trim(mb_substr($text, 0, $maxChars, 'UTF-8'));
+        }
+
+        $model = (string) ($modelOverride ?: config('openai.speech_model') ?: 'gpt-4o-mini-tts');
+        $voice = (string) ($voiceOverride ?: config('openai.speech_voice') ?: 'alloy');
+        $timeout = (int) (config('openai.timeout_speech') ?: config('openai.timeout') ?: 90);
+        $url = $this->url('/v1/audio/speech');
+
+        try {
+            $res = $this->request($timeout, true)
+                ->retry(1, 300)
+                ->post($url, [
+                    'model' => $model,
+                    'voice' => $voice,
+                    'input' => $text,
+                    'response_format' => 'mp3',
+                ]);
+
+            if (!$res->successful()) {
+                $body = $res->body();
+                $body = is_string($body) ? Str::limit($body, 1200, '') : '';
+                throw new RuntimeException("OpenAI speech error ({$res->status()}) URL={$url} BODY={$body}");
+            }
+
+            $bytes = $res->body();
+            if (!is_string($bytes) || $bytes === '') {
+                throw new RuntimeException('OpenAI speech empty response body.');
+            }
+
+            return $bytes;
+        } catch (Throwable $e) {
+            Log::warning('OpenAiService generateSpeechMp3 failed', [
+                'error' => $e->getMessage(),
+                'model' => $model,
+                'voice' => $voice,
+                'url' => $url,
             ]);
             throw $e;
         }

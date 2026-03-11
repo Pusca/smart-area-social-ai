@@ -7,6 +7,11 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\AssetVariableService;
+use App\Services\ContentMediaPreviewService;
+use App\Services\Social\SocialPublishingService;
+use App\Support\ImageProviderResolver;
+use App\Support\VideoProviderResolver;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
 use Illuminate\Http\Request;
@@ -17,7 +22,10 @@ class ContentItemController extends Controller
 {
     public function __construct(
         private readonly MemoryBuilderService $memoryBuilder,
-        private readonly EditorialStrategyService $editorialStrategyService
+        private readonly EditorialStrategyService $editorialStrategyService,
+        private readonly ContentMediaPreviewService $mediaPreviewService,
+        private readonly AssetVariableService $assetVariableService,
+        private readonly SocialPublishingService $socialPublishingService
     ) {
     }
 
@@ -31,11 +39,14 @@ class ContentItemController extends Controller
         $baseQuery = ContentItem::query()->where('tenant_id', $user->tenant_id);
 
         $items = (clone $baseQuery)
+            ->with(['latestFeedbackEntry'])
+            ->withCount('feedbackEntries')
             ->orderByRaw("CASE WHEN scheduled_at IS NULL THEN 1 ELSE 0 END")
             ->orderBy('scheduled_at')
             ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
+        $this->mediaPreviewService->attachPreviewData($items->getCollection());
 
         $statusCounts = (clone $baseQuery)
             ->selectRaw('status, COUNT(*) as total')
@@ -122,13 +133,15 @@ class ContentItemController extends Controller
 
     public function create(Request $request)
     {
+        $tenantId = (int) $request->user()->tenant_id;
         $profile = TenantProfile::query()
-            ->where('tenant_id', $request->user()->tenant_id)
+            ->where('tenant_id', $tenantId)
             ->first();
 
-        $referenceImages = $this->loadBrandReferenceImages((int) $request->user()->tenant_id);
+        $referenceImages = $this->loadBrandReferenceImages($tenantId);
+        $assetVariables = $this->assetVariableService->catalogForTenant($tenantId);
 
-        return view('posts.create', compact('profile', 'referenceImages'));
+        return view('posts.create', compact('profile', 'referenceImages', 'assetVariables'));
     }
 
     public function store(Request $request)
@@ -141,6 +154,8 @@ class ContentItemController extends Controller
             'platforms.*' => 'string|max:50',
             'platform' => 'nullable|string|max:255',
             'format' => 'required|string|max:50',
+            'video_provider' => ['nullable', VideoProviderResolver::inRule()],
+            'image_provider' => ['nullable', ImageProviderResolver::inRule()],
             'scheduled_at' => 'required|date',
             'generation_brief' => 'nullable|string|max:3000',
             'goal_hint' => 'nullable|string|max:180',
@@ -149,10 +164,14 @@ class ContentItemController extends Controller
             'status' => 'nullable|string|max:30',
             'reference_asset_ids' => 'nullable|array',
             'reference_asset_ids.*' => 'integer',
+            'asset_variable_ids' => 'nullable|array',
+            'asset_variable_ids.*' => 'integer',
         ]);
 
         $platforms = $this->extractPlatforms($request, $data);
         $platformValue = implode(',', $platforms);
+        $videoProvider = VideoProviderResolver::normalize((string) ($data['video_provider'] ?? ''));
+        $imageProvider = ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), ImageProviderResolver::default());
 
         $brief = trim((string) (
             $data['generation_brief']
@@ -172,7 +191,7 @@ class ContentItemController extends Controller
 
         $status = (string) ($data['status'] ?? '');
         if ($status === '') {
-            $status = 'scheduled';
+            $status = 'draft';
         }
 
         $profile = TenantProfile::query()
@@ -181,22 +200,64 @@ class ContentItemController extends Controller
 
         $profileData = $this->buildProfileData($profile);
         $assets = $this->loadBrandAssets($tenantId);
+        $strictAssetMode = (bool) config('generation.strict_asset_mode', true);
+        $brandImageCount = collect($assets)
+            ->filter(fn ($asset) => is_array($asset) && (($asset['kind'] ?? null) === 'image') && !empty($asset['path']))
+            ->count();
+
+        if ($strictAssetMode && $brandImageCount < 1) {
+            return back()
+                ->withErrors(['generation_brief' => 'Strict mode attivo: carica almeno 1 immagine in Brand Assets prima di generare contenuti.'])
+                ->withInput();
+        }
+
+        $requestedReferenceIds = array_values(array_unique(array_map(
+            fn ($v) => (int) $v,
+            array_filter((array) ($data['reference_asset_ids'] ?? []), fn ($v) => (int) $v > 0)
+        )));
+        $requestedVariableIds = array_values(array_unique(array_map(
+            fn ($v) => (int) $v,
+            array_filter((array) ($data['asset_variable_ids'] ?? []), fn ($v) => (int) $v > 0)
+        )));
+
+        $assetVariableRefs = $this->assetVariableService->resolveForBrief(
+            tenantId: $tenantId,
+            brief: $brief,
+            requestedIds: $requestedVariableIds
+        );
+
+        if ($strictAssetMode && !empty($requestedVariableIds) && empty((array) ($assetVariableRefs['resolved_ids'] ?? []))) {
+            return back()
+                ->withErrors(['generation_brief' => 'Le variabili selezionate non sono valide per questo tenant.'])
+                ->withInput();
+        }
+
         $explicitImageReferences = $this->resolveExplicitImageReferences(
             $brief,
             $assets,
-            (array) ($data['reference_asset_ids'] ?? [])
+            $requestedReferenceIds
         );
+        $explicitImageReferences = $this->mergeVariablePathsIntoImageReferences(
+            $explicitImageReferences,
+            (array) ($assetVariableRefs['resolved_asset_paths'] ?? [])
+        );
+        if (
+            $strictAssetMode
+            && (!empty($requestedReferenceIds) || !empty((array) data_get($explicitImageReferences, 'numbers_detected_in_brief', [])))
+            && empty((array) data_get($explicitImageReferences, 'selected_paths', []))
+        ) {
+            return back()
+                ->withErrors(['generation_brief' => 'Strict mode attivo: i riferimenti immagine indicati non sono validi. Seleziona asset esistenti o usa numeri corretti.'])
+                ->withInput();
+        }
+
         $memory = $this->memoryBuilder->buildForTenant($tenantId, 40);
 
         $strategyModel = $this->editorialStrategyService->refreshForTenant($tenantId, $profile);
-        $strategy = [
-            'brand_voice' => $strategyModel->brand_voice ?? [],
-            'pillars' => $strategyModel->pillars ?? [],
-            'rubrics' => $strategyModel->rubrics ?? [],
-            'cta_rules' => $strategyModel->cta_rules ?? [],
-            'constraints' => $strategyModel->constraints ?? [],
-            'brand_references' => $this->buildBrandReferences($profileData, $assets),
-        ];
+        $strategy = $this->editorialStrategyService->toRuntimeContext(
+            $strategyModel,
+            $this->buildBrandReferences($profileData, $assets, (array) ($assetVariableRefs['catalog'] ?? []))
+        );
 
         $plan = $this->resolvePlanForSingleItem($tenantId, (int) $user->id, $scheduledAt, $strategy);
 
@@ -230,14 +291,20 @@ class ContentItemController extends Controller
         $item->content_angle = Str::limit($brief, 180, '');
         $item->hashtags = [];
         $item->assets = [];
-        $item->source_refs = $this->buildSourceRefsFromExplicitImageReferences($explicitImageReferences);
+        $item->source_refs = array_merge(
+            $this->buildSourceRefsFromAssetVariables($assetVariableRefs),
+            $this->buildSourceRefsFromExplicitImageReferences($explicitImageReferences)
+        );
         $item->ai_status = 'queued';
         $item->ai_error = null;
         $item->ai_meta = [
             'source' => 'manual_single_content',
+            'video_provider' => $videoProvider,
+            'image_provider' => $imageProvider,
             'tenant_profile' => $profileData,
             'brand_assets' => $assets,
             'image_references' => $explicitImageReferences,
+            'asset_variables' => $assetVariableRefs,
             'plan' => [
                 'goal' => $goalHint !== '' ? $goalHint : data_get($plan->settings, 'goal'),
                 'tone' => data_get($plan->settings, 'tone', $profile?->default_tone),
@@ -255,7 +322,7 @@ class ContentItemController extends Controller
                 'objective' => $goalHint !== '' ? $goalHint : 'Awareness',
                 'key_points' => [$brief],
                 'cta' => (string) ($profile?->cta ?: 'Scrivici per maggiori informazioni.'),
-                'image_direction' => 'Visual coerente con il brand e con questo brief: ' . Str::limit($brief, 220, ''),
+                'image_direction' => $this->buildImageDirectionWithVariables($brief, $assetVariableRefs),
                 'series_name' => 'contenuto-singolo',
                 'series_step' => 1,
                 'standalone_rule' => 'Il contenuto deve essere completo anche se letto singolarmente.',
@@ -268,6 +335,12 @@ class ContentItemController extends Controller
         ];
 
         $item->save();
+
+        $publicationSync = null;
+        if (in_array($item->status, ['approved', 'scheduled'], true)) {
+            $publicationSync = $this->socialPublishingService->syncForContentItem($item);
+            $item->refresh();
+        }
 
         try {
             if (app()->environment('local')) {
@@ -282,20 +355,28 @@ class ContentItemController extends Controller
 
             return redirect()
                 ->route('posts.edit', $item)
-                ->with('status', 'Contenuto creato, ma la generazione AI non e partita: ' . $e->getMessage());
+                ->with('status', trim('Contenuto creato, ma la generazione AI non e partita: ' . $e->getMessage() . ' ' . $this->publicationSyncMessage($publicationSync)));
         }
 
         return redirect()
             ->route('posts.edit', $item)
             ->with('status', app()->environment('local')
-                ? 'Contenuto creato e generato con AI.'
-                : 'Contenuto creato e messo in coda AI.');
+                ? trim('Contenuto creato e generato con AI. ' . $this->publicationSyncMessage($publicationSync))
+                : trim('Contenuto creato e messo in coda AI. ' . $this->publicationSyncMessage($publicationSync)));
     }
 
     public function edit(Request $request, ContentItem $contentItem)
     {
         $this->authorizeTenant($request, $contentItem);
-        return view('posts.edit', compact('contentItem'));
+        $allowsCustomImageProvider = $this->allowsCustomImageProvider($contentItem);
+        $contentItem->load([
+            'feedbackEntries' => fn ($query) => $query
+                ->with('user:id,name')
+                ->latest('id')
+                ->limit(8),
+        ]);
+
+        return view('posts.edit', compact('contentItem', 'allowsCustomImageProvider'));
     }
 
     public function update(Request $request, ContentItem $contentItem)
@@ -305,6 +386,8 @@ class ContentItemController extends Controller
         $data = $request->validate([
             'platform' => 'required|string|max:50',
             'format' => 'required|string|max:50',
+            'video_provider' => ['nullable', VideoProviderResolver::inRule()],
+            'image_provider' => ['nullable', ImageProviderResolver::inRule()],
             'scheduled_at' => 'nullable|date',
             'title' => 'nullable|string|max:120',
             'ai_caption' => 'nullable|string',
@@ -319,10 +402,32 @@ class ContentItemController extends Controller
         $contentItem->ai_caption = $data['ai_caption'] ?? null;
         $contentItem->ai_image_prompt = $data['ai_image_prompt'] ?? null;
         $contentItem->scheduled_at = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
+        $meta = is_array($contentItem->ai_meta) ? $contentItem->ai_meta : [];
+        $existingVideoProvider = (string) data_get($meta, 'video_provider', '');
+        $videoProviderCandidate = array_key_exists('video_provider', $data)
+            ? (string) ($data['video_provider'] ?? '')
+            : $existingVideoProvider;
+        $meta['video_provider'] = VideoProviderResolver::resolve($videoProviderCandidate, $existingVideoProvider);
+        $existingImageProvider = (string) data_get($meta, 'image_provider', '');
+        $meta['image_provider'] = $this->allowsCustomImageProvider($contentItem)
+            ? ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), $existingImageProvider)
+            : ImageProviderResolver::default();
+        $contentItem->ai_meta = $meta;
 
         $contentItem->save();
 
-        return redirect()->route('posts.index')->with('status', 'Contenuto aggiornato.');
+        $publicationSync = null;
+        if (in_array($contentItem->status, ['approved', 'scheduled'], true)) {
+            $publicationSync = $this->socialPublishingService->syncForContentItem($contentItem);
+            $contentItem->refresh();
+        } else {
+            $this->socialPublishingService->cancelUnpublishedForItem(
+                $contentItem,
+                'Contenuto riportato fuori dalla coda di pubblicazione automatica.'
+            );
+        }
+
+        return redirect()->route('posts.index')->with('status', trim('Contenuto aggiornato. ' . $this->publicationSyncMessage($publicationSync)));
     }
 
     public function destroy(Request $request, ContentItem $contentItem)
@@ -565,6 +670,140 @@ class ContentItemController extends Controller
         return $out;
     }
 
+    private function mergeVariablePathsIntoImageReferences(array $refs, array $variablePaths): array
+    {
+        $paths = collect((array) ($refs['selected_paths'] ?? []))
+            ->map(fn ($v) => trim((string) $v))
+            ->filter(fn (string $v) => $v !== '')
+            ->values()
+            ->all();
+
+        $variablePaths = collect($variablePaths)
+            ->map(fn ($v) => trim((string) $v))
+            ->filter(fn (string $v) => $v !== '')
+            ->values()
+            ->all();
+
+        if (empty($variablePaths)) {
+            return $refs;
+        }
+
+        $mergedPaths = array_values(array_unique(array_merge($paths, $variablePaths)));
+        $selectedAssets = is_array($refs['selected_assets'] ?? null) ? $refs['selected_assets'] : [];
+        foreach ($variablePaths as $path) {
+            $selectedAssets[] = [
+                'id' => null,
+                'path' => $path,
+                'original_name' => 'asset_variable',
+                'mime' => '',
+                'ref_number' => null,
+            ];
+        }
+
+        $refs['selected_paths'] = $mergedPaths;
+        $refs['selected_assets'] = $selectedAssets;
+        $refs['selection_mode'] = (string) (($refs['selection_mode'] ?? 'none') === 'none'
+            ? 'asset_variable'
+            : ((string) $refs['selection_mode'] . '+asset_variable'));
+        $refs['selected_ids'] = array_values(array_unique(array_filter(array_map(
+            fn ($v) => (int) $v,
+            (array) ($refs['selected_ids'] ?? [])
+        ), fn ($v) => $v > 0)));
+
+        if (!empty($mergedPaths)) {
+            $refs['primary_preference'] = [
+                'path' => (string) $mergedPaths[0],
+                'reason' => 'asset_variable_selection',
+                'confidence' => 1.0,
+            ];
+        }
+
+        return $refs;
+    }
+
+    private function buildSourceRefsFromAssetVariables(array $refs): array
+    {
+        $resolved = is_array($refs['resolved'] ?? null) ? $refs['resolved'] : [];
+        $out = [];
+
+        foreach ($resolved as $variable) {
+            if (!is_array($variable)) {
+                continue;
+            }
+            $out[] = [
+                'type' => 'asset_variable',
+                'variable_id' => isset($variable['id']) ? (int) $variable['id'] : null,
+                'name' => (string) ($variable['name'] ?? ''),
+                'slug' => (string) ($variable['slug'] ?? ''),
+                'kind' => (string) ($variable['kind'] ?? 'custom'),
+                'asset_paths' => array_values(array_filter(array_map(
+                    'strval',
+                    (array) ($variable['asset_paths'] ?? [])
+                ))),
+            ];
+            if (count($out) >= 12) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    private function buildImageDirectionWithVariables(string $brief, array $assetVariableRefs): string
+    {
+        $base = 'Visual coerente con il brand e con questo brief: ' . Str::limit($brief, 220, '');
+        $resolved = is_array($assetVariableRefs['resolved'] ?? null) ? $assetVariableRefs['resolved'] : [];
+        if (empty($resolved)) {
+            return $base;
+        }
+
+        $labels = [];
+        foreach ($resolved as $variable) {
+            if (!is_array($variable)) {
+                continue;
+            }
+            $name = trim((string) ($variable['name'] ?? ''));
+            $kind = trim((string) ($variable['kind'] ?? 'custom'));
+            if ($name === '') {
+                continue;
+            }
+            $labels[] = $name . ' [' . $kind . ']';
+        }
+
+        if (empty($labels)) {
+            return $base;
+        }
+
+        $direction = $base . '. Variabili oggetto da rispettare: ' . implode(', ', array_slice($labels, 0, 6)) . '.';
+
+        $hasLocationEnvelope = collect($resolved)->contains(function ($variable): bool {
+            if (!is_array($variable)) {
+                return false;
+            }
+
+            $kind = Str::lower(trim((string) ($variable['kind'] ?? 'custom')));
+            if ($kind === 'location') {
+                return true;
+            }
+
+            $text = Str::lower(trim(
+                (string) ($variable['name'] ?? '') . ' ' . (string) ($variable['description'] ?? '')
+            ));
+
+            return str_contains($text, 'ufficio')
+                || str_contains($text, 'edificio')
+                || str_contains($text, 'showroom')
+                || str_contains($text, 'negozio')
+                || str_contains($text, 'locale');
+        });
+
+        if ($hasLocationEnvelope) {
+            $direction .= ' Se nei riferimenti c e un luogo reale, quello resta l involucro principale: mantieni riconoscibili struttura, ambientazione e dettagli distintivi, aggiungendo creativita solo negli elementi secondari.';
+        }
+
+        return $direction;
+    }
+
     private function extractReferenceNumbersFromBrief(string $brief, int $maxNumber): array
     {
         if ($maxNumber < 1) {
@@ -615,7 +854,7 @@ class ContentItemController extends Controller
         return array_values(array_unique($numbers));
     }
 
-    private function buildBrandReferences(array $profileData, array $assets): array
+    private function buildBrandReferences(array $profileData, array $assets, array $assetVariables = []): array
     {
         $logo = null;
         $images = [];
@@ -637,6 +876,7 @@ class ContentItemController extends Controller
             'palette' => $profileData['brand_palette'] ?? null,
             'logo_path' => $logo,
             'reference_images' => array_values(array_unique($images)),
+            'asset_variables' => array_values($assetVariables),
         ];
     }
 
@@ -789,4 +1029,45 @@ class ContentItemController extends Controller
         }
         return array_values(array_unique($out));
     }
+
+    /**
+     * @param  array{scheduled:int,warnings:array<int,string>}|null  $publicationSync
+     */
+    private function publicationSyncMessage(?array $publicationSync): string
+    {
+        if (!is_array($publicationSync)) {
+            return '';
+        }
+
+        $parts = [];
+        $scheduled = (int) ($publicationSync['scheduled'] ?? 0);
+        $warnings = array_values(array_filter((array) ($publicationSync['warnings'] ?? [])));
+
+        if ($scheduled > 0) {
+            $parts[] = "Pubblicazioni Meta pianificate: {$scheduled}.";
+        }
+
+        if (!empty($warnings)) {
+            $parts[] = 'Attenzione: ' . implode(' ', $warnings);
+        }
+
+        return trim(implode(' ', $parts));
+    }
+
+    private function allowsCustomImageProvider(ContentItem $contentItem): bool
+    {
+        $meta = is_array($contentItem->ai_meta) ? $contentItem->ai_meta : [];
+        $source = trim((string) data_get($meta, 'source', ''));
+        if ($source === 'manual_single_content') {
+            return true;
+        }
+
+        $mode = trim((string) data_get($meta, 'plan.mode', ''));
+        if ($mode === 'single_manual') {
+            return true;
+        }
+
+        return trim((string) data_get($contentItem->plan?->settings, 'mode', '')) === 'single_manual';
+    }
+
 }

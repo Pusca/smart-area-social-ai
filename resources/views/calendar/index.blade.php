@@ -27,6 +27,9 @@
         $aiQueued = $flatItems->whereIn('ai_status', ['queued', 'pending'])->count();
         $aiDone = $flatItems->where('ai_status', 'done')->count();
         $aiError = $flatItems->where('ai_status', 'error')->count();
+        $connectedPlatforms = collect($connectedPlatforms ?? [])->filter()->values();
+        $uiAi = fn ($status) => \App\Support\UiStatus::ai((string) $status);
+        $uiPublication = fn ($status) => \App\Support\UiStatus::publication((string) $status);
     @endphp
 
     <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -49,6 +52,9 @@
                         <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                             {{ $pendingWeek }} da completare
                         </span>
+                        <span class="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">
+                            Meta {{ $connectedPlatforms->isNotEmpty() ? $connectedPlatforms->implode(' + ') : 'non collegato' }}
+                        </span>
                     </div>
                 </div>
 
@@ -64,7 +70,7 @@
                         <a href="{{ route('calendar', ['date' => $nextDate]) }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                             Settimana successiva
                         </a>
-                        <a href="{{ route('posts.create') }}" class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                        <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
                             Nuovo contenuto
                         </a>
                     </div>
@@ -103,13 +109,13 @@
                 </div>
             </article>
 
-            <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div class="flex items-center justify-between">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">AI in settimana</p>
-                    <span class="text-xs font-semibold {{ $aiError > 0 ? 'text-red-700' : 'text-gray-500' }}">{{ $aiError }} errori</span>
-                </div>
-                <p class="mt-2 text-sm text-gray-700">{{ $aiDone }} completati - {{ $aiQueued }} in coda</p>
-            </article>
+        <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between">
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">AI in settimana</p>
+                <span class="text-xs font-semibold {{ $aiError > 0 ? 'text-red-700' : 'text-gray-500' }}">{{ $aiError }} da verificare</span>
+            </div>
+            <p class="mt-2 text-sm text-gray-700">{{ $aiDone }} completati - {{ $aiQueued }} in lavorazione</p>
+        </article>
         </div>
 
         <div class="grid gap-6 xl:grid-cols-3">
@@ -152,46 +158,80 @@
                                     @forelse($items as $it)
                                         @php
                                             $time = $it->scheduled_at ? $it->scheduled_at->format('H:i') : '--:--';
-                                            $statusClass = $it->status === 'published'
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                                : (($it->status === 'scheduled')
-                                                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                                                    : 'border-gray-200 bg-gray-50 text-gray-700');
-                                            $aiClass = ($it->ai_status === 'done')
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                                : (($it->ai_status === 'error')
-                                                    ? 'border-red-200 bg-red-50 text-red-700'
-                                                    : 'border-amber-200 bg-amber-50 text-amber-700');
+                                            $mediaPreview = is_array($it->media_preview ?? null) ? $it->media_preview : [];
+                                            $previewImagePath = trim((string) ($mediaPreview['preview_image_path'] ?? ''));
+                                            $isVideo = (bool) ($mediaPreview['is_video'] ?? false);
+                                            $videoPath = trim((string) ($mediaPreview['video_path'] ?? ''));
+                                            $videoUrl = $videoPath !== '' ? asset('storage/' . ltrim($videoPath, '/')) : '';
+                                            $publicationInfo = $uiPublication($it->status);
+                                            $aiInfo = $uiAi($it->ai_status);
                                         @endphp
 
-                                        <a href="{{ route('posts.edit', $it) }}" class="block rounded-xl border border-gray-200 bg-gray-50 p-3 hover:bg-gray-100">
+                                        <div class="rounded-xl border border-gray-200 bg-gray-50 p-3">
                                             <div class="flex items-start justify-between gap-2">
                                                 <div class="min-w-0">
                                                     <p class="text-[11px] font-semibold uppercase text-gray-500">{{ strtoupper((string) $it->platform) }} - {{ $time }}</p>
                                                     <p class="mt-1 truncate text-sm font-semibold text-gray-900">{{ $it->title ?: 'Senza titolo' }}</p>
                                                 </div>
-                                                <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $statusClass }}">
-                                                    {{ $it->status ?: 'draft' }}
+                                                <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $publicationInfo['badge'] }}">
+                                                    {{ $publicationInfo['label'] }}
                                                 </span>
                                             </div>
 
-                                            @if(!empty($it->ai_image_path))
-                                                <img
-                                                    src="{{ asset('storage/' . ltrim($it->ai_image_path, '/')) }}"
-                                                    alt="thumb"
-                                                    class="mt-2 h-20 w-full rounded-lg object-cover"
-                                                    loading="lazy"
-                                                    onerror="this.remove();"
-                                                >
+                                            @if(!empty($previewImagePath))
+                                                <div class="relative mt-2">
+                                                    <img
+                                                        src="{{ asset('storage/' . ltrim($previewImagePath, '/')) }}"
+                                                        alt="Anteprima contenuto"
+                                                        class="h-20 w-full rounded-lg object-cover bg-gray-100"
+                                                        loading="lazy"
+                                                        onerror="this.remove();"
+                                                    >
+                                                    @if($isVideo)
+                                                        <span class="absolute right-1.5 top-1.5 inline-flex items-center rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                                            video
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            @elseif($isVideo)
+                                                <div class="relative mt-2 rounded-lg border border-gray-200 bg-black">
+                                                    <video
+                                                        class="h-20 w-full rounded-lg object-cover"
+                                                        muted
+                                                        playsinline
+                                                        preload="metadata"
+                                                        data-frame-preview
+                                                    >
+                                                        <source src="{{ $videoUrl }}" type="video/mp4">
+                                                    </video>
+                                                    <span class="absolute right-1.5 top-1.5 inline-flex items-center rounded bg-black/70 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                                        video
+                                                    </span>
+                                                </div>
                                             @endif
 
                                             <div class="mt-2 flex items-center justify-between">
                                                 <p class="text-xs text-gray-600">{{ strtoupper((string) $it->format) }}</p>
-                                                <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $aiClass }}">
-                                                    AI {{ $it->ai_status ?? 'n/a' }}
+                                                <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $aiInfo['badge'] }}">
+                                                    AI {{ $aiInfo['label'] }}
                                                 </span>
                                             </div>
-                                        </a>
+
+                                            <div class="mt-3 flex gap-2">
+                                                <a href="{{ route('posts.edit', $it) }}" class="inline-flex flex-1 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100">
+                                                    Apri contenuto
+                                                </a>
+
+                                                @if(in_array((string) $it->status, ['draft', 'review', 'approved', 'failed', 'scheduled'], true))
+                                                <form method="POST" action="{{ route('calendar.content.approve', $it) }}" class="flex-1">
+                                                    @csrf
+                                                    <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 hover:bg-cyan-100">
+                                                        {{ in_array((string) $it->status, ['approved', 'scheduled'], true) ? 'Sincronizza publish' : 'Approva e programma' }}
+                                                    </button>
+                                                </form>
+                                                @endif
+                                            </div>
+                                        </div>
                                     @empty
                                         <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-6 text-center text-xs text-gray-600">
                                             Nessun contenuto

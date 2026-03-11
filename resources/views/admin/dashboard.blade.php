@@ -140,7 +140,7 @@
                                     placeholder="Nome nuovo tenant (se azione = nuovo)"
                                 />
 
-                                <button type="submit" class="w-full rounded-xl bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                                <button type="submit" class="ui-btn-primary w-full justify-center">
                                     Salva assegnazione
                                 </button>
                             </form>
@@ -245,4 +245,3 @@
     </div>
 </section>
 @endsection
-

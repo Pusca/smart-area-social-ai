@@ -5,123 +5,124 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <title>{{ config('app.name', 'Social AI') }}</title>
+    <meta name="theme-color" content="#1737B6">
+    <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
-<body class="font-sans antialiased bg-gray-50">
-    <div class="min-h-screen">
+<body class="overflow-x-hidden font-sans antialiased bg-app text-text">
+    @php
+        $desktopNavItems = [
+            ['route' => 'dashboard', 'label' => 'Home', 'active' => 'dashboard'],
+            ['route' => 'calendar', 'label' => 'Calendario', 'active' => 'calendar'],
+            ['route' => 'posts.index', 'label' => 'Contenuti', 'active' => 'posts*'],
+            ['route' => 'profile.brand', 'label' => 'Brand', 'active' => 'profile.brand*'],
+        ];
+        $mobileNavItems = [
+            ['route' => 'dashboard', 'label' => 'Home', 'active' => 'dashboard'],
+            ['route' => 'calendar', 'label' => 'Agenda', 'active' => 'calendar'],
+            ['route' => 'posts.index', 'label' => 'Contenuti', 'active' => 'posts*'],
+            ['route' => 'profile.brand', 'label' => 'Brand', 'active' => 'profile.brand*'],
+        ];
+    @endphp
 
-        {{-- TOP NAV (desktop) --}}
-        <header class="hidden sm:block bg-white border-b sticky top-0 z-40">
-            <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">
-                        S
-                    </div>
-                    <div class="leading-tight">
-                        <div class="font-semibold">{{ config('app.name', 'Social AI') }}</div>
-                        <div class="text-xs text-gray-500">Dashboard</div>
-                    </div>
-                </div>
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div class="absolute -left-24 top-0 h-80 w-80 rounded-full bg-cyan-200/25 blur-3xl"></div>
+        <div class="absolute right-0 top-0 h-96 w-96 rounded-full bg-blue-200/20 blur-3xl"></div>
+        <div class="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-cyan-100/25 blur-3xl"></div>
+    </div>
+
+    <div class="min-h-screen">
+        <header class="sticky top-0 z-40 hidden border-b border-app bg-white/88 backdrop-blur-xl sm:block">
+            <div class="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3">
+                <a href="{{ route('dashboard') }}" class="shrink-0">
+                    <x-application-logo class="h-14 w-auto" />
+                </a>
 
                 <nav class="flex items-center gap-2 text-sm">
-                    <a href="{{ route('dashboard') }}"
-                       class="px-3 py-2 rounded-xl {{ request()->routeIs('dashboard') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Home
-                    </a>
-
-                    <a href="{{ route('calendar') }}"
-                       class="px-3 py-2 rounded-xl {{ request()->routeIs('calendar') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Calendar
-                    </a>
-
-                    <a href="{{ route('posts.index') }}"
-                       class="px-3 py-2 rounded-xl {{ request()->routeIs('posts*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Posts
-                    </a>
-
-                    <a href="{{ route('wizard.start') }}"
-                       class="px-3 py-2 rounded-xl {{ request()->routeIs('wizard.*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Wizard
-                    </a>
-
-                    <a href="{{ route('profile.brand') }}"
-                       class="px-3 py-2 rounded-xl {{ request()->routeIs('profile.brand*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Brand
-                    </a>
-
-                    <a href="{{ route('settings') }}"
-                       class="px-3 py-2 rounded-xl {{ request()->routeIs('settings') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
-                        Settings
-                    </a>
+                    @foreach($desktopNavItems as $item)
+                        <a
+                            href="{{ route($item['route']) }}"
+                            class="{{ request()->routeIs($item['active']) ? 'ui-nav-link-active' : 'ui-nav-link' }}"
+                        >
+                            {{ $item['label'] }}
+                        </a>
+                    @endforeach
                 </nav>
+
+                <div class="flex items-center gap-3">
+                    <a href="{{ route('settings') }}" class="inline-flex items-center gap-3 rounded-2xl border border-app bg-surface-2 px-3 py-2 transition hover:bg-white">
+                        <x-application-logo variant="icon" class="h-8 w-8" />
+                        <div class="hidden text-left lg:block">
+                            <p class="text-[11px] uppercase tracking-[0.18em] text-muted">Account</p>
+                            <p class="text-sm font-semibold text-gray-900">{{ auth()->user()?->name }}</p>
+                        </div>
+                    </a>
+                </div>
             </div>
         </header>
 
-        {{-- Header "slot" (se una view lo usa) --}}
+        <header class="sticky top-0 z-40 border-b border-app bg-white/92 backdrop-blur-xl sm:hidden">
+            <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+                <a href="{{ route('dashboard') }}" class="shrink-0">
+                    <x-application-logo class="h-9 w-auto" />
+                </a>
+
+                <div class="flex items-center gap-2">
+                    <a
+                        href="{{ route('posts.create') }}"
+                        class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-brand bg-brand-soft text-brand transition hover:bg-white"
+                        aria-label="Nuovo contenuto"
+                        title="Nuovo contenuto"
+                    >
+                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path d="M10 4a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 10 4Z"/>
+                        </svg>
+                    </a>
+                    <a
+                        href="{{ route('settings') }}"
+                        class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-app bg-surface-2 text-gray-700 transition hover:bg-white"
+                        aria-label="Account"
+                        title="Account"
+                    >
+                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path d="M10 2.75a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5ZM5.5 6.5a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.52 15.1a5.75 5.75 0 0 1 5.32-3.6h2.32a5.75 5.75 0 0 1 5.32 3.6.75.75 0 1 1-1.39.56A4.25 4.25 0 0 0 11.16 13H8.84a4.25 4.25 0 0 0-3.93 2.66.75.75 0 1 1-1.39-.56Z"/>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+        </header>
+
         @isset($header)
-            <div class="bg-white border-b">
-                <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="border-b border-app bg-white/70">
+                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
                     {{ $header }}
                 </div>
             </div>
         @endisset
 
-        {{-- Page Content --}}
-        <main class="pb-24">
+        <main class="overflow-x-hidden pb-28">
             @hasSection('content')
                 @yield('content')
             @elseif (isset($slot))
                 {{ $slot }}
             @endif
         </main>
-
     </div>
 
-   {{-- Bottom nav (mobile) --}}
-<nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
-    <div class="max-w-7xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
-        <div class="grid grid-cols-6 text-center text-xs gap-1 py-2">
-
-            <a href="{{ route('dashboard') }}"
-               class="touch-manipulation select-none rounded-xl px-2 py-3
-               {{ request()->routeIs('dashboard') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Home
-            </a>
-
-            <a href="{{ route('calendar') }}"
-               class="touch-manipulation select-none rounded-xl px-2 py-3
-               {{ request()->routeIs('calendar') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Calendar
-            </a>
-
-            <a href="{{ route('posts.index') }}"
-               class="touch-manipulation select-none rounded-xl px-2 py-3
-               {{ request()->routeIs('posts*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Posts
-            </a>
-
-            <a href="{{ route('wizard.start') }}"
-               class="touch-manipulation select-none rounded-xl px-2 py-3
-               {{ request()->routeIs('wizard.*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Wizard
-            </a>
-
-            <a href="{{ route('profile.brand') }}"
-               class="touch-manipulation select-none rounded-xl px-2 py-3
-               {{ request()->routeIs('profile.brand*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Brand
-            </a>
-
-            <a href="{{ route('settings') }}"
-               class="touch-manipulation select-none rounded-xl px-2 py-3
-               {{ request()->routeIs('settings') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
-                Settings
-            </a>
-
+    <nav class="fixed inset-x-0 bottom-0 z-50 border-t border-app bg-white/95 backdrop-blur sm:hidden">
+        <div class="mx-auto max-w-7xl px-3 pb-[env(safe-area-inset-bottom)]">
+            <div class="grid grid-cols-4 gap-2 py-2 text-center text-[11px]">
+                @foreach($mobileNavItems as $item)
+                    <a
+                        href="{{ route($item['route']) }}"
+                        class="touch-manipulation select-none rounded-2xl px-2 py-3 {{ request()->routeIs($item['active']) ? 'bg-brand text-white font-semibold shadow-lg shadow-blue-900/10' : 'text-gray-700 hover:bg-surface-2' }}"
+                    >
+                        {{ $item['label'] }}
+                    </a>
+                @endforeach
+            </div>
         </div>
-    </div>
-</nav>
-
+    </nav>
 </body>
 </html>

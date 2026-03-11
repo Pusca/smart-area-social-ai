@@ -4,6 +4,7 @@ namespace App\Services\Editorial;
 
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
+use App\Support\ImageProviderResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -26,6 +27,7 @@ class ContentGenerator
         $strategy = (array) ($context['strategy'] ?? []);
         $memory = (array) ($context['memory'] ?? []);
         $assets = (array) ($context['assets'] ?? []);
+        $assetVariables = (array) ($context['asset_variables'] ?? data_get($strategy, 'brand_references.asset_variables', []));
         $constraints = (array) data_get($strategy, 'constraints', []);
 
         $hardWindow = (int) ($constraints['no_repeat_days'] ?? config('editorial.duplicate_window_days', 180));
@@ -44,6 +46,7 @@ class ContentGenerator
             $strategy,
             $memory,
             $assets,
+            $assetVariables,
             $hardWindow,
             $softThreshold,
             $maxAttempts,
@@ -87,11 +90,17 @@ class ContentGenerator
                     'content_angle' => (string) ($resolved['payload']['content_angle'] ?? ''),
                     'fingerprint' => $fingerprint,
                     'similarity_group' => $similarityGroup,
-                    'source_refs' => $resolved['payload']['source_refs'] ?? [],
+                    'source_refs' => array_merge(
+                        (array) ($resolved['payload']['source_refs'] ?? []),
+                        $this->buildSourceRefsFromAssetVariables((array) ($resolved['payload']['asset_variable_refs'] ?? []))
+                    ),
                     'ai_status' => 'queued',
                     'ai_meta' => [
+                        'image_provider' => ImageProviderResolver::default(),
                         'tenant_profile' => $profileData,
                         'brand_assets' => $assets,
+                        'asset_variables_catalog' => $assetVariables,
+                        'asset_variables' => $this->buildAssetVariableMeta((array) ($resolved['payload']['asset_variable_refs'] ?? [])),
                         'plan' => [
                             'goal' => data_get($plan->settings, 'goal'),
                             'tone' => data_get($plan->settings, 'tone'),
@@ -102,10 +111,18 @@ class ContentGenerator
                         ],
                         'memory_summary' => $memory,
                         'strategy' => [
+                            'brand_voice' => data_get($strategy, 'brand_voice', []),
                             'pillars' => data_get($strategy, 'pillars', []),
                             'rubrics' => data_get($strategy, 'rubrics', []),
                             'cta_rules' => data_get($strategy, 'cta_rules', []),
                             'constraints' => data_get($strategy, 'constraints', []),
+                            'analysis_framework' => data_get($strategy, 'analysis_framework', []),
+                            'visual_system' => data_get($strategy, 'visual_system', []),
+                            'publishing_system' => data_get($strategy, 'publishing_system', []),
+                            'strategy_notes' => data_get($strategy, 'strategy_notes', ''),
+                            'strategy_locked' => (bool) data_get($strategy, 'strategy_locked', false),
+                            'strategy_id' => data_get($strategy, 'strategy_id'),
+                            'strategy_updated_at' => data_get($strategy, 'strategy_updated_at'),
                             'brand_references' => data_get($strategy, 'brand_references', []),
                         ],
                         'item_brain' => [
@@ -116,6 +133,7 @@ class ContentGenerator
                             'key_points' => (array) ($resolved['payload']['key_points'] ?? []),
                             'cta' => (string) ($resolved['payload']['primary_cta'] ?? ''),
                             'image_direction' => (string) ($resolved['payload']['image_direction'] ?? ''),
+                            'feedback_guidance' => (array) ($resolved['payload']['feedback_guidance'] ?? []),
                             'series_name' => (string) ($resolved['payload']['series_key'] ?? ''),
                             'series_step' => $resolved['payload']['episode_number'] ?? null,
                             'standalone_rule' => 'Il contenuto deve essere completo anche se letto singolarmente.',
@@ -244,5 +262,107 @@ class ContentGenerator
         $payload['content_angle'] = $this->mutateAngle((string) ($payload['content_angle'] ?? ''), 2);
         $payload['title_hint'] = Str::limit(((string) $payload['rubric']) . ': ' . ((string) ($payload['pillar'] ?? '')), 110, '');
         return $payload;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $refs
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildSourceRefsFromAssetVariables(array $refs): array
+    {
+        $out = [];
+        foreach ($refs as $ref) {
+            if (!is_array($ref)) {
+                continue;
+            }
+
+            $name = trim((string) ($ref['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $out[] = [
+                'type' => 'asset_variable',
+                'variable_id' => isset($ref['id']) ? (int) $ref['id'] : null,
+                'name' => $name,
+                'slug' => (string) ($ref['slug'] ?? ''),
+                'kind' => (string) ($ref['kind'] ?? 'custom'),
+                'asset_paths' => array_values(array_filter(array_map(
+                    'strval',
+                    (array) ($ref['asset_paths'] ?? [])
+                ))),
+            ];
+            if (count($out) >= 12) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $refs
+     * @return array<string, mixed>
+     */
+    private function buildAssetVariableMeta(array $refs): array
+    {
+        if (empty($refs)) {
+            return [
+                'selection_mode' => 'none',
+                'requested_ids' => [],
+                'detected_ids' => [],
+                'resolved_ids' => [],
+                'resolved_asset_ids' => [],
+                'resolved_asset_paths' => [],
+                'resolved' => [],
+                'recognized_terms' => [],
+            ];
+        }
+
+        $resolved = [];
+        foreach ($refs as $ref) {
+            if (!is_array($ref)) {
+                continue;
+            }
+            $name = trim((string) ($ref['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $resolved[] = [
+                'id' => isset($ref['id']) ? (int) $ref['id'] : null,
+                'name' => $name,
+                'slug' => (string) ($ref['slug'] ?? ''),
+                'kind' => (string) ($ref['kind'] ?? 'custom'),
+                'description' => (string) ($ref['description'] ?? ''),
+                'asset_ids' => array_values(array_filter(array_map(
+                    fn ($id) => (int) $id,
+                    (array) ($ref['asset_ids'] ?? [])
+                ), fn ($id) => $id > 0)),
+                'asset_paths' => array_values(array_filter(array_map(
+                    'strval',
+                    (array) ($ref['asset_paths'] ?? [])
+                ))),
+            ];
+        }
+
+        $resolvedIds = collect($resolved)->map(fn ($row) => (int) ($row['id'] ?? 0))
+            ->filter(fn ($id) => $id > 0)->unique()->values()->all();
+        $assetIds = collect($resolved)->flatMap(fn ($row) => (array) ($row['asset_ids'] ?? []))
+            ->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->unique()->values()->all();
+        $assetPaths = collect($resolved)->flatMap(fn ($row) => (array) ($row['asset_paths'] ?? []))
+            ->map(fn ($path) => (string) $path)->filter(fn ($path) => $path !== '')->unique()->values()->all();
+        $terms = collect($resolved)->map(fn ($row) => (string) ($row['name'] ?? ''))
+            ->filter(fn ($name) => $name !== '')->unique()->values()->all();
+
+        return [
+            'selection_mode' => 'plan_blueprint',
+            'requested_ids' => $resolvedIds,
+            'detected_ids' => [],
+            'resolved_ids' => $resolvedIds,
+            'resolved_asset_ids' => $assetIds,
+            'resolved_asset_paths' => $assetPaths,
+            'resolved' => $resolved,
+            'recognized_terms' => $terms,
+        ];
     }
 }

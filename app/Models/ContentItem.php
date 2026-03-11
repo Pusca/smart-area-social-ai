@@ -4,6 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class ContentItem extends Model
 {
@@ -14,6 +17,7 @@ class ContentItem extends Model
     protected $casts = [
         'scheduled_at' => 'datetime',
         'published_at' => 'datetime',
+        'ai_generated_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'hashtags' => 'array',
@@ -26,6 +30,32 @@ class ContentItem extends Model
     public function plan(): BelongsTo
     {
         return $this->belongsTo(ContentPlan::class, 'content_plan_id');
+    }
+
+    public function publications(): HasMany
+    {
+        return $this->hasMany(SocialPublication::class);
+    }
+
+    public function feedbackEntries(): HasMany
+    {
+        return $this->hasMany(ContentFeedbackEntry::class);
+    }
+
+    public function latestFeedbackEntry(): HasOne
+    {
+        return $this->hasOne(ContentFeedbackEntry::class)->latestOfMany();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function platforms(): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn ($value) => Str::lower(trim((string) $value)),
+            preg_split('/[\s,;|]+/', (string) $this->platform) ?: []
+        ))));
     }
 
     public function setHashtagsAttribute($value): void

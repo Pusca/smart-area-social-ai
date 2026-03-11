@@ -10,7 +10,7 @@
 
             <div class="bg-white shadow-sm sm:rounded-lg p-6">
                 <p class="text-gray-700">
-                    Qui gestiremo bozze, varianti, copy, asset, e pubblicazioni (prima manuali, poi automatiche).
+                    Qui gestiremo bozze, varianti, copy, asset e pubblicazioni (prima manuali, poi automatiche).
                 </p>
             </div>
 
@@ -29,26 +29,26 @@
                 <div class="mt-5 divide-y">
                     <div class="py-4 flex items-start justify-between gap-4">
                         <div>
-                            <p class="font-semibold text-gray-900">Post “Servizi Smartera”</p>
-                            <p class="text-sm text-gray-600">Piattaforma: Instagram • Formato: Carousel</p>
+                            <p class="font-semibold text-gray-900">Post "Servizi Smartera"</p>
+                            <p class="text-sm text-gray-600">Piattaforma: Instagram - Formato: Carousel</p>
                         </div>
-                        <span class="text-xs px-2 py-1 rounded-full bg-gray-100">Draft</span>
+                        <span class="text-xs px-2 py-1 rounded-full bg-gray-100">Bozza</span>
                     </div>
 
                     <div class="py-4 flex items-start justify-between gap-4">
                         <div>
-                            <p class="font-semibold text-gray-900">Reel “Automazioni & AI”</p>
-                            <p class="text-sm text-gray-600">Piattaforma: TikTok • Formato: Video</p>
+                            <p class="font-semibold text-gray-900">Reel "Automazioni e AI"</p>
+                            <p class="text-sm text-gray-600">Piattaforma: TikTok - Formato: Video</p>
                         </div>
-                        <span class="text-xs px-2 py-1 rounded-full bg-gray-100">Review</span>
+                        <span class="text-xs px-2 py-1 rounded-full bg-gray-100">In revisione</span>
                     </div>
 
                     <div class="py-4 flex items-start justify-between gap-4">
                         <div>
-                            <p class="font-semibold text-gray-900">Story “Case Study”</p>
-                            <p class="text-sm text-gray-600">Piattaforma: Instagram • Formato: Story</p>
+                            <p class="font-semibold text-gray-900">Story "Case Study"</p>
+                            <p class="text-sm text-gray-600">Piattaforma: Instagram - Formato: Story</p>
                         </div>
-                        <span class="text-xs px-2 py-1 rounded-full bg-gray-100">Scheduled</span>
+                        <span class="text-xs px-2 py-1 rounded-full bg-gray-100">Programmato</span>
                     </div>
                 </div>
             </div>

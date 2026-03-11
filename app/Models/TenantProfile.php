@@ -26,11 +26,20 @@ class TenantProfile extends Model
         'default_platforms',
         'default_formats',
         'completed_at',
+        'onboarding_started_at',
+        'onboarding_completed_at',
+        'quickstart_generated_at',
+        'quickstart_last_plan_id',
+        'quickstart_dismissed_at',
     ];
 
     protected $casts = [
         'default_platforms' => 'array',
         'default_formats' => 'array',
         'completed_at' => 'datetime',
+        'onboarding_started_at' => 'datetime',
+        'onboarding_completed_at' => 'datetime',
+        'quickstart_generated_at' => 'datetime',
+        'quickstart_dismissed_at' => 'datetime',
     ];
 }

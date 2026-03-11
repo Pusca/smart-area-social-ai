@@ -3,11 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Models\ContentItem;
+use App\Models\SocialAccount;
+use App\Services\ContentMediaPreviewService;
+use App\Services\Social\SocialPublishingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class CalendarController extends Controller
 {
+    public function __construct(
+        private readonly ContentMediaPreviewService $mediaPreviewService,
+        private readonly SocialPublishingService $socialPublishingService
+    ) {
+    }
+
     public function index(Request $request)
     {
         $tenantId = $request->user()->tenant_id;
@@ -33,6 +42,7 @@ class CalendarController extends Controller
             ->whereBetween('scheduled_at', [$weekStart->copy()->startOfDay(), $weekEnd->copy()->endOfDay()])
             ->orderBy('scheduled_at')
             ->get();
+        $this->mediaPreviewService->attachPreviewData($items);
 
         $byDay = [];
         for ($d = $weekStart->copy(); $d->lte($weekEnd); $d->addDay()) {
@@ -54,6 +64,16 @@ class CalendarController extends Controller
             $byDay[$key]['items']->push($it);
         }
 
+        $connectedPlatforms = SocialAccount::query()
+            ->where('tenant_id', $tenantId)
+            ->where('provider', 'meta')
+            ->where('status', 'active')
+            ->pluck('platform')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         return view('calendar.index', [
             'weekStart' => $weekStart,
             'weekEnd' => $weekEnd,
@@ -65,6 +85,33 @@ class CalendarController extends Controller
                 'scheduled' => $items->where('status', 'scheduled')->count(),
                 'published' => $items->where('status', 'published')->count(),
             ],
+            'connectedPlatforms' => $connectedPlatforms,
         ]);
+    }
+
+    public function approve(Request $request, ContentItem $contentItem)
+    {
+        $this->authorizeTenant($request, $contentItem);
+
+        $result = $this->socialPublishingService->approve($contentItem);
+        $warnings = array_values(array_filter((array) ($result['warnings'] ?? [])));
+        $scheduled = (int) ($result['scheduled'] ?? 0);
+
+        $message = $scheduled > 0
+            ? "Contenuto approvato e programmato su {$scheduled} canali."
+            : 'Contenuto approvato.';
+
+        if (!empty($warnings)) {
+            $message .= ' ' . implode(' ', $warnings);
+        }
+
+        return back()->with('status', trim($message));
+    }
+
+    private function authorizeTenant(Request $request, ContentItem $item): void
+    {
+        if ((int) $item->tenant_id !== (int) $request->user()->tenant_id) {
+            abort(403);
+        }
     }
 }

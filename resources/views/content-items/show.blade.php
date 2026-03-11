@@ -2,10 +2,22 @@
     <x-slot name="header">
         <div class="flex items-center justify-between gap-4">
             <div>
+                @php
+                    $headerAiInfo = \App\Support\UiStatus::ai((string) $item->ai_status);
+                    $headerPublicationInfo = \App\Support\UiStatus::publication((string) $item->status);
+                @endphp
                 <h2 class="ui-title-lg">{{ $item->title }}</h2>
                 <div class="mt-1 text-sm text-muted">
                     {{ strtoupper($item->platform) }} - {{ $item->format }} -
                     {{ optional($item->scheduled_at)->format('d/m/Y H:i') }}
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $headerAiInfo['badge'] }}">
+                        AI {{ $headerAiInfo['label'] }}
+                    </span>
+                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $headerPublicationInfo['badge'] }}">
+                        {{ $headerPublicationInfo['label'] }}
+                    </span>
                 </div>
             </div>
 
@@ -16,6 +28,7 @@
     @php
         $img = $item->ai_image_path ? asset('storage/' . $item->ai_image_path) : null;
         $hashtags = $item->ai_hashtags;
+        $aiInfo = \App\Support\UiStatus::ai((string) $item->ai_status);
         $video = null;
         $assetsRaw = $item->assets ?? [];
         $assetsList = is_string($assetsRaw) ? (json_decode($assetsRaw, true) ?: []) : (is_array($assetsRaw) ? $assetsRaw : []);
@@ -47,7 +60,7 @@
             <div class="ui-card overflow-hidden">
                 <div class="bg-surface-2">
                     @if($video)
-                        <video class="h-auto w-full object-cover" controls preload="metadata">
+                        <video class="h-auto w-full object-cover" controls preload="none">
                             <source src="{{ $video }}" type="video/mp4" />
                         </video>
                     @elseif($img)
@@ -59,14 +72,13 @@
 
                 <div class="border-t border-app p-4">
                     <div class="text-sm text-muted">
-                        Path preview: <span class="font-mono">{{ $item->ai_image_path ?? '-' }}</span>
+                        File visual: <span class="font-mono">{{ $item->ai_image_path ?? '-' }}</span>
                     </div>
 
-                    @if($item->ai_status !== 'done')
-                        <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                            Stato AI: <b>{{ $item->ai_status ?? 'n/a' }}</b>
-                        </div>
-                    @endif
+                    <div class="mt-2 rounded-lg border p-3 text-sm {{ $aiInfo['badge'] }}">
+                        <p class="font-semibold">Stato AI: {{ $aiInfo['label'] }}</p>
+                        <p class="mt-1 text-xs opacity-90">{{ $aiInfo['description'] }}</p>
+                    </div>
                 </div>
             </div>
 

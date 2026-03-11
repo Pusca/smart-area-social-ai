@@ -21,10 +21,17 @@ class EditorialPlanBuilder
     ): array {
         $start = Carbon::parse((string) ($period['start'] ?? now()->toDateString()))->startOfDay();
         $end = Carbon::parse((string) ($period['end'] ?? $start->copy()->addDays(13)->toDateString()))->endOfDay();
+        if ($end->lt($start)) {
+            $end = $start->copy()->endOfDay();
+        }
         $totalPosts = max(1, (int) ($period['total_posts'] ?? 5));
 
+        $feedbackSummary = (array) data_get($options, 'memory.feedback_summary', data_get($options, 'feedback_summary', []));
         $platforms = array_values(array_filter((array) ($options['platforms'] ?? ['instagram'])));
         $formats = array_values(array_filter((array) ($options['formats'] ?? ['post'])));
+        $platforms = $this->applyPreferenceBias($platforms, (array) ($feedbackSummary['preferred_platforms'] ?? []), 'instagram');
+        $formats = $this->applyPreferenceBias($formats, (array) ($feedbackSummary['preferred_formats'] ?? []), 'post');
+        $feedbackGuidance = $this->buildFeedbackGuidance($feedbackSummary);
 
         $rubrics = $this->normalizeRubrics((array) ($strategy['rubrics'] ?? []), (array) ($strategy['pillars'] ?? []));
         $rubrics = $this->rebalanceRubrics($rubrics, $history);
@@ -43,6 +50,7 @@ class EditorialPlanBuilder
                 'Scrivici in DM per approfondire.',
             ];
         }
+        $assetVariables = $this->normalizeAssetVariables((array) data_get($strategy, 'brand_references.asset_variables', []));
 
         $trendBrief = $this->trendBriefService->getBriefForTenant($tenantId);
         $trendItems = array_values((array) ($trendBrief['items'] ?? []));
@@ -90,8 +98,15 @@ class EditorialPlanBuilder
             $episode = $series['episode'] ?? null;
             $seriesKey = $series['series_key'] ?? null;
             $contentAngle = $this->buildAngle($rubric, $pillar, $i, $episode, $isTrend ? $trendItems[$trendIdx] : null);
+            $variableRefs = $this->pickAssetVariablesForItem($assetVariables, $i, $rubric, $pillar);
+            if (!empty($variableRefs)) {
+                $contentAngle = $this->augmentAngleWithAssetVariables($contentAngle, $variableRefs);
+            }
 
             $titleHint = $this->buildTitleHint($rubric, $pillar, $episode, $isTrend ? $trendItems[$trendIdx] : null);
+            if (!empty($variableRefs)) {
+                $titleHint = $this->augmentTitleWithAssetVariables($titleHint, $variableRefs);
+            }
             $sourceRefs = [];
             if ($isTrend) {
                 $sourceRefs[] = [
@@ -101,6 +116,16 @@ class EditorialPlanBuilder
                     'source' => (string) ($trendItems[$trendIdx]['source'] ?? ''),
                 ];
                 $trendIdx++;
+            }
+            foreach ($variableRefs as $varRef) {
+                $sourceRefs[] = [
+                    'type' => 'asset_variable',
+                    'variable_id' => (int) ($varRef['id'] ?? 0),
+                    'name' => (string) ($varRef['name'] ?? ''),
+                    'slug' => (string) ($varRef['slug'] ?? ''),
+                    'kind' => (string) ($varRef['kind'] ?? 'custom'),
+                    'asset_paths' => (array) ($varRef['asset_paths'] ?? []),
+                ];
             }
 
             $results[] = [
@@ -115,13 +140,15 @@ class EditorialPlanBuilder
                 'primary_cta' => $cta,
                 'title_hint' => $titleHint,
                 'source_refs' => $sourceRefs,
+                'asset_variable_refs' => $variableRefs,
                 'objective' => $this->objectiveForRubric($rubric),
                 'key_points' => [
-                    "Contesto: perche {$pillar} impatta risultati reali.",
-                    "Azione: step operativo subito applicabile.",
-                    "Follow-up: collega questo post al prossimo contenuto utile.",
+                    "Apri con un dettaglio reale o un momento concreto legato a {$pillar}.",
+                    "Fai percepire valore, esperienza o beneficio per chi guarda senza tono da consulenza.",
+                    'Chiudi con un invito naturale e credibile, coerente con il social e con il brand.',
                 ],
-                'image_direction' => "Visual {$rubric} coerente con {$pillar}, composizione pulita e realistica.",
+                'image_direction' => $this->buildImageDirection($rubric, $pillar, $variableRefs),
+                'feedback_guidance' => $feedbackGuidance,
                 'keywords' => $this->keywordsForFingerprint($rubric, $pillar, $contentAngle),
             ];
 
@@ -131,6 +158,79 @@ class EditorialPlanBuilder
         }
 
         return $results;
+    }
+
+    /**
+     * @param  array<int, string>  $pool
+     * @param  array<int, string>  $preferred
+     * @return array<int, string>
+     */
+    private function applyPreferenceBias(array $pool, array $preferred, string $fallback): array
+    {
+        $base = array_values(array_filter(array_map(
+            fn ($item) => trim(Str::lower((string) $item)),
+            $pool
+        )));
+
+        if (empty($base)) {
+            $base = [$fallback];
+        }
+
+        $preferredMap = [];
+        foreach ($preferred as $item) {
+            $normalized = trim(Str::lower((string) $item));
+            if ($normalized !== '') {
+                $preferredMap[$normalized] = true;
+            }
+        }
+
+        if (empty($preferredMap)) {
+            return $base;
+        }
+
+        $preferredItems = [];
+        $otherItems = [];
+        foreach ($base as $item) {
+            if (isset($preferredMap[$item])) {
+                $preferredItems[] = $item;
+                continue;
+            }
+
+            $otherItems[] = $item;
+        }
+
+        $base = array_merge($preferredItems, $otherItems);
+
+        $extra = [];
+        foreach (array_values(array_unique($base)) as $item) {
+            if (isset($preferredMap[$item])) {
+                $extra[] = $item;
+            }
+
+            if (count($extra) >= 1) {
+                break;
+            }
+        }
+
+        return array_values(array_merge($base, $extra));
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackSummary
+     * @return array<string, array<int, string>>
+     */
+    private function buildFeedbackGuidance(array $feedbackSummary): array
+    {
+        return [
+            'positive_signals' => array_values(array_slice(array_filter(array_map(
+                fn ($item) => trim((string) $item),
+                (array) ($feedbackSummary['positive_signals'] ?? [])
+            )), 0, 4)),
+            'hard_avoid_rules' => array_values(array_slice(array_filter(array_map(
+                fn ($item) => trim((string) $item),
+                (array) ($feedbackSummary['hard_avoid_rules'] ?? [])
+            )), 0, 4)),
+        ];
     }
 
     private function normalizeRubrics(array $rubrics, array $pillars): array
@@ -262,7 +362,7 @@ class EditorialPlanBuilder
 
     private function spreadDates(Carbon $start, Carbon $end, int $totalPosts): array
     {
-        $days = max(1, $start->diffInDays($end) + 1);
+        $days = max(1, $start->diffInDays($end->copy()->startOfDay()) + 1);
         $step = max(1, (int) floor($days / $totalPosts));
         $dates = [];
         for ($i = 0; $i < $totalPosts; $i++) {
@@ -350,11 +450,35 @@ class EditorialPlanBuilder
         }
 
         $variants = [
-            "Errore comune su {$pillar} e come evitarlo",
-            "Checklist operativa: {$pillar} in 3 passi",
-            "Caso pratico {$pillar}: prima/dopo misurabile",
-            "Framework rapido per {$pillar} con esempio reale",
+            "Dettaglio che rende speciale {$pillar}",
+            "Cosa nota davvero chi vive {$pillar}",
+            "Scena reale o esperienza che racconta {$pillar}",
+            "Angolo concreto per valorizzare {$pillar} sui social",
         ];
+
+        $lowerRubric = Str::lower($rubric);
+        if (str_contains($lowerRubric, 'storia')) {
+            $variants = [
+                "Atmosfera e identita di {$pillar}",
+                "Dettaglio reale che racconta {$pillar}",
+                "Momento autentico legato a {$pillar}",
+                "Dietro le quinte di {$pillar}",
+            ];
+        } elseif (str_contains($lowerRubric, 'prova sociale') || str_contains($lowerRubric, 'social proof')) {
+            $variants = [
+                "Momento vissuto che fa percepire {$pillar}",
+                "Scena reale che fa capire il valore di {$pillar}",
+                "Esperienza concreta legata a {$pillar}",
+                "Perche {$pillar} viene ricordato da chi passa di qui",
+            ];
+        } elseif (str_contains($lowerRubric, 'offerta') || str_contains($lowerRubric, 'offer')) {
+            $variants = [
+                "Invito concreto a scoprire {$pillar}",
+                "Perche questo e il momento giusto per vivere {$pillar}",
+                "Proposta chiara legata a {$pillar}",
+                "Angolo social per presentare {$pillar} senza tono promozionale aggressivo",
+            ];
+        }
 
         return $variants[$index % count($variants)];
     }
@@ -383,6 +507,157 @@ class EditorialPlanBuilder
     private function keywordsForFingerprint(string $rubric, string $pillar, string $angle): string
     {
         return implode(' ', [$rubric, $pillar, $angle]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $vars
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeAssetVariables(array $vars): array
+    {
+        $out = [];
+        foreach ($vars as $var) {
+            if (!is_array($var)) {
+                continue;
+            }
+
+            $name = trim((string) ($var['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $out[] = [
+                'id' => isset($var['id']) ? (int) $var['id'] : null,
+                'name' => $name,
+                'slug' => (string) ($var['slug'] ?? Str::slug($name)),
+                'kind' => (string) ($var['kind'] ?? 'custom'),
+                'description' => (string) ($var['description'] ?? ''),
+                'asset_paths' => array_values(array_filter(array_map(
+                    'strval',
+                    (array) ($var['asset_paths'] ?? [])
+                ))),
+                'asset_ids' => array_values(array_filter(array_map(
+                    fn ($id) => (int) $id,
+                    (array) ($var['asset_ids'] ?? [])
+                ), fn ($id) => $id > 0)),
+            ];
+        }
+
+        return array_values($out);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $assetVariables
+     * @return array<int, array<string, mixed>>
+     */
+    private function pickAssetVariablesForItem(array $assetVariables, int $index, string $rubric, string $pillar): array
+    {
+        if (empty($assetVariables)) {
+            return [];
+        }
+
+        $pool = collect($assetVariables)->values();
+        if ($pool->isEmpty()) {
+            return [];
+        }
+
+        $lowerRubric = Str::lower($rubric);
+        $lowerPillar = Str::lower($pillar);
+
+        $matched = $pool->filter(function (array $var) use ($lowerRubric, $lowerPillar) {
+            $name = Str::lower((string) ($var['name'] ?? ''));
+            $kind = Str::lower((string) ($var['kind'] ?? ''));
+            $desc = Str::lower((string) ($var['description'] ?? ''));
+
+            if ($name !== '' && (str_contains($lowerRubric, $name) || str_contains($lowerPillar, $name))) {
+                return true;
+            }
+            if ($desc !== '' && (str_contains($lowerRubric, $desc) || str_contains($lowerPillar, $desc))) {
+                return true;
+            }
+            if ($kind === 'person' && (str_contains($lowerRubric, 'story') || str_contains($lowerRubric, 'community'))) {
+                return true;
+            }
+            if ($kind === 'product' && str_contains($lowerRubric, 'offerta')) {
+                return true;
+            }
+            if ($kind === 'location' && str_contains($lowerRubric, 'brand')) {
+                return true;
+            }
+
+            return false;
+        })->values();
+
+        $list = $matched->isNotEmpty() ? $matched : $pool;
+        $selected = $list->get($index % max(1, $list->count()));
+        if (!is_array($selected)) {
+            return [];
+        }
+
+        return [$selected];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $refs
+     */
+    private function augmentAngleWithAssetVariables(string $angle, array $refs): string
+    {
+        $name = trim((string) data_get($refs, '0.name', ''));
+        $kind = Str::lower(trim((string) data_get($refs, '0.kind', 'custom')));
+        if ($name === '') {
+            return $angle;
+        }
+
+        $suffix = match ($kind) {
+            'person' => "con {$name} come soggetto principale",
+            'location' => "ambientato in {$name}",
+            'product' => "con focus prodotto {$name}",
+            default => "con riferimento visuale {$name}",
+        };
+
+        return Str::limit($angle . ' - ' . $suffix, 180, '');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $refs
+     */
+    private function augmentTitleWithAssetVariables(string $title, array $refs): string
+    {
+        $name = trim((string) data_get($refs, '0.name', ''));
+        if ($name === '') {
+            return $title;
+        }
+        return Str::limit($title . ' · ' . $name, 110, '');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $refs
+     */
+    private function buildImageDirection(string $rubric, string $pillar, array $refs): string
+    {
+        $base = "Visual {$rubric} coerente con {$pillar}, composizione pulita e realistica.";
+        if (empty($refs)) {
+            return $base;
+        }
+
+        $labels = [];
+        foreach ($refs as $ref) {
+            if (!is_array($ref)) {
+                continue;
+            }
+            $name = trim((string) ($ref['name'] ?? ''));
+            $kind = trim((string) ($ref['kind'] ?? 'custom'));
+            if ($name === '') {
+                continue;
+            }
+            $labels[] = $name . ' [' . $kind . ']';
+        }
+
+        if (empty($labels)) {
+            return $base;
+        }
+
+        return $base . ' Usa in modo esplicito le variabili: ' . implode(', ', array_slice($labels, 0, 4)) . '.';
     }
 
     private function pushAndTrim(array $arr, string $value, int $max): array

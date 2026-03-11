@@ -36,13 +36,16 @@
 @endphp
 
 <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-    <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
+    <div class="overflow-hidden rounded-[2rem] border border-app bg-white/92 p-6 shadow-panel lg:p-8">
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
             <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Wizard Piano</div>
-                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Nuovo piano editoriale</h1>
+                <div class="inline-flex items-center gap-2 rounded-full border border-brand bg-brand-soft px-3 py-1 text-xs font-semibold text-brand">
+                    <x-application-logo variant="icon" class="h-5 w-5" />
+                    Piano editoriale guidato
+                </div>
+                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Imposta il prossimo piano con chiarezza</h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    Definisci obiettivo, periodo, tono e canali. Al prossimo step potrai generare l'intero piano.
+                    Scegli obiettivo, periodo, tono e canali. Qui costruisci un piano editoriale vero e proprio, da minimo 2 contenuti in su.
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -58,17 +61,17 @@
                 </div>
             </div>
 
-            <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
+            <div class="rounded-[1.75rem] border border-brand bg-[var(--gradient-soft)] p-5 shadow-card">
+                <div class="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
-                    <a href="{{ route('profile.brand') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <a href="{{ route('profile.brand') }}" class="ui-btn-secondary justify-center">
                         Apri profilo brand
                     </a>
-                    <a href="{{ route('wizard.done') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <a href="{{ route('wizard.done') }}" class="ui-btn-secondary justify-center">
                         Vai a riepilogo
                     </a>
-                    <a href="{{ route('dashboard') }}" class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-                        Torna alla dashboard
+                    <a href="{{ route('dashboard') }}" class="ui-btn-primary justify-center">
+                        Torna alla panoramica
                     </a>
                 </div>
             </div>
@@ -132,7 +135,7 @@
 
                     <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div>
-                            <label for="tone" class="mb-1 block text-sm font-semibold text-gray-700">Tone of voice</label>
+                            <label for="tone" class="mb-1 block text-sm font-semibold text-gray-700">Tono della comunicazione</label>
                             <select id="tone" name="tone" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" required>
                                 <option value="professionale" @selected($tone === 'professionale')>Professionale</option>
                                 <option value="amichevole" @selected($tone === 'amichevole')>Amichevole</option>
@@ -143,8 +146,9 @@
                         </div>
 
                         <div>
-                            <label for="posts_per_week" class="mb-1 block text-sm font-semibold text-gray-700">Post totali nel periodo</label>
-                            <input id="posts_per_week" type="number" min="1" max="31" step="1" name="posts_per_week" value="{{ old('posts_per_week', $step1['posts_per_week'] ?? 5) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" required />
+                            <label for="posts_per_week" class="mb-1 block text-sm font-semibold text-gray-700">Contenuti totali del piano</label>
+                            <input id="posts_per_week" type="number" min="2" max="31" step="1" name="posts_per_week" value="{{ old('posts_per_week', $step1['posts_per_week'] ?? 5) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" required />
+                            <p class="mt-1 text-xs text-gray-500">Minimo 2 contenuti per attivare il piano editoriale.</p>
                         </div>
                     </div>
                 </div>
@@ -182,10 +186,10 @@
                 </div>
 
                 <div class="flex flex-wrap items-center justify-end gap-2">
-                    <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Vai ai post
+                    <a href="{{ route('posts.index') }}" class="ui-btn-secondary">
+                        Vai ai contenuti
                     </a>
-                    <button type="submit" class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                    <button type="submit" class="ui-btn-primary">
                         Continua al riepilogo
                     </button>
                 </div>
@@ -198,11 +202,11 @@
                 <div class="mt-4 space-y-3">
                     <div class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
                         <p class="text-xs text-indigo-700">Step 1</p>
-                        <p class="mt-1 text-sm font-semibold text-indigo-900">Configurazione piano</p>
+                        <p class="mt-1 text-sm font-semibold text-indigo-900">Setup del piano</p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">Step 2</p>
-                        <p class="mt-1 text-sm font-semibold text-gray-800">Generazione e monitoraggio</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-800">Generazione e controllo</p>
                     </div>
                 </div>
             </div>

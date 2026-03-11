@@ -88,8 +88,16 @@ class AiController extends Controller
             return back()->withErrors($validator)->withInput();
         }
 
-        $ids = $validator->validated()['content_item_ids'];
-        $items = ContentItem::whereIn('id', $ids)->get();
+        $ids = array_values(array_unique(array_map('intval', $validator->validated()['content_item_ids'])));
+        $tenantId = (int) $request->user()->tenant_id;
+        $items = ContentItem::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($items->count() !== count($ids)) {
+            abort(403);
+        }
 
         foreach ($items as $item) {
             $item->ai_status = 'queued';

@@ -1,16 +1,12 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md">
-        <div class="overflow-hidden rounded-3xl border bg-white shadow-sm">
-            <div class="border-b bg-gray-50 px-6 py-5">
-                <div class="flex items-center gap-3">
-                    <div class="grid h-10 w-10 place-items-center rounded-2xl bg-gray-900 font-bold tracking-tight text-white">
-                        SA
-                    </div>
-                    <div>
-                        <div class="text-sm font-semibold">{{ config('app.name', 'Social AI') }}</div>
-                        <div class="text-xs text-gray-500">Crea il tuo workspace</div>
-                    </div>
-                </div>
+        <div class="overflow-hidden rounded-[2rem] border border-app bg-white/94 shadow-panel">
+            <div class="border-b border-app bg-[var(--gradient-soft)] px-6 py-6">
+                <x-application-logo class="h-10 w-auto" />
+                <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Crea il tuo workspace</h1>
+                <p class="mt-2 text-sm leading-6 text-muted">
+                    Parti in pochi minuti e inizia a costruire una presenza social più chiara, più continua e più semplice da gestire.
+                </p>
             </div>
 
             <div class="px-6 py-6">
@@ -72,18 +68,18 @@
                         <x-input-error :messages="$errors->get('password_confirmation')" class="mt-2" />
                     </div>
 
-                    <div class="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-                        Alla registrazione viene creato automaticamente un tenant/workspace dedicato.
+                    <div class="rounded-2xl border border-brand bg-brand-soft px-3 py-3 text-xs leading-5 text-brand">
+                        Alla registrazione viene creato automaticamente uno spazio dedicato. Poi ti guidiamo nel primo setup del brand e nella demo iniziale.
                     </div>
 
                     <button
                         type="submit"
-                        class="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+                        class="ui-btn-primary w-full justify-center py-3"
                     >
                         {{ __('Crea account') }}
                     </button>
 
-                    <div class="text-center text-sm text-gray-600">
+                    <div class="text-center text-sm text-muted">
                         Hai gia un account?
                         <a class="underline hover:text-gray-900" href="{{ route('login') }}">{{ __('Accedi') }}</a>
                     </div>
@@ -91,8 +87,8 @@
             </div>
         </div>
 
-        <div class="mt-4 text-center text-xs text-gray-500">
-            Secure access - {{ config('app.name', 'Social AI') }}
+        <div class="mt-4 text-center text-xs text-muted">
+            Accesso protetto e setup guidato con {{ config('app.name', 'Social AI') }}
         </div>
     </div>
 </x-guest-layout>

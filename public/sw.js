@@ -1,12 +1,26 @@
 const CACHE_NAME = "sa-social-ai-v3";
 const ASSETS = ["/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const IS_LOCAL = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(self.location.hostname);
 
 self.addEventListener("install", (event) => {
+  if (IS_LOCAL) {
+    self.skipWaiting();
+    return;
+  }
+
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
+  if (IS_LOCAL) {
+    event.waitUntil(
+      caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+    );
+    self.clients.claim();
+    return;
+  }
+
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.map((key) => (key !== CACHE_NAME ? caches.delete(key) : null)))
@@ -16,6 +30,10 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (IS_LOCAL) {
+    return;
+  }
+
   // Never intercept non-GET requests (push subscribe/test use POST).
   if (event.request.method !== "GET") {
     return;

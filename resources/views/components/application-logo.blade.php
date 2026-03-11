@@ -1,18 +1,21 @@
 @props([
     'variant' => 'lockup',
+    'alt' => null,
 ])
 
 @php
     $isIcon = in_array($variant, ['icon', 'favicon', 'app-icon'], true);
+    $assetPath = $isIcon
+        ? asset('brand/icona-socialai.png')
+        : asset('brand/logo-socialai.png');
+    $defaultClasses = $isIcon
+        ? 'block h-10 w-10 object-contain'
+        : 'block h-10 w-auto object-contain';
 @endphp
 
-@if($isIcon)
-    <span {{ $attributes->merge(['class' => 'inline-flex h-9 w-9 items-center justify-center rounded-xl border border-brand bg-surface font-heading text-sm font-extrabold uppercase tracking-[0.16em] text-brand']) }}>
-        sa
-    </span>
-@else
-    <span {{ $attributes->merge(['class' => 'inline-flex items-baseline gap-1 font-heading text-xl font-extrabold tracking-tight']) }}>
-        <span class="lowercase text-text">social</span>
-        <span class="bg-brand bg-clip-text lowercase text-transparent">ai</span>
-    </span>
-@endif
+<img
+    src="{{ $assetPath }}"
+    alt="{{ $alt ?: config('app.name', 'Social AI') }}"
+    draggable="false"
+    {{ $attributes->merge(['class' => $defaultClasses]) }}
+>

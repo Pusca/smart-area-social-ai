@@ -12,6 +12,7 @@ use App\Services\Editorial\DuplicateContentGuard;
 use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class EditorialGenerationTest extends TestCase
@@ -193,6 +194,125 @@ class EditorialGenerationTest extends TestCase
         $this->assertGreaterThanOrEqual(2, (int) ($counts['Prova Sociale'] ?? 0));
         $this->assertGreaterThanOrEqual(2, (int) ($counts['Storia Brand'] ?? 0));
         $this->assertGreaterThanOrEqual(2, (int) ($counts['Offerta'] ?? 0));
+    }
+
+    public function test_it_clamps_period_when_end_date_precedes_start_date(): void
+    {
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-clamp');
+        $strategy = app(EditorialStrategyService::class)->refreshForTenant((int) $tenant->id, $profile);
+        $builder = app(EditorialPlanBuilder::class);
+
+        $start = Carbon::parse('2026-03-17');
+        $rows = $builder->buildPlan(
+            tenantId: (int) $tenant->id,
+            strategy: [
+                'pillars' => $strategy->pillars,
+                'rubrics' => $strategy->rubrics,
+                'cta_rules' => $strategy->cta_rules,
+                'constraints' => $strategy->constraints,
+            ],
+            history: ['promo_recent_ratio' => 0.0, 'last_pillars' => []],
+            period: [
+                'start' => $start->toDateString(),
+                'end' => '2026-03-01',
+                'total_posts' => 3,
+            ],
+            options: [
+                'platforms' => ['instagram'],
+                'formats' => ['post'],
+            ]
+        );
+
+        $this->assertCount(3, $rows);
+
+        foreach ($rows as $row) {
+            $this->assertSame($start->toDateString(), Carbon::parse((string) $row['scheduled_at'])->toDateString());
+        }
+    }
+
+    public function test_it_biases_wizard_plan_with_feedback_preferences_and_guidance(): void
+    {
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-feedback-plan');
+        $strategy = app(EditorialStrategyService::class)->refreshForTenant((int) $tenant->id, $profile);
+        $builder = app(EditorialPlanBuilder::class);
+
+        $rows = $builder->buildPlan(
+            tenantId: (int) $tenant->id,
+            strategy: [
+                'pillars' => $strategy->pillars,
+                'rubrics' => $strategy->rubrics,
+                'cta_rules' => $strategy->cta_rules,
+                'constraints' => $strategy->constraints,
+            ],
+            history: ['promo_recent_ratio' => 0.0, 'last_pillars' => []],
+            period: [
+                'start' => now()->toDateString(),
+                'end' => now()->addDays(6)->toDateString(),
+                'total_posts' => 3,
+            ],
+            options: [
+                'platforms' => ['facebook', 'instagram'],
+                'formats' => ['reel', 'post'],
+                'memory' => [
+                    'feedback_summary' => [
+                        'preferred_platforms' => ['instagram'],
+                        'preferred_formats' => ['post'],
+                        'positive_signals' => ['Visual realistici e post molto social'],
+                        'hard_avoid_rules' => ['Non stravolgere il luogo reale'],
+                    ],
+                ],
+            ]
+        );
+
+        $this->assertCount(3, $rows);
+        $this->assertSame('instagram', $rows[0]['platform']);
+        $this->assertSame('post', $rows[0]['format']);
+        $this->assertSame(
+            ['Visual realistici e post molto social'],
+            data_get($rows[0], 'feedback_guidance.positive_signals')
+        );
+        $this->assertSame(
+            ['Non stravolgere il luogo reale'],
+            data_get($rows[0], 'feedback_guidance.hard_avoid_rules')
+        );
+    }
+
+    public function test_it_avoids_consulting_style_key_points_in_editorial_plan(): void
+    {
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-social-copy');
+        $strategy = app(EditorialStrategyService::class)->refreshForTenant((int) $tenant->id, $profile);
+        $builder = app(EditorialPlanBuilder::class);
+
+        $rows = $builder->buildPlan(
+            tenantId: (int) $tenant->id,
+            strategy: [
+                'pillars' => $strategy->pillars,
+                'rubrics' => $strategy->rubrics,
+                'cta_rules' => $strategy->cta_rules,
+                'constraints' => $strategy->constraints,
+            ],
+            history: ['promo_recent_ratio' => 0.0, 'last_pillars' => []],
+            period: [
+                'start' => now()->toDateString(),
+                'end' => now()->addDays(6)->toDateString(),
+                'total_posts' => 3,
+            ],
+            options: [
+                'platforms' => ['instagram'],
+                'formats' => ['post', 'reel'],
+            ]
+        );
+
+        $this->assertNotEmpty($rows);
+        foreach ($rows as $row) {
+            $angle = (string) ($row['content_angle'] ?? '');
+            $points = implode(' ', (array) ($row['key_points'] ?? []));
+
+            $this->assertStringNotContainsString('prima/dopo misurabile', $angle);
+            $this->assertStringNotContainsString('Framework rapido', $angle);
+            $this->assertStringNotContainsString('Contesto:', $points);
+            $this->assertStringNotContainsString('Azione:', $points);
+        }
     }
 
     private function bootstrapTenant(string $slug = 'tenant-hard'): array

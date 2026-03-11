@@ -3,11 +3,17 @@
 namespace App\Services;
 
 use App\Models\ContentItem;
+use App\Services\Feedback\TenantFeedbackMemoryService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class MemoryBuilderService
 {
+    public function __construct(
+        private readonly TenantFeedbackMemoryService $tenantFeedbackMemory
+    ) {
+    }
+
     public function buildForTenant(int $tenantId, int $limit = 40): array
     {
         $query = ContentItem::query()
@@ -90,6 +96,7 @@ class MemoryBuilderService
         $offers = array_slice(array_keys($offerScores), 0, 8);
         $ctas = array_slice(array_keys($ctaScores), 0, 8);
         $hashtags = array_slice(array_keys($hashtagScores), 0, 20);
+        $feedbackSummary = $this->tenantFeedbackMemory->buildForTenant($tenantId, $limit);
 
         $lastDate = $rows->first()
             ? Carbon::parse($rows->first()->published_at ?: $rows->first()->scheduled_at)->toDateString()
@@ -104,6 +111,9 @@ class MemoryBuilderService
             'hashtags' => $hashtags,
             'recent_titles' => array_values(array_unique(array_slice($recentTitles, 0, 12))),
             'recent_hooks' => array_values(array_unique(array_slice($recentHooks, 0, 12))),
+            'feedback_summary' => $feedbackSummary,
+            'positive_signals' => array_values(array_unique(array_slice((array) ($feedbackSummary['positive_signals'] ?? []), 0, 10))),
+            'hard_avoid_rules' => array_values(array_unique(array_slice((array) ($feedbackSummary['hard_avoid_rules'] ?? []), 0, 10))),
             'avoid_repetition' => array_values(array_unique(array_merge(
                 array_slice($themes, 0, 6),
                 array_slice($offers, 0, 4),

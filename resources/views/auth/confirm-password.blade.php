@@ -1,8 +1,10 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md ui-reveal">
         <div class="ui-card p-6 sm:p-7">
-            <div class="mb-4 text-sm text-muted">
-                {{ __('This is a secure area of the application. Please confirm your password before continuing.') }}
+            <x-application-logo class="h-10 w-auto" />
+            <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Conferma la password</h1>
+            <div class="mt-3 text-sm leading-6 text-muted">
+                Questa e un'area protetta. Inserisci la password per continuare.
             </div>
 
             <form method="POST" action="{{ route('password.confirm') }}" class="space-y-4">
@@ -16,7 +18,7 @@
 
                 <div class="flex justify-end">
                     <x-primary-button>
-                        {{ __('Confirm') }}
+                        Conferma
                     </x-primary-button>
                 </div>
             </form>

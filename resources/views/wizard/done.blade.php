@@ -9,9 +9,35 @@
 
     $doneRate = $totalItems > 0 ? (int) round(($doneItems / $totalItems) * 100) : 0;
     $pendingRate = $totalItems > 0 ? (int) round(($queuedItems / $totalItems) * 100) : 0;
+    $estimateForItem = static function ($item): int {
+        $format = strtolower((string) ($item->format ?? 'post'));
+
+        return match ($format) {
+            'reel' => 180,
+            'story' => 140,
+            default => 55,
+        };
+    };
+    $estimatedTotalSeconds = $plan
+        ? (int) max(30, $plan->items->sum($estimateForItem))
+        : (int) max(30, $totalItems * 55);
+    $averageItemSeconds = $totalItems > 0 ? (int) max(30, ceil($estimatedTotalSeconds / $totalItems)) : 55;
+    $queuedEtaSeconds = (int) max(0, $queuedItems * $averageItemSeconds);
+    $formatEta = static function (int $seconds): string {
+        $safe = max(0, $seconds);
+        if ($safe < 60) {
+            return $safe . ' sec';
+        }
+
+        $minutes = (int) floor($safe / 60);
+        $rest = $safe % 60;
+
+        return $rest > 0 ? $minutes . ' min ' . $rest . ' sec' : $minutes . ' min';
+    };
 
     $planStart = $plan?->start_date ? \Illuminate\Support\Carbon::parse($plan->start_date)->format('d/m/Y') : '-';
     $planEnd = $plan?->end_date ? \Illuminate\Support\Carbon::parse($plan->end_date)->format('d/m/Y') : '-';
+    $uiAi = fn ($status) => \App\Support\UiStatus::ai((string) $status);
 @endphp
 
 <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -45,9 +71,9 @@
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
                     @if($canGenerate)
-                        <form method="POST" action="{{ route('wizard.generate') }}">
+                        <form method="POST" action="{{ route('wizard.generate') }}" class="js-wizard-generation-submit">
                             @csrf
-                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                            <button type="submit" class="ui-btn-primary w-full justify-center">
                                 Genera piano AI
                             </button>
                         </form>
@@ -91,7 +117,7 @@
 
         <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex items-center justify-between">
-                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">In coda</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">In lavorazione</p>
                 <span id="wizard-progress-queued-rate" class="text-xs font-semibold text-amber-700">{{ $pendingRate }}%</span>
             </div>
             <p id="wizard-progress-queued" class="mt-2 text-2xl font-semibold text-gray-900">{{ $queuedItems }}</p>
@@ -99,8 +125,10 @@
 
         <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex items-center justify-between">
-                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Errori AI</p>
-                <span class="text-xs font-semibold {{ $errorItems > 0 ? 'text-red-700' : 'text-gray-500' }}">controllo</span>
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Da verificare AI</p>
+                <span class="text-xs font-semibold {{ $errorItems > 0 ? 'text-red-700' : 'text-gray-500' }}">
+                    {{ $errorItems > 0 ? 'richiede attenzione' : 'ok' }}
+                </span>
             </div>
             <p id="wizard-progress-error" class="mt-2 text-2xl font-semibold {{ $errorItems > 0 ? 'text-red-700' : 'text-gray-900' }}">{{ $errorItems }}</p>
         </article>
@@ -136,9 +164,9 @@
                     </div>
 
                     <div class="mt-4 flex flex-wrap gap-2">
-                        <form method="POST" action="{{ route('wizard.generate') }}">
+                        <form method="POST" action="{{ route('wizard.generate') }}" class="js-wizard-generation-submit">
                             @csrf
-                            <button type="submit" class="inline-flex items-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                            <button type="submit" class="ui-btn-primary">
                                 Genera piano
                             </button>
                         </form>
@@ -217,11 +245,7 @@
                     <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                         @foreach($plan->items as $item)
                             @php
-                                $statusClass = ($item->ai_status === 'done')
-                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                    : (($item->ai_status === 'error')
-                                        ? 'border-red-200 bg-red-50 text-red-700'
-                                        : 'border-amber-200 bg-amber-50 text-amber-700');
+                                $itemAiInfo = $uiAi($item->ai_status);
                             @endphp
 
                             <article class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -235,9 +259,17 @@
                                         </p>
                                         <p class="mt-1 truncate text-base font-semibold text-gray-900">{{ $item->title ?: 'Senza titolo' }}</p>
                                     </div>
-                                    <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $statusClass }}">
-                                        AI {{ $item->ai_status ?? 'n/a' }}
+                                    <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $itemAiInfo['badge'] }}">
+                                        AI {{ $itemAiInfo['label'] }}
                                     </span>
+                                </div>
+                                <div class="mt-3 flex items-center justify-between gap-3">
+                                    <p class="text-xs text-gray-500">
+                                        Aprilo appena vuoi per dire cosa tenere e cosa correggere.
+                                    </p>
+                                    <a href="{{ route('posts.edit', $item) }}#feedback-loop" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                        Apri feedback
+                                    </a>
                                 </div>
                             </article>
                         @endforeach
@@ -259,12 +291,22 @@
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">Stato elaborazione</p>
                         <p id="wizard-progress-line" class="mt-1 text-sm font-semibold text-gray-900">
-                            Totale {{ $totalItems }} - completati {{ $doneItems }} - in coda {{ $queuedItems }} - errori {{ $errorItems }}
+                            Totale {{ $totalItems }} - completati {{ $doneItems }} - in lavorazione {{ $queuedItems }} - da verificare {{ $errorItems }}
                         </p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">Percentuale completamento</p>
                         <p id="wizard-progress-label" class="mt-1 text-sm font-semibold text-emerald-700">{{ $doneRate }}%</p>
+                    </div>
+                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs text-gray-500">Tempo stimato residuo</p>
+                        <p id="wizard-progress-eta" class="mt-1 text-sm font-semibold text-cyan-700">{{ $queuedItems > 0 ? $formatEta($queuedEtaSeconds) : 'Quasi pronto' }}</p>
+                        <div class="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                            <div id="wizard-progress-activity" class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400 transition-[width] duration-300" style="width: {{ $queuedItems > 0 ? max(18, $pendingRate) : 100 }}%"></div>
+                        </div>
+                        <p id="wizard-progress-stage" class="mt-2 text-xs text-gray-600">
+                            {{ $queuedItems > 0 ? 'La macchina sta preparando i contenuti del piano.' : 'Nessuna lavorazione attiva.' }}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -306,6 +348,7 @@
 </section>
 
 @if($plan)
+@include('partials.generation-loader')
 <script>
 (function () {
     const line = document.getElementById('wizard-progress-line');
@@ -318,12 +361,33 @@
     const errorEl = document.getElementById('wizard-progress-error');
     const fillEl = document.getElementById('wizard-progress-fill');
     const labelEl = document.getElementById('wizard-progress-label');
+    const etaEl = document.getElementById('wizard-progress-eta');
+    const activityEl = document.getElementById('wizard-progress-activity');
+    const stageEl = document.getElementById('wizard-progress-stage');
+    const generateForms = document.querySelectorAll('form.js-wizard-generation-submit');
 
     if (!line) {
         return;
     }
 
     const url = '{{ route('wizard.progress.plan', $plan) }}';
+    const estimatedTotalSeconds = {{ $estimatedTotalSeconds }};
+
+    const formatTime = (seconds) => {
+        const safe = Math.max(0, Math.round(Number(seconds || 0)));
+        if (safe < 60) return `${safe} sec`;
+        const minutes = Math.floor(safe / 60);
+        const rest = safe % 60;
+        return rest > 0 ? `${minutes} min ${rest} sec` : `${minutes} min`;
+    };
+
+    const computeStage = (doneRate, queued) => {
+        if (queued <= 0) return 'Nessuna lavorazione attiva.';
+        if (doneRate < 20) return 'Sto costruendo la base strategica e i prompt di partenza.';
+        if (doneRate < 55) return 'Sto generando i contenuti centrali del piano.';
+        if (doneRate < 90) return 'Sto completando gli ultimi output e facendo pulizia finale.';
+        return 'Sto rifinendo gli ultimi dettagli.';
+    };
 
     const poll = async () => {
         try {
@@ -341,8 +405,9 @@
             const error = Number(counts.error || 0);
             const doneRate = total > 0 ? Math.round((done / total) * 100) : 0;
             const queuedRate = total > 0 ? Math.round((queued / total) * 100) : 0;
+            const remainingSeconds = total > 0 ? Math.ceil((queued / total) * estimatedTotalSeconds) : 0;
 
-            line.textContent = `Totale ${total} - completati ${done} - in coda ${queued} - errori ${error}`;
+            line.textContent = `Totale ${total} - completati ${done} - in lavorazione ${queued} - da verificare ${error}`;
 
             if (totalEl) totalEl.textContent = total;
             if (totalCopyEl) totalCopyEl.textContent = total;
@@ -353,10 +418,30 @@
             if (queuedRateEl) queuedRateEl.textContent = `${queuedRate}%`;
             if (fillEl) fillEl.style.width = `${doneRate}%`;
             if (labelEl) labelEl.textContent = `${doneRate}%`;
+            if (etaEl) etaEl.textContent = queued > 0 ? formatTime(remainingSeconds) : 'Quasi pronto';
+            if (activityEl) activityEl.style.width = `${queued > 0 ? Math.max(18, queuedRate) : 100}%`;
+            if (stageEl) stageEl.textContent = computeStage(doneRate, queued);
         } catch (e) {
             // noop
         }
     };
+
+    if (generateForms.length > 0 && window.HostupGenerationLoader) {
+        generateForms.forEach((form) => {
+            form.addEventListener('submit', () => {
+                window.HostupGenerationLoader.show({
+                    title: 'Sto generando il piano editoriale',
+                    subtitle: 'Creo caption, prompt e output per tutti i contenuti previsti. Il tempo dipende dal mix tra post statici e reel.',
+                    estimateSeconds: estimatedTotalSeconds,
+                    stages: [
+                        'Analisi strategia e contenuti del piano',
+                        'Generazione progressiva dei singoli contenuti',
+                        'Rifinitura finale e salvataggio output',
+                    ],
+                });
+            });
+        });
+    }
 
     poll();
     setInterval(poll, 5000);

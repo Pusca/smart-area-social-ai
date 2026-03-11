@@ -1,10 +1,10 @@
 @import './brand/tokens.css';
 @import './brand/themes.css';
+@import './ui.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import './ui.css';
 
 @layer base {
   html,

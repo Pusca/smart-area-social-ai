@@ -1,8 +1,10 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md ui-reveal">
         <div class="ui-card p-6 sm:p-7">
-            <div class="mb-4 text-sm text-muted">
-                {{ __('Forgot your password? No problem. Just let us know your email address and we will email you a password reset link that will allow you to choose a new one.') }}
+            <x-application-logo class="h-10 w-auto" />
+            <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Recupera l'accesso</h1>
+            <div class="mt-3 text-sm leading-6 text-muted">
+                Inserisci la tua email e ti inviamo il link per scegliere una nuova password.
             </div>
 
             <x-auth-session-status class="mb-4" :status="session('status')" />
@@ -18,7 +20,7 @@
 
                 <div class="flex items-center justify-end">
                     <x-primary-button>
-                        {{ __('Email Password Reset Link') }}
+                        Invia link di recupero
                     </x-primary-button>
                 </div>
             </form>

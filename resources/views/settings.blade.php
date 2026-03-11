@@ -3,6 +3,13 @@
 @section('content')
 <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @php
+        $socialAccounts = $socialAccounts ?? collect();
+        $metaReady = (bool) ($metaReady ?? false);
+        $metaScopes = is_array($metaScopes ?? null) ? $metaScopes : [];
+        $activeSocialAccounts = $socialAccounts->where('status', 'active');
+        $connectedPlatforms = $activeSocialAccounts->pluck('platform')->filter()->unique()->values();
+    @endphp
 
     <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
@@ -10,7 +17,7 @@
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">System Settings</div>
                 <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Impostazioni app</h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    Gestisci installazione PWA, notifiche push e configurazioni operative di base.
+                    Gestisci installazione PWA, notifiche push, connessioni Meta e configurazioni operative di base.
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -19,6 +26,9 @@
                     </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
                         PWA + Push
+                    </span>
+                    <span class="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">
+                        Meta {{ $connectedPlatforms->count() > 0 ? $connectedPlatforms->implode(' + ') : 'non collegato' }}
                     </span>
                 </div>
             </div>
@@ -32,9 +42,20 @@
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Vai ai contenuti
                     </a>
-                    <a href="{{ route('profile.brand') }}" class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                    <a href="{{ route('profile.brand') }}" class="ui-btn-primary justify-center">
                         Apri profilo brand
                     </a>
+                    @if($metaReady)
+                        <a href="{{ route('settings.social.meta.redirect') }}" class="inline-flex items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-700 hover:bg-cyan-100">
+                            Collega Meta
+                        </a>
+                    @endif
+                    <form method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+                            Logout
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -67,15 +88,97 @@
 
         <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex items-center justify-between">
-                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Roadmap</p>
-                <span class="text-xs font-semibold text-amber-700">Next</span>
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Meta</p>
+                <span class="text-xs font-semibold {{ $activeSocialAccounts->isNotEmpty() ? 'text-emerald-700' : 'text-amber-700' }}">{{ $activeSocialAccounts->count() }} attivi</span>
             </div>
-            <p class="mt-2 text-sm text-gray-700">Integrazioni social e automazioni avanzate.</p>
+            <p class="mt-2 text-sm text-gray-700">Connessioni social pronte per programmazione e pubblicazione automatica.</p>
         </article>
     </div>
 
+    @if(session('status'))
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {{ session('status') }}
+        </div>
+    @endif
+
     <div class="grid gap-6 xl:grid-cols-3">
         <div class="space-y-6 xl:col-span-2">
+            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-900">Connessioni Meta</h2>
+                        <p class="mt-1 text-sm text-gray-600">Collega gli account del cliente per Facebook Page e Instagram Business.</p>
+                    </div>
+                    @if($metaReady)
+                        <a href="{{ route('settings.social.meta.redirect') }}" class="ui-btn-primary justify-center">
+                            Collega con Meta
+                        </a>
+                    @endif
+                </div>
+
+                @if(!$metaReady)
+                    <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                        Configura `META_APP_ID`, `META_APP_SECRET` e `META_REDIRECT_URI` per attivare l OAuth Meta.
+                    </div>
+                @endif
+
+                @if($metaReady && !empty($metaScopes))
+                    <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Scope richiesti</p>
+                        <p class="mt-2 text-sm text-gray-700">{{ implode(', ', $metaScopes) }}</p>
+                    </div>
+                @endif
+
+                <div class="mt-4 space-y-3">
+                    @forelse($socialAccounts as $account)
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-semibold text-gray-900">
+                                        {{ $account->account_name ?: ($account->username ?: 'Account social') }}
+                                    </p>
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        {{ strtoupper((string) $account->platform) }}
+                                        @if($account->username)
+                                            - {{ $account->username }}
+                                        @endif
+                                        @if($account->account_id)
+                                            - ID {{ $account->account_id }}
+                                        @endif
+                                    </p>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $account->status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-700' }}">
+                                        {{ $account->status === 'active' ? 'Attivo' : 'Disconnesso' }}
+                                    </span>
+                                    @if($account->is_primary)
+                                        <span class="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">
+                                            Primario
+                                        </span>
+                                    @endif
+                                    <form method="POST" action="{{ route('settings.social.accounts.disconnect', $account) }}">
+                                        @csrf
+                                        <button type="submit" class="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">
+                                            Disconnetti
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-500">
+                                Ultima sync: {{ optional($account->last_synced_at)->format('d/m/Y H:i') ?: 'mai' }}
+                                @if($account->last_error)
+                                    - {{ $account->last_error }}
+                                @endif
+                            </div>
+                        </div>
+                    @empty
+                        <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600">
+                            Nessun account Meta collegato.
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div class="flex items-center justify-between">
                     <div>
@@ -88,7 +191,7 @@
                     <p class="text-sm text-gray-700">
                         Se il pulsante non compare, usa il menu del browser e seleziona "Installa app".
                     </p>
-                    <button id="pwa-install-btn" type="button" class="mt-4 hidden inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                    <button id="pwa-install-btn" type="button" class="ui-btn-primary mt-4 hidden justify-center">
                         Installa app
                     </button>
                 </div>
@@ -104,7 +207,7 @@
 
                 <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <div class="flex flex-wrap gap-2">
-                        <button id="push-enable-btn" type="button" class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                        <button id="push-enable-btn" type="button" class="ui-btn-primary justify-center">
                             Attiva notifiche
                         </button>
                         <button id="push-test-btn" type="button" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -122,9 +225,9 @@
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <h2 class="text-lg font-semibold text-gray-900">Roadmap operativa</h2>
                 <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
-                    <li>Connessioni Meta, TikTok, LinkedIn</li>
-                    <li>Gestione token e reconnect automatico</li>
-                    <li>Preset AI per tono, obiettivi e formati</li>
+                    <li>Supporto publish multi-account e scelta account primario da UI</li>
+                    <li>Retry manuale per pubblicazioni fallite</li>
+                    <li>Connessioni TikTok e LinkedIn</li>
                 </ul>
             </div>
         </div>
@@ -144,6 +247,10 @@
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">Security</p>
                         <p class="mt-1 text-sm font-semibold text-gray-900">HTTPS o localhost</p>
+                    </div>
+                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs text-gray-500">Meta OAuth</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ $metaReady ? 'Configurato' : 'Da configurare' }}</p>
                     </div>
                 </div>
             </div>
@@ -165,6 +272,17 @@
                         <p class="mt-1 text-xs text-gray-600">Gestisci post, stati e output AI.</p>
                     </a>
                 </div>
+            </div>
+
+            <div class="rounded-2xl border border-red-200 bg-white p-6 shadow-sm">
+                <h2 class="text-lg font-semibold text-gray-900">Sessione account</h2>
+                <p class="mt-1 text-sm text-gray-600">Chiudi la sessione corrente su questo dispositivo.</p>
+                <form method="POST" action="{{ route('logout') }}" class="mt-4">
+                    @csrf
+                    <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+                        Esci dall'account
+                    </button>
+                </form>
             </div>
         </div>
     </div>

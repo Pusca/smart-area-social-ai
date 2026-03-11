@@ -12,6 +12,7 @@
                 @foreach ($items as $item)
                     @php
                         $img = $item->ai_image_path ? asset('storage/' . $item->ai_image_path) : null;
+                        $aiInfo = \App\Support\UiStatus::ai((string) $item->ai_status);
                     @endphp
 
                     <a href="{{ route('content-items.show', $item) }}" class="group overflow-hidden rounded-xl border border-app bg-surface transition hover:-translate-y-1 hover:shadow-card">
@@ -29,8 +30,8 @@
                                     {{ strtoupper($item->platform) }} - {{ $item->format }}
                                 </div>
 
-                                <div class="ui-pill {{ $item->ai_status === 'done' ? 'badge-success' : ($item->ai_status === 'error' ? 'badge-danger' : 'badge-warning') }}">
-                                    AI: {{ $item->ai_status ?? 'n/a' }}
+                                <div class="ui-pill {{ $aiInfo['pill'] }}">
+                                    AI: {{ $aiInfo['label'] }}
                                 </div>
                             </div>
 

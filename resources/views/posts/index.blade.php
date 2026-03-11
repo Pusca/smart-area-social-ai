@@ -23,26 +23,8 @@
 
     $statusCounts = is_array($stats['status_counts'] ?? null) ? $stats['status_counts'] : [];
     $todayCount = isset($todayItems) && $todayItems instanceof \Illuminate\Support\Collection ? $todayItems->count() : 0;
+    $workflowLabels = \App\Support\UiStatus::publicationOptions();
 @endphp
-
-<style>
-    .posts-video-preview {
-        display: block;
-        width: auto;
-        max-width: 100%;
-        height: auto;
-        max-height: 56vh;
-        margin-inline: auto;
-        object-fit: contain;
-        background: #000;
-    }
-
-    @media (min-width: 1024px) {
-        .posts-video-preview {
-            max-height: 44vh;
-        }
-    }
-</style>
 
 <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
     <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
@@ -70,7 +52,7 @@
             <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
-                    <a href="{{ route('posts.create') }}" class="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                    <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
                         Nuovo contenuto
                     </a>
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -127,9 +109,9 @@
         <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex items-center justify-between">
                 <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Criticita AI</p>
-                <span class="text-xs font-semibold {{ $aiError > 0 ? 'text-red-700' : 'text-gray-500' }}">{{ $aiError }} errori</span>
+                <span class="text-xs font-semibold {{ $aiError > 0 ? 'text-red-700' : 'text-gray-500' }}">{{ $aiError }} da verificare</span>
             </div>
-            <p class="mt-2 text-sm text-gray-700">{{ $aiQueued }} in coda - {{ $aiDone }} completati</p>
+            <p class="mt-2 text-sm text-gray-700">{{ $aiQueued }} in lavorazione - {{ $aiDone }} completati</p>
         </article>
     </div>
 
@@ -155,39 +137,15 @@
                         @foreach($postItems as $item)
                             @php
                                 $scheduledAt = $item->scheduled_at ? \Illuminate\Support\Carbon::parse($item->scheduled_at) : null;
-                                $assetRaw = $item->assets ?? [];
-                                $assetList = is_string($assetRaw) ? (json_decode($assetRaw, true) ?: []) : (is_array($assetRaw) ? $assetRaw : []);
+                                $mediaPreview = is_array($item->media_preview ?? null) ? $item->media_preview : [];
+                                $videoPath = trim((string) ($mediaPreview['video_path'] ?? ''));
+                                $previewImagePath = trim((string) ($mediaPreview['preview_image_path'] ?? ''));
+                                $isVideo = (bool) ($mediaPreview['is_video'] ?? ($videoPath !== ''));
+                                $videoUrl = $videoPath !== '' ? asset('storage/' . ltrim($videoPath, '/')) : '';
 
-                                $videoPath = null;
-                                foreach ($assetList as $asset) {
-                                    if (!is_array($asset)) {
-                                        continue;
-                                    }
-                                    $assetPath = trim((string) ($asset['path'] ?? ''));
-                                    if ($assetPath === '') {
-                                        continue;
-                                    }
-                                    $assetType = strtolower(trim((string) ($asset['type'] ?? '')));
-                                    $ext = strtolower((string) pathinfo($assetPath, PATHINFO_EXTENSION));
-                                    if (str_contains($assetType, 'video') || in_array($ext, ['mp4', 'mov', 'webm', 'm4v', 'avi'], true)) {
-                                        $videoPath = $assetPath;
-                                        break;
-                                    }
-                                }
-
-                                $statusClass = $item->status === 'published'
-                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                    : (($item->status === 'scheduled')
-                                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                                        : (($item->status === 'failed')
-                                            ? 'border-red-200 bg-red-50 text-red-700'
-                                            : 'border-gray-200 bg-gray-50 text-gray-700'));
-
-                                $aiClass = ($item->ai_status === 'done')
-                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                    : (($item->ai_status === 'error')
-                                        ? 'border-red-200 bg-red-50 text-red-700'
-                                        : 'border-amber-200 bg-amber-50 text-amber-700');
+                                $publicationInfo = \App\Support\UiStatus::publication((string) $item->status);
+                                $aiInfo = \App\Support\UiStatus::ai((string) $item->ai_status);
+                                $latestFeedback = $item->latestFeedbackEntry;
                             @endphp
 
                             <article class="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
@@ -201,8 +159,8 @@
                                         </p>
                                         <h3 class="mt-1 truncate text-sm font-semibold text-gray-900">{{ $item->title ?: ('Post #' . $item->id) }}</h3>
                                     </div>
-                                    <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $statusClass }}">
-                                        {{ $item->status ?: 'draft' }}
+                                    <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $publicationInfo['badge'] }}">
+                                        {{ $publicationInfo['label'] }}
                                     </span>
                                 </div>
 
@@ -210,11 +168,20 @@
                                     <p class="line-clamp-4 text-sm text-gray-600">{{ $item->ai_caption ?: ($item->caption ?: '-') }}</p>
                                 </div>
 
-                                @if(!empty($videoPath))
-                                    <div class="mt-3 flex justify-center rounded-xl border border-gray-200 bg-black p-1">
-                                        <video class="posts-video-preview rounded-lg" controls preload="metadata">
-                                            <source src="{{ asset('storage/' . ltrim($videoPath, '/')) }}" type="video/mp4">
-                                        </video>
+                                @if(!empty($previewImagePath))
+                                    <div class="relative mt-3">
+                                        <img
+                                            src="{{ asset('storage/' . ltrim($previewImagePath, '/')) }}"
+                                            alt="Preview contenuto"
+                                            class="h-28 w-full rounded-xl border border-gray-200 object-cover bg-gray-100"
+                                            loading="lazy"
+                                            onerror="this.remove();"
+                                        >
+                                        @if($isVideo)
+                                            <span class="absolute right-2 top-2 inline-flex items-center rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                                video
+                                            </span>
+                                        @endif
                                     </div>
                                 @elseif(!empty($item->ai_image_path))
                                     <img
@@ -224,14 +191,36 @@
                                         loading="lazy"
                                         onerror="this.remove();"
                                     >
+                                @elseif($isVideo)
+                                    <div class="relative mt-3 rounded-xl border border-gray-200 bg-black">
+                                        <video
+                                            class="h-28 w-full rounded-xl object-cover"
+                                            muted
+                                            playsinline
+                                            preload="metadata"
+                                            data-frame-preview
+                                        >
+                                            <source src="{{ $videoUrl }}" type="video/mp4">
+                                        </video>
+                                        <span class="absolute right-2 top-2 inline-flex items-center rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                            video
+                                        </span>
+                                    </div>
                                 @endif
 
                                 <div class="mt-3 flex items-center justify-between">
-                                    <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $aiClass }}">
-                                        AI {{ $item->ai_status ?? 'n/a' }}
-                                    </span>
-                                    <a href="{{ route('posts.edit', $item) }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                                        Modifica
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $aiInfo['badge'] }}">
+                                            AI {{ $aiInfo['label'] }}
+                                        </span>
+                                        @if($latestFeedback)
+                                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold {{ $latestFeedback->sentiment === 'like' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700' }}">
+                                                {{ $latestFeedback->sentiment === 'like' ? 'Piaciuto' : 'Da correggere' }}
+                                            </span>
+                                        @endif
+                                    </div>
+                                    <a href="{{ route('posts.edit', $item) }}#feedback-loop" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                        Modifica / feedback
                                     </a>
                                 </div>
 
@@ -259,7 +248,7 @@
                 @else
                     <div class="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center">
                         <p class="text-sm text-gray-600">Nessun contenuto disponibile. Crea il primo post per attivare il flusso operativo.</p>
-                        <a href="{{ route('posts.create') }}" class="mt-4 inline-flex items-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+                        <a href="{{ route('posts.create') }}" class="ui-btn-primary mt-4">
                             Crea contenuto
                         </a>
                     </div>
@@ -301,27 +290,27 @@
                 <p class="mt-1 text-sm text-gray-600">Distribuzione contenuti per stato operativo.</p>
                 <div class="mt-4 grid grid-cols-2 gap-2">
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <p class="text-xs text-gray-500">Draft</p>
+                        <p class="text-xs text-gray-500">{{ $workflowLabels['draft'] }}</p>
                         <p class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($statusCounts['draft'] ?? 0) }}</p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <p class="text-xs text-gray-500">Review</p>
+                        <p class="text-xs text-gray-500">{{ $workflowLabels['review'] }}</p>
                         <p class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($statusCounts['review'] ?? 0) }}</p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <p class="text-xs text-gray-500">Approved</p>
+                        <p class="text-xs text-gray-500">{{ $workflowLabels['approved'] }}</p>
                         <p class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($statusCounts['approved'] ?? 0) }}</p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <p class="text-xs text-gray-500">Scheduled</p>
+                        <p class="text-xs text-gray-500">{{ $workflowLabels['scheduled'] }}</p>
                         <p class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($statusCounts['scheduled'] ?? 0) }}</p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <p class="text-xs text-gray-500">Published</p>
+                        <p class="text-xs text-gray-500">{{ $workflowLabels['published'] }}</p>
                         <p class="mt-1 text-lg font-semibold text-emerald-700">{{ (int) ($statusCounts['published'] ?? 0) }}</p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                        <p class="text-xs text-gray-500">Failed</p>
+                        <p class="text-xs text-gray-500">{{ $workflowLabels['failed'] }}</p>
                         <p class="mt-1 text-lg font-semibold {{ ((int) ($statusCounts['failed'] ?? 0)) > 0 ? 'text-red-700' : 'text-gray-900' }}">{{ (int) ($statusCounts['failed'] ?? 0) }}</p>
                     </div>
                 </div>

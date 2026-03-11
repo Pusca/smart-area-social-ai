@@ -1,16 +1,12 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md">
-        <div class="rounded-3xl border bg-white shadow-sm overflow-hidden">
-            <div class="border-b bg-gray-50 px-6 py-5">
-                <div class="flex items-center gap-3">
-                    <div class="h-10 w-10 rounded-2xl bg-gray-900 text-white grid place-items-center font-bold tracking-tight">
-                        SA
-                    </div>
-                    <div>
-                        <div class="text-sm font-semibold">{{ config('app.name', 'Social AI') }}</div>
-                        <div class="text-xs text-gray-500">Accedi al workspace</div>
-                    </div>
-                </div>
+        <div class="overflow-hidden rounded-[2rem] border border-app bg-white/94 shadow-panel">
+            <div class="border-b border-app bg-[var(--gradient-soft)] px-6 py-6">
+                <x-application-logo class="h-10 w-auto" />
+                <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Rientra e riprendi il ritmo dei tuoi contenuti</h1>
+                <p class="mt-2 text-sm leading-6 text-muted">
+                    Ritrovi subito calendario, contenuti e approvazioni in uno spazio ordinato e facile da leggere.
+                </p>
             </div>
 
             <div class="px-6 py-6">
@@ -57,22 +53,22 @@
                     </div>
 
                     <button type="submit"
-                            class="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800">
+                            class="ui-btn-primary w-full justify-center py-3">
                         {{ __('Accedi') }}
                     </button>
 
                     @if (Route::has('register'))
-                        <div class="text-center text-sm text-gray-600">
+                        <div class="text-center text-sm text-muted">
                             Non hai un account?
-                            <a class="underline hover:text-gray-900" href="{{ route('register') }}">Registrati</a>
+                            <a class="underline hover:text-gray-900" href="{{ route('register') }}">Crea il tuo workspace</a>
                         </div>
                     @endif
                 </form>
             </div>
         </div>
 
-        <div class="mt-4 text-center text-xs text-gray-500">
-            Secure access - {{ config('app.name', 'Social AI') }}
+        <div class="mt-4 text-center text-xs text-muted">
+            Accesso protetto al tuo workspace {{ config('app.name', 'Social AI') }}
         </div>
     </div>
 </x-guest-layout>

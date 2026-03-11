@@ -63,7 +63,7 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
+        return redirect(route('profile.brand', absolute: false));
     }
 
     private function generateUniqueTenantSlug(string $name): string

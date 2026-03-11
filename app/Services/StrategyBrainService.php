@@ -348,7 +348,7 @@ class StrategyBrainService
     private function spreadDates(Carbon $start, Carbon $end, int $totalPosts): array
     {
         $totalPosts = max(1, $totalPosts);
-        $days = max(1, $start->diffInDays($end) + 1);
+        $days = max(1, $start->diffInDays($end->copy()->startOfDay()) + 1);
         $step = max(1, (int) floor($days / $totalPosts));
         $dates = [];
 

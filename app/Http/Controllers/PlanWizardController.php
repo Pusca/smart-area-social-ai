@@ -7,6 +7,7 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\AssetVariableService;
 use App\Services\Editorial\ContentGenerator;
 use App\Services\Editorial\ContentHistoryAnalyzer;
 use App\Services\Editorial\EditorialPlanBuilder;
@@ -21,6 +22,7 @@ class PlanWizardController extends Controller
 {
     public function __construct(
         private readonly MemoryBuilderService $memoryBuilder,
+        private readonly AssetVariableService $assetVariableService,
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentHistoryAnalyzer $historyAnalyzer,
         private readonly EditorialPlanBuilder $editorialPlanBuilder,
@@ -44,12 +46,13 @@ class PlanWizardController extends Controller
             'end_date' => Carbon::now()->next(Carbon::MONDAY)->copy()->addDays(6)->toDateString(),
             'goal' => $profile->default_goal ?? 'Lead + Awareness + Autorita',
             'tone' => $profile->default_tone ?? 'professionale',
-            'posts_per_week' => $profile->default_posts_per_week ?? 5,
+            'posts_per_week' => max(2, (int) ($profile->default_posts_per_week ?? 5)),
             'platforms' => $profile->default_platforms ?? ['instagram'],
             'formats' => $profile->default_formats ?? ['post'],
         ];
 
         $step1 = array_merge($defaults, $request->session()->get('plan.step1', []));
+        $step1['posts_per_week'] = max(2, (int) ($step1['posts_per_week'] ?? 5));
 
         return view('wizard.start', compact('step1', 'profile'));
     }
@@ -62,7 +65,7 @@ class PlanWizardController extends Controller
             'end_date' => 'required|date|after_or_equal:start_date',
             'goal' => 'required|string|max:300',
             'tone' => 'required|string|max:80',
-            'posts_per_week' => 'required|integer|min:1|max:31',
+            'posts_per_week' => 'required|integer|min:2|max:31',
             'platforms' => 'nullable|array|min:1',
             'platforms.*' => 'string|max:50',
             'formats' => 'nullable|array|min:1',
@@ -234,7 +237,7 @@ class PlanWizardController extends Controller
 
         $start = Carbon::parse($step1['start_date'])->startOfDay();
         $end = Carbon::parse($step1['end_date'])->endOfDay();
-        $postsTotal = max(1, (int) ($step1['posts_per_week'] ?? 5));
+        $postsTotal = max(2, (int) ($step1['posts_per_week'] ?? 5));
         $platforms = array_values($step1['platforms'] ?? ['instagram']);
         $formats = array_values($step1['formats'] ?? ['post']);
         $refreshFutureOnly = $request->boolean('refresh_future_only');
@@ -255,6 +258,15 @@ class PlanWizardController extends Controller
             ])
             ->values()
             ->all();
+        $assetVariables = $this->assetVariableService->catalogForTenant((int) $user->tenant_id);
+
+        $strictAssetMode = (bool) config('generation.strict_asset_mode', true);
+        $hasBrandImages = collect($assets)
+            ->contains(fn ($asset) => is_array($asset) && (($asset['kind'] ?? null) === 'image') && !empty($asset['path']));
+        if ($strictAssetMode && !$hasBrandImages) {
+            return redirect()->route('profile.brand')
+                ->with('status', 'Strict mode attivo: carica almeno 1 immagine in Brand Assets prima di generare un piano editoriale.');
+        }
 
         $memory = $this->memoryBuilder->buildForTenant((int) $user->tenant_id, 40);
 
@@ -274,14 +286,10 @@ class PlanWizardController extends Controller
         ];
 
         $strategyModel = $this->editorialStrategyService->refreshForTenant((int) $user->tenant_id, $profile);
-        $strategy = [
-            'brand_voice' => $strategyModel->brand_voice ?? [],
-            'pillars' => $strategyModel->pillars ?? [],
-            'rubrics' => $strategyModel->rubrics ?? [],
-            'cta_rules' => $strategyModel->cta_rules ?? [],
-            'constraints' => $strategyModel->constraints ?? [],
-            'brand_references' => $this->buildBrandReferences($profileData, $assets),
-        ];
+        $strategy = $this->editorialStrategyService->toRuntimeContext(
+            $strategyModel,
+            $this->buildBrandReferences($profileData, $assets, $assetVariables)
+        );
 
         $history = $this->historyAnalyzer->snapshot(
             (int) $user->tenant_id,
@@ -322,6 +330,7 @@ class PlanWizardController extends Controller
                             'formats' => $formats,
                             'tenant_profile' => $profileData,
                             'assets' => $assets,
+                            'asset_variables' => $assetVariables,
                             'memory' => $memory,
                             'strategy' => $strategy,
                         ],
@@ -349,6 +358,7 @@ class PlanWizardController extends Controller
                             'formats' => $formats,
                             'tenant_profile' => $profileData,
                             'assets' => $assets,
+                            'asset_variables' => $assetVariables,
                             'memory' => $memory,
                             'strategy' => $strategy,
                         ]),
@@ -365,16 +375,16 @@ class PlanWizardController extends Controller
                 $missing = max(0, $postsTotal - $existingFutureCount);
                 if ($missing > 0) {
                     $futureStart = now()->greaterThan($start) ? now()->startOfDay() : $start;
-                    $itemsToGenerate = $this->editorialPlanBuilder->buildPlan(
-                        tenantId: (int) $user->tenant_id,
-                        strategy: $strategy,
-                        history: $history,
-                        period: [
+                $itemsToGenerate = $this->editorialPlanBuilder->buildPlan(
+                    tenantId: (int) $user->tenant_id,
+                    strategy: $strategy,
+                    history: $history,
+                    period: [
                             'start' => $futureStart->toDateString(),
                             'end' => $end->toDateString(),
                             'total_posts' => $missing,
                         ],
-                        options: ['platforms' => $platforms, 'formats' => $formats]
+                        options: ['platforms' => $platforms, 'formats' => $formats, 'memory' => $memory]
                     );
                 }
 
@@ -385,6 +395,7 @@ class PlanWizardController extends Controller
                         'strategy' => $strategy,
                         'memory' => $memory,
                         'assets' => $assets,
+                        'asset_variables' => $assetVariables,
                     ]);
                 }
             } else {
@@ -403,6 +414,7 @@ class PlanWizardController extends Controller
                         'formats' => $formats,
                         'tenant_profile' => $profileData,
                         'assets' => $assets,
+                        'asset_variables' => $assetVariables,
                         'memory' => $memory,
                         'strategy' => $strategy,
                     ],
@@ -414,7 +426,7 @@ class PlanWizardController extends Controller
                     strategy: $strategy,
                     history: $history,
                     period: $period,
-                    options: ['platforms' => $platforms, 'formats' => $formats]
+                    options: ['platforms' => $platforms, 'formats' => $formats, 'memory' => $memory]
                 );
 
                 $this->contentGenerator->generateForPlan($newPlan, $itemsToGenerate, [
@@ -423,6 +435,7 @@ class PlanWizardController extends Controller
                     'strategy' => $strategy,
                     'memory' => $memory,
                     'assets' => $assets,
+                    'asset_variables' => $assetVariables,
                 ]);
             }
         } catch (\Throwable $e) {
@@ -463,7 +476,7 @@ class PlanWizardController extends Controller
             ->with('status', "Piano aggiornato (ID: {$plan->id}) con logica editoriale avanzata e anti-duplicati.");
     }
 
-    private function buildBrandReferences(array $profileData, array $assets): array
+    private function buildBrandReferences(array $profileData, array $assets, array $assetVariables = []): array
     {
         $logo = null;
         $images = [];
@@ -482,6 +495,7 @@ class PlanWizardController extends Controller
             'palette' => $profileData['brand_palette'] ?? null,
             'logo_path' => $logo,
             'reference_images' => array_values(array_unique($images)),
+            'asset_variables' => array_values($assetVariables),
         ];
     }
 

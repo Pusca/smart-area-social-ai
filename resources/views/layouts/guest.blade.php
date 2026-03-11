@@ -4,51 +4,67 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ config('app.name', 'Social AI') }}</title>
+    <meta name="theme-color" content="#1737B6">
+    <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 
-<body class="min-h-screen bg-gray-50 text-gray-900 antialiased">
-    {{-- Top bar (app-style) --}}
-    <header class="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
+<body class="min-h-screen bg-app text-text antialiased">
+    <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div class="absolute -left-24 -top-16 h-72 w-72 rounded-full bg-cyan-200/30 blur-3xl"></div>
+        <div class="absolute right-0 top-0 h-80 w-80 rounded-full bg-blue-200/25 blur-3xl"></div>
+        <div class="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-cyan-100/30 blur-3xl"></div>
+    </div>
+
+    <header class="sticky top-0 z-40 border-b border-app bg-white/86 backdrop-blur-xl">
         <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-            <div class="flex h-16 items-center justify-between">
+            <div class="flex min-h-[4.75rem] items-center justify-between gap-4">
                 <a href="{{ route('home') }}" class="flex items-center gap-3">
-                    {{-- Simple monogram --}}
-                    <div class="h-10 w-10 rounded-2xl bg-gray-900 text-white grid place-items-center font-bold tracking-tight">
-                        SA
-                    </div>
+                    <x-application-logo variant="icon" class="h-11 w-11 sm:hidden" />
+                    <x-application-logo class="hidden h-14 w-auto sm:block" />
                     <div class="leading-tight">
-                        <div class="text-sm font-semibold">{{ config('app.name', 'Social AI') }}</div>
-                        <div class="text-[11px] text-gray-500">Workspace</div>
+                        <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-brand">Social content workspace</div>
+                        <div class="text-sm font-semibold text-gray-900">{{ config('app.name', 'Social AI') }}</div>
+                        <div class="text-[11px] text-muted">Più presenza, più continuità, meno attrito operativo.</div>
                     </div>
                 </a>
 
                 <div class="flex items-center gap-2">
-                    @if (Route::has('login'))
-                        <a href="{{ route('login') }}"
-                           class="rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100">
-                            Accedi
+                    @auth
+                        <a href="{{ route('dashboard') }}"
+                           class="ui-btn-primary">
+                            Apri workspace
                         </a>
-                    @endif
-                    @if (Route::has('register'))
-                        <a href="{{ route('register') }}"
-                           class="rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-                            Registrati
-                        </a>
-                    @endif
+                    @else
+                        @if (Route::has('login'))
+                            <a href="{{ route('login') }}"
+                               class="ui-btn-secondary">
+                                Accedi
+                            </a>
+                        @endif
+                        @if (Route::has('register'))
+                            <a href="{{ route('register') }}"
+                               class="ui-btn-primary">
+                                Prova Social AI
+                            </a>
+                        @endif
+                    @endauth
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-10">
+    <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         {{ $slot }}
     </main>
 
-    <footer class="border-t bg-white">
-        <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 text-xs text-gray-500 flex items-center justify-between">
-            <div>&copy; {{ date('Y') }} {{ config('app.name', 'Social AI') }}</div>
-            <div class="hidden sm:block">Minimal - Clean - App UI</div>
+    <footer class="border-t border-app bg-white/78">
+        <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-6 text-xs text-muted sm:px-6 lg:px-8">
+            <div class="flex items-center gap-3">
+                <x-application-logo variant="icon" class="h-8 w-8" />
+                <span>&copy; {{ date('Y') }} {{ config('app.name', 'Social AI') }}</span>
+            </div>
+            <div class="hidden sm:block">Pianifica, crea e pubblica contenuti con un'esperienza piu chiara.</div>
         </div>
     </footer>
 </body>
