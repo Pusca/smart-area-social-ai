@@ -24,6 +24,7 @@
     $byKind = $assets->groupBy('kind');
     $logos = $byKind['logo'] ?? collect();
     $images = $byKind['image'] ?? collect();
+    $videos = $byKind['video'] ?? collect();
     $variableCandidateAssets = $assets->whereIn('kind', ['image', 'logo'])->values();
     $selectedVariableAssetIds = old('asset_ids', []);
     if (!is_array($selectedVariableAssetIds)) {
@@ -143,6 +144,9 @@
                     </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
                         {{ $images->count() }} immagini
+                    </span>
+                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
+                        {{ $videos->count() }} video
                     </span>
                     <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
                         Strategia {{ $strategyStatus }}
@@ -811,6 +815,37 @@
                                 @endforelse
                             </div>
                         </div>
+
+                        <div>
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-gray-900">Video</h3>
+                                <span class="text-xs text-gray-500">{{ $videos->count() }} file</span>
+                            </div>
+                            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                @forelse($videos as $a)
+                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                        <div class="border-b border-gray-200 bg-gray-50 p-2">
+                                            <p class="text-xs font-semibold text-gray-600">Video brand</p>
+                                        </div>
+                                        <div class="flex aspect-video items-center justify-center bg-slate-950 px-3 text-center text-xs font-semibold text-white">
+                                            {{ $a->original_name ?? 'video' }}
+                                        </div>
+                                        <div class="truncate px-2 py-1 text-[11px] text-gray-600">{{ $a->original_name ?? $a->path }}</div>
+                                        <div class="px-2 pb-2">
+                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questo video?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
+                                            </form>
+                                        </div>
+                                    </article>
+                                @empty
+                                    <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
+                                        Nessun video caricato.
+                                    </div>
+                                @endforelse
+                            </div>
+                        </div>
                     </div>
                 @endif
             </div>
@@ -826,6 +861,123 @@
                     <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
                         {{ count($assetVariableCatalog) }} variabili attive
                     </span>
+                </div>
+
+                <div class="mt-4 rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-indigo-50 p-5">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Nuovo flusso guidato</p>
+                            <h3 class="mt-1 text-base font-semibold text-gray-900">Crea un persona pack per immagini e video</h3>
+                            <p class="mt-2 max-w-2xl text-sm text-gray-600">
+                                Carica i riferimenti reali della persona da preservare. L AI userà questo pack come ancora identitaria:
+                                stesso volto, stessi tratti e presenza coerente tra contenuti diversi.
+                            </p>
+                        </div>
+                        <span class="inline-flex items-center rounded-full border border-cyan-200 bg-white px-2.5 py-1 text-xs font-semibold text-cyan-700">
+                            V1 persona pack
+                        </span>
+                    </div>
+
+                    <div class="mt-4 grid gap-3 md:grid-cols-3">
+                        <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Scatti richiesti</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">4 angoli chiave + mezzo busto opzionale</p>
+                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base più utile.</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Video reale</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">Facoltativo ma utile</p>
+                            <p class="mt-1 text-xs text-gray-600">Serve per postura, mimica e riferimenti futuri quando lavoreremo meglio sui video.</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Istruzioni dirette</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">Cosa non deve cambiare</p>
+                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertà creative sono ammesse.</p>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="{{ route('profile.brand.variables.persona.store') }}" enctype="multipart/form-data" class="mt-5 space-y-4 rounded-2xl border border-white/80 bg-white/90 p-4">
+                        @csrf
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div>
+                                <label for="guided_persona_name" class="{{ $labelClass }}">Nome persona</label>
+                                <input id="guided_persona_name" type="text" name="name" value="{{ old('name') }}" placeholder="Es. Manuel, Chef Erika, Dott. Bianchi" class="{{ $inputClass }}" required>
+                            </div>
+                            <div>
+                                <label for="guided_persona_role" class="{{ $labelClass }}">Ruolo o contesto</label>
+                                <input id="guided_persona_role" type="text" name="persona_role" value="{{ old('persona_role') }}" placeholder="Es. titolare, chef, consulente, volto del brand" class="{{ $inputClass }}">
+                            </div>
+                        </div>
+
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div>
+                                <label for="guided_persona_description" class="{{ $labelClass }}">Descrizione base</label>
+                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi è questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
+                            </div>
+                            <div>
+                                <label for="guided_persona_immutable_traits" class="{{ $labelClass }}">Tratti da non cambiare mai</label>
+                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, età percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-4 lg:grid-cols-3">
+                            <div>
+                                <label for="guided_persona_look_notes" class="{{ $labelClass }}">Aspetto e presenza</label>
+                                <textarea id="guided_persona_look_notes" name="look_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. postura naturale, espressione calda, presenza elegante">{{ old('look_notes') }}</textarea>
+                            </div>
+                            <div>
+                                <label for="guided_persona_styling_notes" class="{{ $labelClass }}">Outfit e styling</label>
+                                <textarea id="guided_persona_styling_notes" name="styling_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. outfit curato, colori neutri, divisa brand">{{ old('styling_notes') }}</textarea>
+                            </div>
+                            <div>
+                                <label for="guided_persona_prompt_notes" class="{{ $labelClass }}">Indicazioni dirette all AI</label>
+                                <textarea id="guided_persona_prompt_notes" name="prompt_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. evitare close-up estremi, mantenere sguardo reale, luce morbida">{{ old('prompt_notes') }}</textarea>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="guided_persona_usage_notes" class="{{ $labelClass }}">Quando usarla</label>
+                            <textarea id="guided_persona_usage_notes" name="usage_notes" rows="2" class="{{ $inputClass }}" placeholder="Es. contenuti educational, accoglienza clienti, dietro le quinte">{{ old('usage_notes') }}</textarea>
+                        </div>
+
+                        <div class="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/70 p-4">
+                            <p class="text-sm font-semibold text-gray-900">Carica il pack fotografico</p>
+                            <p class="mt-1 text-xs text-gray-600">Per vedere subito l’effetto in azione, qui chiediamo i riferimenti più utili e leggibili per l AI.</p>
+
+                            <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                <div>
+                                    <label for="shot_front" class="{{ $labelClass }}">Frontale</label>
+                                    <input id="shot_front" type="file" name="shot_front" accept="image/*" class="{{ $inputClass }}" required>
+                                </div>
+                                <div>
+                                    <label for="shot_three_quarter_left" class="{{ $labelClass }}">Tre quarti sinistra</label>
+                                    <input id="shot_three_quarter_left" type="file" name="shot_three_quarter_left" accept="image/*" class="{{ $inputClass }}" required>
+                                </div>
+                                <div>
+                                    <label for="shot_three_quarter_right" class="{{ $labelClass }}">Tre quarti destra</label>
+                                    <input id="shot_three_quarter_right" type="file" name="shot_three_quarter_right" accept="image/*" class="{{ $inputClass }}" required>
+                                </div>
+                                <div>
+                                    <label for="shot_profile" class="{{ $labelClass }}">Profilo</label>
+                                    <input id="shot_profile" type="file" name="shot_profile" accept="image/*" class="{{ $inputClass }}" required>
+                                </div>
+                                <div>
+                                    <label for="shot_half_body" class="{{ $labelClass }}">Mezzo busto (opzionale)</label>
+                                    <input id="shot_half_body" type="file" name="shot_half_body" accept="image/*" class="{{ $inputClass }}">
+                                </div>
+                                <div>
+                                    <label for="reference_video" class="{{ $labelClass }}">Video reale (opzionale)</label>
+                                    <input id="reference_video" type="file" name="reference_video" accept="video/mp4,video/quicktime,video/webm" class="{{ $inputClass }}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <button type="submit" class="ui-btn-primary">
+                                Crea persona pack
+                            </button>
+                        </div>
+                    </form>
                 </div>
 
                 <form method="POST" action="{{ route('profile.brand.variables.store') }}" class="mt-4 space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -906,6 +1058,11 @@
                                 $varDesc = trim((string) ($variable['description'] ?? ''));
                                 $varSlug = (string) ($variable['slug'] ?? '');
                                 $varAssets = is_array($variable['assets'] ?? null) ? $variable['assets'] : [];
+                                $varProfile = is_array($variable['profile'] ?? null) ? $variable['profile'] : [];
+                                $varRole = trim((string) ($varProfile['role'] ?? ''));
+                                $varImmutableTraits = trim((string) ($varProfile['immutable_traits'] ?? ''));
+                                $varPromptNotes = trim((string) ($varProfile['prompt_notes'] ?? ''));
+                                $varVideoCount = collect($varAssets)->where('kind', 'video')->count();
                             @endphp
                             <article class="rounded-xl border border-gray-200 bg-white p-4">
                                 <div class="flex items-start justify-between gap-3">
@@ -925,14 +1082,37 @@
                                 @if($varDesc !== '')
                                     <p class="mt-2 text-xs text-gray-600">{{ $varDesc }}</p>
                                 @endif
+                                @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '')
+                                    <div class="mt-3 space-y-2 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                                        @if($varRole !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Ruolo:</span> {{ $varRole }}</p>
+                                        @endif
+                                        @if($varImmutableTraits !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Da non cambiare:</span> {{ $varImmutableTraits }}</p>
+                                        @endif
+                                        @if($varPromptNotes !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Indicazioni AI:</span> {{ $varPromptNotes }}</p>
+                                        @endif
+                                    </div>
+                                @endif
+                                @if($varVideoCount > 0)
+                                    <p class="mt-3 text-xs font-semibold text-indigo-700">Include anche {{ $varVideoCount }} video di riferimento</p>
+                                @endif
                                 <div class="mt-3 grid grid-cols-4 gap-2">
                                     @foreach(array_slice($varAssets, 0, 4) as $assetPreview)
                                         @php
                                             $assetPath = (string) ($assetPreview['path'] ?? '');
+                                            $assetKind = (string) ($assetPreview['kind'] ?? '');
                                         @endphp
                                         @if($assetPath !== '')
                                             <div class="aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                                                <img src="{{ asset('storage/' . ltrim($assetPath, '/')) }}" class="h-full w-full object-cover" alt="variable asset">
+                                                @if($assetKind === 'video')
+                                                    <div class="flex h-full items-center justify-center bg-slate-950 px-2 text-center text-[11px] font-semibold text-white">
+                                                        VIDEO
+                                                    </div>
+                                                @else
+                                                    <img src="{{ asset('storage/' . ltrim($assetPath, '/')) }}" class="h-full w-full object-cover" alt="variable asset">
+                                                @endif
                                             </div>
                                         @endif
                                     @endforeach

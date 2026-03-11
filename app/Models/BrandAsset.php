@@ -14,5 +14,10 @@ class BrandAsset extends Model
         'original_name',
         'size',
         'mime',
+        'meta',
+    ];
+
+    protected $casts = [
+        'meta' => 'array',
     ];
 }

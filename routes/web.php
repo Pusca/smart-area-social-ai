@@ -48,6 +48,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::delete('/profile/brand/quickstart', [TenantProfileController::class, 'destroyQuickstartDemo'])->name('profile.brand.quickstart.destroy');
     Route::post('/profile/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
     Route::post('/profile/brand/variables', [TenantProfileController::class, 'storeVariable'])->name('profile.brand.variables.store');
+    Route::post('/profile/brand/variables/persona-pack', [TenantProfileController::class, 'storeGuidedPersonaVariable'])->name('profile.brand.variables.persona.store');
     Route::delete('/profile/brand/variables/{assetVariable}', [TenantProfileController::class, 'destroyVariable'])->name('profile.brand.variables.destroy');
     Route::delete('/profile/brand/assets', [TenantProfileController::class, 'destroyAssets'])
         ->name('profile.brand.assets.destroy');

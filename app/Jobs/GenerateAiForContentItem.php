@@ -3337,6 +3337,7 @@ SVG;
             $name = trim((string) ($row['name'] ?? ''));
             $slug = trim((string) ($row['slug'] ?? ''));
             $kind = trim((string) ($row['kind'] ?? 'custom'));
+            $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
 
             $label = $name !== '' ? $name : ($slug !== '' ? '@' . $slug : 'variabile');
             if ($kind !== '') {
@@ -3352,6 +3353,22 @@ SVG;
 
             if (!empty($refs)) {
                 $label .= ' refs: ' . implode(', ', $refs);
+            }
+
+            if ($kind === 'person' && !empty($profile)) {
+                $role = trim((string) ($profile['role'] ?? ''));
+                $immutable = trim((string) ($profile['immutable_traits'] ?? ''));
+                $lookNotes = trim((string) ($profile['look_notes'] ?? ''));
+
+                if ($role !== '') {
+                    $label .= ' ruolo: ' . Str::limit($role, 80, '');
+                }
+                if ($immutable !== '') {
+                    $label .= ' non cambiare: ' . Str::limit($immutable, 120, '');
+                }
+                if ($lookNotes !== '' && $immutable === '') {
+                    $label .= ' look: ' . Str::limit($lookNotes, 100, '');
+                }
             }
 
             $parts[] = $label;
@@ -3416,8 +3433,10 @@ SVG;
                 'slug' => $slug,
                 'kind' => trim((string) ($row['kind'] ?? 'custom')),
                 'description' => trim((string) ($row['description'] ?? '')),
+                'profile' => is_array($row['profile'] ?? null) ? $row['profile'] : [],
                 'asset_ids' => $assetIds,
                 'asset_paths' => $assetPaths,
+                'assets' => is_array($row['assets'] ?? null) ? $row['assets'] : [],
             ];
         }
 
@@ -3435,6 +3454,11 @@ SVG;
 
         $name = $this->normalizeText((string) ($row['name'] ?? ''));
         $slug = $this->normalizeText(str_replace('-', ' ', (string) ($row['slug'] ?? '')));
+        $profileText = $this->normalizeText(implode(' ', array_filter([
+            (string) data_get($row, 'profile.role', ''),
+            (string) data_get($row, 'profile.identity_summary', ''),
+            (string) data_get($row, 'profile.immutable_traits', ''),
+        ])));
 
         if ($name !== '' && str_contains(' ' . $briefNormalized . ' ', ' ' . $name . ' ')) {
             return true;
@@ -3451,6 +3475,10 @@ SVG;
 
         $nameCompact = str_replace(' ', '', $name);
         if ($nameCompact !== '' && str_contains($briefNormalized, '@' . $nameCompact)) {
+            return true;
+        }
+
+        if ($profileText !== '' && str_contains(' ' . $briefNormalized . ' ', ' ' . $profileText . ' ')) {
             return true;
         }
 
@@ -4507,12 +4535,45 @@ SVG;
             return;
         }
 
-        $videoPath = BrandAsset::query()
-            ->where('tenant_id', $item->tenant_id)
-            ->whereNull('content_plan_id')
-            ->where('kind', 'video')
-            ->orderBy('id')
-            ->value('path');
+        $videoPath = '';
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $resolvedVariables = $this->normalizeAssetVariableRows((array) data_get($meta, 'asset_variables.resolved', []));
+
+        foreach ($resolvedVariables as $row) {
+            if (strtolower(trim((string) ($row['kind'] ?? 'custom'))) !== 'person') {
+                continue;
+            }
+
+            $candidate = trim((string) data_get($row, 'profile.reference_video_path', ''));
+            if ($candidate === '' && !empty($row['assets']) && is_array($row['assets'])) {
+                foreach ((array) $row['assets'] as $asset) {
+                    if (!is_array($asset)) {
+                        continue;
+                    }
+
+                    $assetKind = strtolower(trim((string) ($asset['kind'] ?? '')));
+                    $assetPath = trim((string) ($asset['path'] ?? ''));
+                    if ($assetKind === 'video' && $assetPath !== '') {
+                        $candidate = $assetPath;
+                        break;
+                    }
+                }
+            }
+
+            if ($candidate !== '') {
+                $videoPath = $candidate;
+                break;
+            }
+        }
+
+        if ($videoPath === '') {
+            $videoPath = BrandAsset::query()
+                ->where('tenant_id', $item->tenant_id)
+                ->whereNull('content_plan_id')
+                ->where('kind', 'video')
+                ->orderBy('id')
+                ->value('path');
+        }
 
         if (!is_string($videoPath) || trim($videoPath) === '') {
             return;

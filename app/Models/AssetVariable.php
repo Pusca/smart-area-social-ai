@@ -13,11 +13,13 @@ class AssetVariable extends Model
         'kind',
         'description',
         'asset_ids',
+        'profile',
         'is_active',
     ];
 
     protected $casts = [
         'asset_ids' => 'array',
+        'profile' => 'array',
         'is_active' => 'boolean',
     ];
 }

@@ -9,6 +9,7 @@ use App\Models\EditorialStrategy;
 use App\Models\TenantProfile;
 use App\Services\AssetVariableService;
 use App\Services\Editorial\EditorialStrategyService;
+use App\Services\GuidedAssetVariableService;
 use App\Services\Onboarding\QuickstartOnboardingService;
 use App\Support\GenerationExecution;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class TenantProfileController extends Controller
     public function __construct(
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly AssetVariableService $assetVariableService,
+        private readonly GuidedAssetVariableService $guidedAssetVariableService,
         private readonly QuickstartOnboardingService $quickstartOnboardingService
     ) {
     }
@@ -406,6 +408,41 @@ class TenantProfileController extends Controller
         ]);
 
         return redirect()->route('profile.brand')->with('status', 'Variabile asset creata.');
+    }
+
+    public function storeGuidedPersonaVariable(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:120',
+            'description' => 'required|string|max:1000',
+            'persona_role' => 'nullable|string|max:160',
+            'immutable_traits' => 'required|string|max:1000',
+            'look_notes' => 'nullable|string|max:1000',
+            'styling_notes' => 'nullable|string|max:1000',
+            'prompt_notes' => 'nullable|string|max:1200',
+            'usage_notes' => 'nullable|string|max:1200',
+            'shot_front' => 'required|file|mimes:png,jpg,jpeg,webp|max:6144',
+            'shot_three_quarter_left' => 'required|file|mimes:png,jpg,jpeg,webp|max:6144',
+            'shot_three_quarter_right' => 'required|file|mimes:png,jpg,jpeg,webp|max:6144',
+            'shot_profile' => 'required|file|mimes:png,jpg,jpeg,webp|max:6144',
+            'shot_half_body' => 'nullable|file|mimes:png,jpg,jpeg,webp|max:6144',
+            'reference_video' => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/webm|max:51200',
+        ]);
+
+        try {
+            $result = $this->guidedAssetVariableService->createPersonaPack($request->user(), $data);
+        } catch (\Throwable $e) {
+            return redirect()
+                ->route('profile.brand')
+                ->withInput()
+                ->withErrors(['guided_persona' => $e->getMessage()]);
+        }
+
+        $assetCount = count($result['assets'] ?? []);
+
+        return redirect()
+            ->route('profile.brand')
+            ->with('status', "Persona pack creato: {$result['variable']->name} con {$assetCount} riferimenti pronti per immagini e video.");
     }
 
     public function destroyVariable(Request $request, AssetVariable $assetVariable)

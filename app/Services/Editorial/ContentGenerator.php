@@ -334,6 +334,7 @@ class ContentGenerator
                 'slug' => (string) ($ref['slug'] ?? ''),
                 'kind' => (string) ($ref['kind'] ?? 'custom'),
                 'description' => (string) ($ref['description'] ?? ''),
+                'profile' => is_array($ref['profile'] ?? null) ? $ref['profile'] : [],
                 'asset_ids' => array_values(array_filter(array_map(
                     fn ($id) => (int) $id,
                     (array) ($ref['asset_ids'] ?? [])
@@ -342,6 +343,7 @@ class ContentGenerator
                     'strval',
                     (array) ($ref['asset_paths'] ?? [])
                 ))),
+                'assets' => is_array($ref['assets'] ?? null) ? $ref['assets'] : [],
             ];
         }
 

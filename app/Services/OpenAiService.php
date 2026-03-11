@@ -90,6 +90,8 @@ class OpenAiService
             . "Usa memory_summary.feedback_summary come memoria del gusto del tenant: cio che piace va riutilizzato con intelligenza, cio che non piace va evitato.\n"
             . "Tratta memory_summary.hard_avoid_rules e feedback_loop.tenant_feedback.recent_objections come vincoli forti.\n"
             . "Se feedback_loop.active_request e presente, e una correzione prioritaria da applicare subito nella rigenerazione corrente.\n"
+            . "Se asset_variables contiene una persona guidata o un persona pack, trattala come identita reale da preservare: stesso volto, stessi lineamenti, stessa eta apparente e tratti distintivi coerenti tra contenuti diversi.\n"
+            . "Quando una persona guidata ha immutable_traits, role, look_notes o prompt_notes, usali come istruzioni operative forti per caption, image_prompt e video_prompt.\n"
             . "Quando la correzione riguarda il visual, migliora soprattutto prompt immagine e coerenza visuale, preservando il resto se gia valido.\n"
             . "Quando la correzione riguarda copy o tono, migliora soprattutto caption, CTA e angolo narrativo, preservando il visual se gia coerente.\n"
             . "Tutto cio che generi e pensato per post social: non brochure, non sito corporate, non stock generico.\n"

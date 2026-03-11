@@ -63,6 +63,7 @@ class AssetVariableService
                 'slug' => (string) $variable->slug,
                 'kind' => (string) $variable->kind,
                 'description' => (string) ($variable->description ?? ''),
+                'profile' => is_array($variable->profile) ? $variable->profile : [],
                 'asset_ids' => $assetIds->all(),
                 'asset_paths' => $assetPaths,
                 'assets' => $linkedAssets->map(fn ($asset) => [
@@ -71,6 +72,7 @@ class AssetVariableService
                     'path' => (string) ($asset->path ?? ''),
                     'original_name' => (string) ($asset->original_name ?? ''),
                     'mime' => (string) ($asset->mime ?? ''),
+                    'meta' => is_array($asset->meta) ? $asset->meta : [],
                 ])->all(),
             ];
         }

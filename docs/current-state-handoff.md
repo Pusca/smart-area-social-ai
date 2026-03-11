@@ -50,6 +50,12 @@ Ultimo aggiornamento: 2026-03-11
   - se `Runway` fallisce con errore generico provider-side, il job prova fallback automatico su `OpenAI video`
   - resta salvato sia il provider richiesto sia quello effettivamente usato nell ultima generazione
   - gli errori `Runway` ora riportano dettaglio piu leggibile quando presente (`code + message`)
+- Persona pack V1 nel Brand Center:
+  - nuova creazione guidata per variabili `person`
+  - supporta 4 scatti chiave, 1 mezzo busto opzionale e 1 video reale opzionale
+  - salva metadati strutturati su `asset_variables.profile` e `brand_assets.meta`
+  - la pipeline AI legge ora questi campi per preservare meglio identita, volto e tratti della persona nei contenuti futuri
+  - documentazione dedicata in `docs/persona-pack-v1.md`
 - Pipeline video/copy migliorata:
   - `video_prompt` e `video_voiceover` ora sono separati dal prompt immagine
   - per video con piu location reali il sistema prova a mostrarle in sequenza, senza fonderle in una scena impossibile
