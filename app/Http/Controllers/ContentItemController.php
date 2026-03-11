@@ -14,10 +14,13 @@ use App\Services\MemoryBuilderService;
 use App\Services\Social\SocialPublishingService;
 use App\Support\GenerationExecution;
 use App\Support\ImageProviderResolver;
+use App\Support\UiStatus;
 use App\Support\VideoProviderResolver;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\View\View;
 
 class ContentItemController extends Controller
 {
@@ -143,6 +146,36 @@ class ContentItemController extends Controller
         $assetVariables = $this->assetVariableService->catalogForTenant($tenantId);
 
         return view('posts.create', compact('profile', 'referenceImages', 'assetVariables'));
+    }
+
+    public function generating(Request $request, ContentItem $contentItem): View
+    {
+        $this->authorizeTenant($request, $contentItem);
+
+        return view('posts.generating', [
+            'contentItem' => $contentItem,
+            'estimateSeconds' => $this->estimateGenerationSeconds($contentItem),
+            'stages' => $this->generationStages($contentItem),
+        ]);
+    }
+
+    public function generationStatus(Request $request, ContentItem $contentItem): JsonResponse
+    {
+        $this->authorizeTenant($request, $contentItem);
+        $contentItem->refresh();
+
+        $status = (string) ($contentItem->ai_status ?? '');
+
+        return response()->json([
+            'item_id' => (int) $contentItem->id,
+            'ai_status' => $status,
+            'status' => UiStatus::ai($status),
+            'active' => in_array($status, ['queued', 'pending'], true),
+            'completed' => $status === 'done',
+            'error' => $status === 'error',
+            'redirect_url' => route('posts.edit', $contentItem),
+            'updated_at' => optional($contentItem->updated_at)->toDateTimeString(),
+        ]);
     }
 
     public function store(Request $request)
@@ -353,6 +386,10 @@ class ContentItemController extends Controller
             return redirect()
                 ->route('posts.edit', $item)
                 ->with('status', trim('Contenuto creato, ma la generazione AI non e partita: ' . $e->getMessage() . ' ' . $this->publicationSyncMessage($publicationSync)));
+        }
+
+        if (GenerationExecution::shouldShowProgressPage()) {
+            return redirect()->route('posts.generating', $item);
         }
 
         return redirect()
@@ -1065,6 +1102,46 @@ class ContentItemController extends Controller
         }
 
         return trim((string) data_get($contentItem->plan?->settings, 'mode', '')) === 'single_manual';
+    }
+
+    private function estimateGenerationSeconds(ContentItem $contentItem): int
+    {
+        $format = Str::lower(trim((string) ($contentItem->format ?? 'post')));
+        $meta = is_array($contentItem->ai_meta) ? $contentItem->ai_meta : [];
+        $videoProvider = Str::lower(trim((string) data_get($meta, 'video_provider', config('generation.video_provider_default', 'openai'))));
+        $imageProvider = Str::lower(trim((string) data_get($meta, 'image_provider', config('generation.image_provider_default', 'nanobanana'))));
+
+        if ($format === 'reel') {
+            return $videoProvider === 'runway' ? 150 : 190;
+        }
+
+        if ($format === 'story') {
+            return $videoProvider === 'runway' ? 120 : 150;
+        }
+
+        return $imageProvider === 'openai' ? 40 : 60;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function generationStages(ContentItem $contentItem): array
+    {
+        $format = Str::lower(trim((string) ($contentItem->format ?? 'post')));
+
+        if (in_array($format, ['reel', 'story'], true)) {
+            return [
+                'Analisi del brief e della strategia',
+                'Scrittura del copy e della direzione video',
+                'Generazione visuale e rifinitura finale',
+            ];
+        }
+
+        return [
+            'Analisi brand e materiali reali',
+            'Scrittura caption e prompt visuale',
+            'Generazione immagine e controllo finale',
+        ];
     }
 
 }

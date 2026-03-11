@@ -30,6 +30,10 @@ Ultimo aggiornamento: 2026-03-11
   - overlay animato su create/edit/wizard generate
   - stima tempi e stato macchina in lavorazione
   - overlay esteso anche al quickstart brand: creazione e rigenerazione demo iniziale ora mostrano la stessa attesa guidata
+  - online il flag `GENERATION_FORCE_SYNC` non blocca piu la request fino al timeout:
+    - i job partono `after response`
+    - quickstart e rigenerazioni contenuto usano ora pagine di avanzamento dedicate
+    - l utente resta su una schermata di attesa reale e viene riportato alla sezione corretta appena la generazione finisce
 - Feedback loop tenant-aware ora attivo:
   - tabella `content_feedback_entries`
   - feedback positivo/negativo direttamente dentro il dettaglio contenuto

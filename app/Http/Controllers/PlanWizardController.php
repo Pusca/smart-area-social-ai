@@ -13,10 +13,12 @@ use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
 use App\Support\GenerationExecution;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\View\View;
 
 class PlanWizardController extends Controller
 {
@@ -120,7 +122,27 @@ class PlanWizardController extends Controller
         ]);
     }
 
-    public function progress(Request $request, ?ContentPlan $contentPlan = null)
+    public function generating(Request $request, ContentPlan $contentPlan): View
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+        if ((int) $contentPlan->tenant_id !== $tenantId) {
+            abort(403);
+        }
+
+        $context = trim((string) $request->query('context', 'wizard'));
+        $returnUrl = $context === 'quickstart'
+            ? route('profile.brand')
+            : route('wizard.done');
+
+        return view('plans.generating', [
+            'plan' => $contentPlan,
+            'context' => $context,
+            'returnUrl' => $returnUrl,
+            'progress' => $this->progressPayload($contentPlan),
+        ]);
+    }
+
+    public function progress(Request $request, ?ContentPlan $contentPlan = null): JsonResponse
     {
         $tenantId = (int) $request->user()->tenant_id;
 
@@ -150,13 +172,7 @@ class PlanWizardController extends Controller
             ]);
         }
 
-        $counts = [
-            'total' => ContentItem::query()->where('content_plan_id', $plan->id)->count(),
-            'queued' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'queued')->count(),
-            'pending' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'pending')->count(),
-            'done' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'done')->count(),
-            'error' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'error')->count(),
-        ];
+        $counts = $this->planCounts($plan);
 
         // In ambiente locale drena 1 job per poll, così non resta bloccato in queued se manca worker persistente.
         if (GenerationExecution::shouldRunSync() && (($counts['queued'] + $counts['pending']) > 0)) {
@@ -172,23 +188,10 @@ class PlanWizardController extends Controller
                 // best effort
             }
 
-            $counts = [
-                'total' => ContentItem::query()->where('content_plan_id', $plan->id)->count(),
-                'queued' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'queued')->count(),
-                'pending' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'pending')->count(),
-                'done' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'done')->count(),
-                'error' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'error')->count(),
-            ];
+            $counts = $this->planCounts($plan);
         }
 
-        return response()->json([
-            'has_plan' => true,
-            'plan_id' => (int) $plan->id,
-            'active' => (($counts['queued'] + $counts['pending']) > 0),
-            'completed' => ($counts['total'] > 0 && ($counts['queued'] + $counts['pending']) === 0),
-            'counts' => $counts,
-            'completed_at' => now()->toDateTimeString(),
-        ]);
+        return response()->json($this->progressPayload($plan, $counts));
     }
 
     public function generate(Request $request)
@@ -696,6 +699,38 @@ class PlanWizardController extends Controller
         return [
             'images' => $images,
             'video' => $videoPath,
+        ];
+    }
+
+    /**
+     * @return array{total:int,queued:int,pending:int,done:int,error:int}
+     */
+    private function planCounts(ContentPlan $plan): array
+    {
+        return [
+            'total' => ContentItem::query()->where('content_plan_id', $plan->id)->count(),
+            'queued' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'queued')->count(),
+            'pending' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'pending')->count(),
+            'done' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'done')->count(),
+            'error' => ContentItem::query()->where('content_plan_id', $plan->id)->where('ai_status', 'error')->count(),
+        ];
+    }
+
+    /**
+     * @param  array{total:int,queued:int,pending:int,done:int,error:int}|null  $counts
+     * @return array<string, mixed>
+     */
+    private function progressPayload(ContentPlan $plan, ?array $counts = null): array
+    {
+        $counts = $counts ?? $this->planCounts($plan);
+
+        return [
+            'has_plan' => true,
+            'plan_id' => (int) $plan->id,
+            'active' => (($counts['queued'] + $counts['pending']) > 0),
+            'completed' => ($counts['total'] > 0 && ($counts['queued'] + $counts['pending']) === 0),
+            'counts' => $counts,
+            'completed_at' => now()->toDateTimeString(),
         ];
     }
 }

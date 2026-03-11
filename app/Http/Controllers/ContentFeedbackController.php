@@ -97,6 +97,10 @@ class ContentFeedbackController extends Controller
         ) {
             GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
+            if (GenerationExecution::shouldShowProgressPage()) {
+                return redirect()->route('posts.generating', $contentItem);
+            }
+
             return redirect()
                 ->route('posts.edit', $contentItem)
                 ->with('status', GenerationExecution::shouldRunSync()

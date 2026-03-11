@@ -10,6 +10,7 @@ use App\Models\TenantProfile;
 use App\Services\AssetVariableService;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\Onboarding\QuickstartOnboardingService;
+use App\Support\GenerationExecution;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +96,13 @@ class TenantProfileController extends Controller
             );
 
             $count = count($result['created_items'] ?? []);
+
+            if (GenerationExecution::shouldShowProgressPage()) {
+                return redirect()->route('plans.generating', [
+                    'contentPlan' => $result['plan'],
+                    'context' => 'quickstart',
+                ]);
+            }
 
             return redirect()
                 ->route('profile.brand')
@@ -276,6 +284,13 @@ class TenantProfileController extends Controller
         try {
             $result = $this->quickstartOnboardingService->regenerateQuickstart($request->user());
             $count = count($result['created_items'] ?? []);
+
+            if (GenerationExecution::shouldShowProgressPage()) {
+                return redirect()->route('plans.generating', [
+                    'contentPlan' => $result['plan'],
+                    'context' => 'quickstart',
+                ]);
+            }
 
             return redirect()
                 ->route('profile.brand')

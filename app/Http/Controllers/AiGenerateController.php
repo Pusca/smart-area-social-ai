@@ -24,6 +24,10 @@ class AiGenerateController extends Controller
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
+        if (GenerationExecution::shouldShowProgressPage()) {
+            return redirect()->route('posts.generating', $contentItem);
+        }
+
         return back()->with('status', GenerationExecution::shouldRunSync()
             ? 'Rigenerazione AI completata.'
             : 'Rigenerazione AI messa in coda (JOBv4).'
@@ -47,6 +51,15 @@ class AiGenerateController extends Controller
             GenerationExecution::dispatchContentItem((int) $item->id);
         }
 
+        if (GenerationExecution::shouldShowProgressPage()) {
+            $request->session()->put('plan.plan_id', $contentPlan->id);
+
+            return redirect()->route('plans.generating', [
+                'contentPlan' => $contentPlan,
+                'context' => 'wizard',
+            ]);
+        }
+
         return back()->with('status', GenerationExecution::shouldRunSync()
             ? 'Rigenerazione AI del piano completata.'
             : 'Rigenerazione AI del piano messa in coda (background).');
@@ -64,6 +77,10 @@ class AiGenerateController extends Controller
         $contentItem->save();
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
+
+        if (GenerationExecution::shouldShowProgressPage()) {
+            return redirect()->route('posts.generating', $contentItem);
+        }
 
         return back()->with('status', GenerationExecution::shouldRunSync()
             ? 'Rigenerazione visual completata.'

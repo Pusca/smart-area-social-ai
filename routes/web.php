@@ -60,6 +60,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
     Route::get('/wizard/progress', [PlanWizardController::class, 'progress'])->name('wizard.progress');
     Route::get('/wizard/progress/{contentPlan}', [PlanWizardController::class, 'progress'])->name('wizard.progress.plan');
+    Route::get('/plans/{contentPlan}/generating', [PlanWizardController::class, 'generating'])->name('plans.generating');
     Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
     // AI Lab
@@ -83,6 +84,8 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');
         Route::post('/', [ContentItemController::class, 'store'])->name('store');
 
+        Route::get('/{contentItem}/generating', [ContentItemController::class, 'generating'])->name('generating');
+        Route::get('/{contentItem}/generation-status', [ContentItemController::class, 'generationStatus'])->name('generation.status');
         Route::get('/{contentItem}/edit', [ContentItemController::class, 'edit'])->name('edit');
         Route::put('/{contentItem}', [ContentItemController::class, 'update'])->name('update');
         Route::post('/{contentItem}/feedback', [ContentFeedbackController::class, 'store'])->name('feedback.store');
