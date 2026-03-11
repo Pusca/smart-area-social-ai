@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateAiForContentItem;
 use App\Models\ContentFeedbackEntry;
 use App\Models\ContentItem;
 use App\Services\MemoryBuilderService;
+use App\Support\GenerationExecution;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -95,15 +95,13 @@ class ContentFeedbackController extends Controller
             $sentiment === ContentFeedbackEntry::SENTIMENT_DISLIKE
             && $action === ContentFeedbackEntry::ACTION_REGENERATE
         ) {
-            if (app()->environment('local')) {
-                GenerateAiForContentItem::dispatchSync((int) $contentItem->id);
-            } else {
-                GenerateAiForContentItem::dispatch((int) $contentItem->id);
-            }
+            GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
             return redirect()
                 ->route('posts.edit', $contentItem)
-                ->with('status', 'Feedback salvato e rigenerazione avviata con le correzioni richieste.');
+                ->with('status', GenerationExecution::shouldRunSync()
+                    ? 'Feedback salvato e rigenerazione completata con le correzioni richieste.'
+                    : 'Feedback salvato e rigenerazione avviata con le correzioni richieste.');
         }
 
         return redirect()

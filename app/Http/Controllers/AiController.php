@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateAiForContentItem;
 use App\Models\ContentItem;
 use App\Services\OpenAiService;
+use App\Support\GenerationExecution;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -104,18 +104,22 @@ class AiController extends Controller
             $item->ai_error = null;
             $item->save();
 
-            GenerateAiForContentItem::dispatch($item->id);
+            GenerationExecution::dispatchContentItem((int) $item->id);
         }
 
         if ($request->expectsJson()) {
             return response()->json([
                 'ok' => true,
                 'queued' => $items->count(),
-                'message' => 'Generazione AI messa in coda.',
+                'message' => GenerationExecution::shouldRunSync()
+                    ? 'Generazione AI completata.'
+                    : 'Generazione AI messa in coda.',
             ]);
         }
 
-        return back()->with('status', 'Generazione AI messa in coda.');
+        return back()->with('status', GenerationExecution::shouldRunSync()
+            ? 'Generazione AI completata.'
+            : 'Generazione AI messa in coda.');
     }
 
     private function buildContext(array $payload): array

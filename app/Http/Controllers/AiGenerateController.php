@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateAiForContentItem;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
+use App\Support\GenerationExecution;
 use App\Support\ImageProviderResolver;
 use App\Support\VideoProviderResolver;
 use Illuminate\Http\Request;
@@ -22,14 +22,10 @@ class AiGenerateController extends Controller
         $contentItem->ai_error = null;
         $contentItem->save();
 
-        if (app()->environment('local')) {
-            GenerateAiForContentItem::dispatchSync($contentItem->id);
-        } else {
-            GenerateAiForContentItem::dispatch($contentItem->id);
-        }
+        GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
-        return back()->with('status', app()->environment('local')
-            ? 'Rigenerazione AI completata (sync locale).'
+        return back()->with('status', GenerationExecution::shouldRunSync()
+            ? 'Rigenerazione AI completata.'
             : 'Rigenerazione AI messa in coda (JOBv4).'
         );
     }
@@ -48,10 +44,12 @@ class AiGenerateController extends Controller
             $item->ai_error = null;
             $item->save();
 
-            GenerateAiForContentItem::dispatch($item->id);
+            GenerationExecution::dispatchContentItem((int) $item->id);
         }
 
-        return back()->with('status', 'Rigenerazione AI del piano messa in coda (background).');
+        return back()->with('status', GenerationExecution::shouldRunSync()
+            ? 'Rigenerazione AI del piano completata.'
+            : 'Rigenerazione AI del piano messa in coda (background).');
     }
 
     public function generateImage(Request $request, ContentItem $contentItem)
@@ -65,14 +63,10 @@ class AiGenerateController extends Controller
         $contentItem->ai_error = null;
         $contentItem->save();
 
-        if (app()->environment('local')) {
-            GenerateAiForContentItem::dispatchSync($contentItem->id);
-        } else {
-            GenerateAiForContentItem::dispatch($contentItem->id);
-        }
+        GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
-        return back()->with('status', app()->environment('local')
-            ? 'Rigenerazione visual completata (sync locale).'
+        return back()->with('status', GenerationExecution::shouldRunSync()
+            ? 'Rigenerazione visual completata.'
             : 'Rigenerazione visual messa in coda.');
     }
 

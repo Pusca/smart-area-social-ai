@@ -9,11 +9,12 @@ use App\Models\ContentPlan;
 use App\Models\TenantProfile;
 use App\Services\AssetVariableService;
 use App\Services\ContentMediaPreviewService;
-use App\Services\Social\SocialPublishingService;
-use App\Support\ImageProviderResolver;
-use App\Support\VideoProviderResolver;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
+use App\Services\Social\SocialPublishingService;
+use App\Support\GenerationExecution;
+use App\Support\ImageProviderResolver;
+use App\Support\VideoProviderResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -343,11 +344,7 @@ class ContentItemController extends Controller
         }
 
         try {
-            if (app()->environment('local')) {
-                GenerateAiForContentItem::dispatchSync((int) $item->id);
-            } else {
-                GenerateAiForContentItem::dispatch((int) $item->id);
-            }
+            GenerationExecution::dispatchContentItem((int) $item->id);
         } catch (\Throwable $e) {
             $item->ai_status = 'error';
             $item->ai_error = 'QUEUE: ' . $e->getMessage();
@@ -360,7 +357,7 @@ class ContentItemController extends Controller
 
         return redirect()
             ->route('posts.edit', $item)
-            ->with('status', app()->environment('local')
+            ->with('status', GenerationExecution::shouldRunSync()
                 ? trim('Contenuto creato e generato con AI. ' . $this->publicationSyncMessage($publicationSync))
                 : trim('Contenuto creato e messo in coda AI. ' . $this->publicationSyncMessage($publicationSync)));
     }

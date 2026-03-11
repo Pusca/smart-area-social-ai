@@ -2,7 +2,6 @@
 
 namespace App\Services\Onboarding;
 
-use App\Jobs\GenerateAiForContentItem;
 use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
@@ -15,6 +14,7 @@ use App\Services\Editorial\ContentHistoryAnalyzer;
 use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
+use App\Support\GenerationExecution;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -513,12 +513,7 @@ class QuickstartOnboardingService
                 continue;
             }
 
-            if (app()->environment('local')) {
-                GenerateAiForContentItem::dispatchSync((int) $item->id);
-                continue;
-            }
-
-            GenerateAiForContentItem::dispatch((int) $item->id);
+            GenerationExecution::dispatchContentItem((int) $item->id);
         }
     }
 

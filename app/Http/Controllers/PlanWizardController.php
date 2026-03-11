@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateAiForContentItem;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
@@ -13,6 +12,7 @@ use App\Services\Editorial\ContentHistoryAnalyzer;
 use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
+use App\Support\GenerationExecution;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -159,7 +159,7 @@ class PlanWizardController extends Controller
         ];
 
         // In ambiente locale drena 1 job per poll, così non resta bloccato in queued se manca worker persistente.
-        if (app()->environment('local') && (($counts['queued'] + $counts['pending']) > 0)) {
+        if (GenerationExecution::shouldRunSync() && (($counts['queued'] + $counts['pending']) > 0)) {
             try {
                 Artisan::call('queue:work', [
                     'connection' => 'database',
@@ -462,11 +462,7 @@ class PlanWizardController extends Controller
                 ->all();
 
             foreach ($itemIds as $itemId) {
-                if (app()->environment('local')) {
-                    GenerateAiForContentItem::dispatchSync((int) $itemId);
-                } else {
-                    GenerateAiForContentItem::dispatch((int) $itemId);
-                }
+                GenerationExecution::dispatchContentItem((int) $itemId);
             }
         } catch (\Throwable) {
             // best effort
