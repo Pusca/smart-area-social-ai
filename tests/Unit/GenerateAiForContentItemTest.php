@@ -128,15 +128,4 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringContainsString('senza sensualizzare la scena', strtolower($prompt));
     }
 
-    public function test_it_marks_openai_moderation_failures_as_runway_fallback_candidates_when_runway_is_configured(): void
-    {
-        config()->set('runway.api_key', 'runway-test-key');
-
-        $job = new GenerateAiForContentItem(1);
-        $method = new ReflectionMethod($job, 'shouldFallbackFromOpenAiToRunway');
-        $method->setAccessible(true);
-
-        $this->assertTrue($method->invoke($job, new RuntimeException('Video generation failed: Your request was blocked by our moderation system.')));
-        $this->assertFalse($method->invoke($job, new RuntimeException('Video generation timeout after 420s')));
-    }
 }

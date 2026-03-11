@@ -1285,39 +1285,6 @@ SVG;
                 assetVariables: $assetVariables,
                 providerFallback: null
             );
-        } catch (Throwable $openAiError) {
-            if (!$this->shouldFallbackFromOpenAiToRunway($openAiError)) {
-                throw $openAiError;
-            }
-
-            $runwayResult = $this->generateVideoWithRunway(
-                runway: $runway,
-                openAi: $openAi,
-                item: $item,
-                briefRaw: $briefRaw,
-                fallbackPrompt: $prompt,
-                videoPrompt: $this->buildRunwayVideoFallbackPrompt($videoPrompt, $briefRaw, $referencePaths, $assetVariables),
-                referenceAbs: $referenceAbs,
-                referencePath: $referencePath,
-                referencePaths: $referencePaths,
-                referenceReason: $referenceReason . '_runway_fallback_after_openai_failure',
-                generationReferenceAbsPool: $generationReferenceAbsPool,
-                imageReferencePathPool: $imageReferencePathPool,
-                validationReferenceAbsPool: $validationReferenceAbsPool,
-                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
-                compositionMeta: $compositionMeta,
-                brandDecision: $brandDecision,
-                videoOptions: $videoOptions
-            );
-
-            $runwayResult['provider_fallback'] = [
-                'from' => 'openai',
-                'to' => 'runway',
-                'reason' => Str::limit($openAiError->getMessage(), 220, ''),
-                'at' => now()->toDateTimeString(),
-            ];
-
-            return $runwayResult;
         } finally {
             if (is_string($preparedRefPath) && $preparedRefPath !== '' && is_file($preparedRefPath)) {
                 @unlink($preparedRefPath);
@@ -2223,24 +2190,6 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
-    private function buildRunwayVideoFallbackPrompt(
-        string $videoPrompt,
-        string $briefRaw,
-        array $referencePaths,
-        array $assetVariables
-    ): string {
-        $safePrompt = $this->buildSafeCommercialVideoPrompt($videoPrompt, $briefRaw, $referencePaths, $assetVariables);
-        if ($safePrompt === '') {
-            return $videoPrompt;
-        }
-
-        return $safePrompt . ' Output desiderato: reel sociale credibile, fluido e vendibile.';
-    }
-
-    /**
-     * @param  array<int, string>  $referencePaths
-     * @param  array<string, mixed>  $assetVariables
-     */
     private function buildSafeCommercialVideoPrompt(
         string $videoPrompt,
         string $briefRaw,
@@ -2328,17 +2277,6 @@ SVG;
             || str_contains($message, 'content policy')
             || str_contains($message, 'policy violation')
             || str_contains($message, 'disallowed content');
-    }
-
-    private function shouldFallbackFromOpenAiToRunway(Throwable $error): bool
-    {
-        return $this->hasConfiguredRunwayVideoFallback()
-            && $this->isOpenAiVideoModerationBlock($error);
-    }
-
-    private function hasConfiguredRunwayVideoFallback(): bool
-    {
-        return trim((string) (config('runway.api_key') ?: env('RUNWAY_API_KEY') ?: '')) !== '';
     }
 
     /**

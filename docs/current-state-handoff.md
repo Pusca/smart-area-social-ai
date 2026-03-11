@@ -156,7 +156,7 @@ Argomenti da definire insieme nel passo successivo:
 - Il job video ora deve:
   - fare un retry con prompt piu sobrio e sicuro
   - declassare nomi propri e linguaggio sensibile tipo `massaggio tecnico` verso formulazioni piu professionali
-  - fare fallback automatico a `Runway` se OpenAI continua a bloccare e la chiave `RUNWAY_API_KEY` e presente
+- non cambiare provider automaticamente se l utente ha scelto `OpenAI`: dopo il retry sicuro resta su OpenAI e, se ancora bloccato, fallisce in modo esplicito
 - File chiave:
   - `app/Jobs/GenerateAiForContentItem.php`
   - `tests/Unit/GenerateAiForContentItemTest.php`
