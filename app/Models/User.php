@@ -77,6 +77,10 @@ class User extends Authenticatable
             (array) config('platform_admin.authorized_emails', [])
         )));
 
+        if (empty($authorizedEmails)) {
+            return true;
+        }
+
         return in_array($email, $authorizedEmails, true);
     }
 }

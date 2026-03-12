@@ -28,8 +28,9 @@ Ultimo aggiornamento: 2026-03-12
   - da riusare come sorgente per vere push browser/app
 - Platform admin ristretto a un solo accesso autorizzato:
   - la dashboard admin esiste gia su `/admin`
-  - ora il controllo non si basa piu solo sul `role`, ma anche su una whitelist email
-  - default attuale: `puscastanislav0@gmail.com`
+  - il controllo puo usare anche una whitelist email, ma e opzionale
+  - se `PLATFORM_ADMIN_EMAILS` e vuoto, l accesso admin torna a basarsi solo sul `role`
+  - email suggerita per l account admin dedicato: `puscastanislav0@gmail.com`
   - comando disponibile per creare/aggiornare l account admin:
     - `php artisan platform-admin:ensure --email=... --password=... --name=...`
   - il platform admin puo avere `tenant_id = null`

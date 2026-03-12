@@ -1,6 +1,6 @@
 <?php
 
-$emails = env('PLATFORM_ADMIN_EMAILS', 'puscastanislav0@gmail.com');
+$emails = env('PLATFORM_ADMIN_EMAILS', '');
 
 return [
     'authorized_emails' => array_values(array_filter(array_map(
