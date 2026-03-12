@@ -83,6 +83,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
         Route::get('/', [ContentItemController::class, 'index'])->name('index');
 
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');
+        Route::get('/reels/create', [ContentItemController::class, 'createReel'])->name('reels.create');
         Route::post('/', [ContentItemController::class, 'store'])->name('store');
 
         Route::get('/{contentItem}/generating', [ContentItemController::class, 'generating'])->name('generating');

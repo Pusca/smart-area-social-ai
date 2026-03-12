@@ -27,6 +27,7 @@
     $videoProviderOptions = [
         'openai' => 'Sora + GPT (OpenAI)',
         'runway' => 'Runway',
+        'kling' => 'Kling (coerenza persona)',
     ];
     $imageProviderOptions = [
         'nanobanana' => 'Nano Banana (consigliato)',
@@ -41,6 +42,11 @@
         $imageProviderValue = 'nanobanana';
     }
     $videoProviderLastUsed = (string) data_get($contentItem->ai_meta, 'video_provider_last_used', $videoProviderValue);
+    $videoProviderLabels = [
+        'openai' => 'Sora + GPT',
+        'runway' => 'Runway',
+        'kling' => 'Kling',
+    ];
     $videoProviderFallback = data_get($contentItem->ai_meta, 'video_generation.provider_fallback');
     $feedbackEntries = $contentItem->feedbackEntries ?? collect();
     $latestFeedback = $feedbackEntries->first();
@@ -91,11 +97,11 @@
                         {{ $publicationInfo['label'] }}
                     </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        Video provider: {{ $videoProviderValue === 'runway' ? 'Runway' : 'Sora + GPT' }}
+                        Video provider: {{ $videoProviderLabels[$videoProviderValue] ?? 'Video AI' }}
                     </span>
                     @if($videoProviderLastUsed !== '' && $videoProviderLastUsed !== $videoProviderValue)
                         <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                            Ultimo output video: {{ $videoProviderLastUsed === 'runway' ? 'Runway' : 'OpenAI video' }}
+                            Ultimo output video: {{ $videoProviderLabels[$videoProviderLastUsed] ?? 'Video AI' }}
                         </span>
                     @endif
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
@@ -560,10 +566,22 @@
             }
 
             if (format === 'reel') {
-                return videoProvider === 'runway' ? 150 : 190;
+                if (videoProvider === 'runway') {
+                    return 150;
+                }
+                if (videoProvider === 'kling') {
+                    return 175;
+                }
+                return 190;
             }
             if (format === 'story') {
-                return videoProvider === 'runway' ? 120 : 150;
+                if (videoProvider === 'runway') {
+                    return 120;
+                }
+                if (videoProvider === 'kling') {
+                    return 145;
+                }
+                return 150;
             }
 
             return imageProvider === 'openai' ? 40 : 60;

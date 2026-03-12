@@ -3,6 +3,7 @@
 namespace App\Services\Social;
 
 use App\Models\ContentItem;
+use App\Support\PublicMediaUrl;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -82,22 +83,6 @@ class SocialAssetUrlService
 
     private function buildPublicUrl(string $path): string
     {
-        $path = ltrim($path, '/');
-        $baseUrl = trim((string) config('meta.public_media_base_url', ''));
-
-        if ($baseUrl !== '') {
-            return rtrim($baseUrl, '/') . '/' . $path;
-        }
-
-        $relative = Storage::disk('public')->url($path);
-        $absolute = url($relative);
-        $host = (string) parse_url($absolute, PHP_URL_HOST);
-        $allowLocal = (bool) config('meta.allow_local_public_urls', false);
-
-        if (!$allowLocal && in_array($host, ['localhost', '127.0.0.1'], true)) {
-            throw new RuntimeException('L URL media pubblico punta a localhost. Imposta APP_URL pubblico oppure SOCIAL_PUBLIC_MEDIA_BASE_URL.');
-        }
-
-        return $absolute;
+        return PublicMediaUrl::build($path);
     }
 }

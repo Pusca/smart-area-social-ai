@@ -149,6 +149,13 @@ class ContentItemController extends Controller
         return view('posts.create', compact('profile', 'referenceImages', 'assetVariables', 'createPreset'));
     }
 
+    public function createReel(Request $request)
+    {
+        $request->query->set('preset', 'reel');
+
+        return $this->create($request);
+    }
+
     public function generating(Request $request, ContentItem $contentItem): View
     {
         $this->authorizeTenant($request, $contentItem);
@@ -1113,11 +1120,19 @@ class ContentItemController extends Controller
         $imageProvider = Str::lower(trim((string) data_get($meta, 'image_provider', config('generation.image_provider_default', 'nanobanana'))));
 
         if ($format === 'reel') {
-            return $videoProvider === 'runway' ? 150 : 190;
+            return match ($videoProvider) {
+                'runway' => 150,
+                'kling' => 175,
+                default => 190,
+            };
         }
 
         if ($format === 'story') {
-            return $videoProvider === 'runway' ? 120 : 150;
+            return match ($videoProvider) {
+                'runway' => 120,
+                'kling' => 145,
+                default => 150,
+            };
         }
 
         return $imageProvider === 'openai' ? 40 : 60;

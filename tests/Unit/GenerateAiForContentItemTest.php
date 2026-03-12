@@ -104,6 +104,35 @@ class GenerateAiForContentItemTest extends TestCase
                     'angle' => 'atmosfera serale del locale',
                     'series' => 'signature reels',
                 ],
+                'reel_blueprint' => [
+                    'hook' => 'Ingresso visivo forte sul locale',
+                    'anchor_frame' => 'frame verticale iniziale sul ristorante reale',
+                    'continuity_lock' => 'stessa persona e stesso locale in tutti gli shot',
+                    'visual_payoff' => 'chiusura premium sul momento aperitivo',
+                    'shots' => [
+                        [
+                            'order' => 1,
+                            'purpose' => 'hook immediato',
+                            'subject' => 'ingresso del ristorante',
+                            'camera' => 'wide shot verticale',
+                            'motion' => 'push-in leggero',
+                        ],
+                        [
+                            'order' => 2,
+                            'purpose' => 'sviluppo atmosfera',
+                            'subject' => 'persona del brand in sala',
+                            'camera' => 'medium shot',
+                            'motion' => 'tracking morbido',
+                        ],
+                        [
+                            'order' => 3,
+                            'purpose' => 'payoff finale',
+                            'subject' => 'dettaglio premium aperitivo',
+                            'camera' => 'close medium',
+                            'motion' => 'micro parallax',
+                        ],
+                    ],
+                ],
                 'strategy' => [
                     'brand_voice' => [
                         'tone' => 'caldo e premium',
@@ -123,10 +152,132 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringContainsString('3-5 shot concatenati', $prompt);
         $this->assertStringContainsString('hook visivo entro il primo secondo', strtolower($prompt));
         $this->assertStringContainsString('stop-scroll', strtolower($prompt));
+        $this->assertStringContainsString('Anchor frame:', $prompt);
+        $this->assertStringContainsString('Shot 1:', $prompt);
         $this->assertStringContainsString('Awareness', $prompt);
         $this->assertStringContainsString('atmosfera serale del locale', $prompt);
         $this->assertStringContainsString('signature reels', $prompt);
         $this->assertStringContainsString('stessa in tutti gli shot', strtolower($prompt));
+    }
+
+    public function test_it_builds_a_fallback_reel_blueprint_when_none_is_present(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'normalizeReelBlueprint');
+        $method->setAccessible(true);
+
+        $blueprint = $method->invoke(
+            $job,
+            [],
+            new \App\Models\ContentItem(['format' => 'reel']),
+            [
+                'item_brain' => [
+                    'objective' => 'Lead generation',
+                    'angle' => 'persona reale al lavoro',
+                ],
+                'strategy' => [
+                    'brand_voice' => [
+                        'tone' => 'professionale e umano',
+                    ],
+                ],
+            ],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            'Crea un reel verticale per la titolare del brand.'
+        );
+
+        $this->assertIsArray($blueprint);
+        $this->assertCount(3, $blueprint['shots']);
+        $this->assertStringContainsString('apertura forte', strtolower($blueprint['hook']));
+        $this->assertStringContainsString('stessa persona', strtolower($blueprint['continuity_lock']));
+    }
+
+    public function test_it_builds_a_kling_prompt_that_locks_identity_across_shots(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildKlingExecutionPrompt');
+        $method->setAccessible(true);
+
+        $prompt = $method->invoke(
+            $job,
+            'Crea un reel verticale 9:16 per il brand.',
+            new \App\Models\ContentItem(['format' => 'reel']),
+            [
+                'item_brain' => [
+                    'objective' => 'Lead generation',
+                    'angle' => 'viso reale della titolare',
+                    'series' => 'persona reels',
+                ],
+                'strategy' => [
+                    'brand_voice' => [
+                        'tone' => 'premium e umano',
+                    ],
+                ],
+            ],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                        'profile' => [
+                            'shot_summary' => [
+                                ['slot' => 'front'],
+                                ['slot' => 'three_quarter_left'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'category' => 'realism',
+                'scope' => 'visual_first',
+                'reason' => 'Non sembra lei',
+            ]
+        );
+
+        $this->assertStringContainsString('same real subject from different angles', strtolower($prompt));
+        $this->assertStringContainsString('same face', strtolower($prompt));
+        $this->assertStringContainsString('native instagram reel', strtolower($prompt));
+        $this->assertStringContainsString('Lead generation', $prompt);
+        $this->assertStringContainsString('persona reels', $prompt);
+        $this->assertStringContainsString('visibly improve', strtolower($prompt));
+    }
+
+    public function test_it_builds_a_kling_negative_prompt_for_identity_and_location_protection(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildKlingNegativePrompt');
+        $method->setAccessible(true);
+
+        $negative = $method->invoke(
+            $job,
+            new \App\Models\ContentItem(['format' => 'reel']),
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            [
+                'category' => 'visual_composition',
+                'scope' => 'visual_first',
+                'reason' => 'Non sembra lei',
+            ],
+            true
+        );
+
+        $this->assertStringContainsString('identity drift', strtolower($negative));
+        $this->assertStringContainsString('different face', strtolower($negative));
+        $this->assertStringContainsString('merged rooms', strtolower($negative));
+        $this->assertStringContainsString('too similar to previous version', strtolower($negative));
     }
 
     public function test_it_detects_openai_video_moderation_blocks(): void

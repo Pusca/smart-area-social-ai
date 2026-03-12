@@ -20,6 +20,7 @@
     $videoProviderOptions = [
         'openai' => 'Sora + GPT (OpenAI)',
         'runway' => 'Runway',
+        'kling' => 'Kling (coerenza persona)',
     ];
     $imageProviderOptions = [
         'nanobanana' => 'Nano Banana (consigliato)',
@@ -30,6 +31,7 @@
     $createPreset = ($createPreset ?? request()->query('preset', 'default'));
     $createPreset = $createPreset === 'reel' ? 'reel' : 'default';
     $isReelPreset = $createPreset === 'reel';
+    $reelCreateUrl = route('posts.reels.create');
     $defaultPlatforms = old('platforms', $profile?->default_platforms ?? ['instagram']);
     if (!is_array($defaultPlatforms)) {
         $defaultPlatforms = ['instagram'];
@@ -89,13 +91,19 @@
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
             <div>
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Area Crea</div>
-                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Scegli se partire da un contenuto, da un reel o da un piano</h1>
+                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+                    {{ $isReelPreset ? 'Crea un reel singolo pensato per il feed' : 'Scegli se partire da un contenuto singolo o da un piano editoriale' }}
+                </h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    Qui puoi creare un contenuto singolo, aprire una modalita reel gia pronta per Runway oppure impostare un piano editoriale con almeno 2 contenuti.
+                    {{ $isReelPreset
+                        ? 'Qui lavori su un solo reel alla volta: hook, anchor frame, ritmo visivo e direzione brand vengono preparati per aiutare meglio Runway.'
+                        : 'Qui puoi creare un contenuto singolo on demand oppure impostare un piano editoriale con almeno 2 contenuti e una logica di insieme.' }}
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Singolo, reel o piano</span>
+                    <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                        {{ $isReelPreset ? 'Reel singolo + blueprint video' : 'Contenuto singolo o piano' }}
+                    </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
                         AI + scheduling + strategy
                     </span>
@@ -105,7 +113,7 @@
             <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <a href="{{ route('posts.create', ['preset' => 'reel']) }}" class="ui-btn-primary justify-center">
+                    <a href="{{ $reelCreateUrl }}" class="ui-btn-primary justify-center">
                         Crea reel
                     </a>
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -122,7 +130,7 @@
         </div>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-3">
+    <div class="grid gap-4 lg:grid-cols-2">
         <article id="single-content-option" class="rounded-3xl border {{ $isReelPreset ? 'border-gray-200 bg-white' : 'border-indigo-200 bg-indigo-50/60' }} p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
@@ -138,7 +146,7 @@
             </p>
             <div class="mt-4 flex flex-wrap gap-2">
                 <span class="ui-chip">1 contenuto</span>
-                <span class="ui-chip">Più veloce</span>
+                <span class="ui-chip">Piu veloce</span>
                 <span class="ui-chip">Controllo puntuale</span>
             </div>
             <div class="mt-5">
@@ -148,43 +156,45 @@
             </div>
         </article>
 
-        <article class="rounded-3xl border {{ $isReelPreset ? 'border-indigo-200 bg-indigo-50/60' : 'border-brand bg-brand-soft/60' }} p-6 shadow-sm">
+        @if($isReelPreset)
+        <article class="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide {{ $isReelPreset ? 'text-indigo-700' : 'text-brand' }}">Crea reel</p>
-                    <h2 class="mt-2 text-xl font-semibold text-gray-900">Quando vuoi un reel con sequenze, ritmo e resa social</h2>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Sezione reel</p>
+                    <h2 class="mt-2 text-xl font-semibold text-gray-900">Un solo reel, costruito come contenuto singolo</h2>
                 </div>
-                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $isReelPreset ? 'border-indigo-200 bg-white text-indigo-700' : 'border-brand bg-white text-brand' }}">
-                    {{ $isReelPreset ? 'Modalita attiva' : 'Runway consigliato' }}
+                <span class="inline-flex items-center rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                    Runway image-to-video
                 </span>
             </div>
             <p class="mt-3 text-sm leading-6 text-gray-600">
-                Questa modalita preimposta il formato reel e ti porta su un flusso pensato per Runway, con piu attenzione a hook, sequenza di scene, ritmo e coerenza con brand e strategia.
+                La macchina prepara un blueprint breve con hook, anchor frame, progressione degli shot e payoff finale. Poi traduce tutto in un input piu adatto a Runway, che oggi lavora meglio su una clip coerente che su uno storyboard confuso.
             </p>
             <div class="mt-4 flex flex-wrap gap-2">
-                <span class="ui-chip">Formato reel</span>
-                <span class="ui-chip">Runway preimpostato</span>
-                <span class="ui-chip">Sequenza guidata</span>
+                <span class="ui-chip">Reel singolo</span>
+                <span class="ui-chip">Anchor frame forte</span>
+                <span class="ui-chip">Shot plan guidato</span>
             </div>
             <div class="mt-5">
-                <a href="{{ $isReelPreset ? '#single-content-form' : route('posts.create', ['preset' => 'reel']) . '#single-content-form' }}" class="{{ $isReelPreset ? 'ui-btn-primary' : 'ui-btn-secondary' }}">
-                    {{ $isReelPreset ? 'Continua con reel' : 'Attiva modalita reel' }}
+                <a href="#single-content-form" class="ui-btn-primary">
+                    Continua con reel
                 </a>
             </div>
         </article>
 
+        @else
         <article class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-wide text-brand">Piano editoriale</p>
-                    <h2 class="mt-2 text-xl font-semibold text-gray-900">Quando vuoi creare più contenuti con logica di insieme</h2>
+                    <h2 class="mt-2 text-xl font-semibold text-gray-900">Quando vuoi creare piu contenuti con logica di insieme</h2>
                 </div>
                 <span class="inline-flex items-center rounded-full border border-brand bg-brand-soft px-2.5 py-1 text-xs font-semibold text-brand">
                     Minimo 2
                 </span>
             </div>
             <p class="mt-3 text-sm leading-6 text-gray-600">
-                Ideale se vuoi pianificare una mini sequenza o un periodo completo. Qui entra in gioco il piano editoriale, con distribuzione dei contenuti e struttura più strategica.
+                Ideale se vuoi pianificare una mini sequenza o un periodo completo. Qui entra in gioco il piano editoriale, con distribuzione dei contenuti e struttura piu strategica.
             </p>
             <div class="mt-4 flex flex-wrap gap-2">
                 <span class="ui-chip">Da 2 contenuti in su</span>
@@ -197,6 +207,7 @@
                 </a>
             </div>
         </article>
+        @endif
     </div>
 
     @if($errors->any())
@@ -218,14 +229,14 @@
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <h2 class="text-lg font-semibold text-gray-900">{{ $isReelPreset ? 'Crea reel' : 'Contenuto singolo' }}</h2>
                     <p class="mt-1 text-sm text-gray-600">
-                        {{ $isReelPreset ? 'Qui stai creando un reel guidato, con Runway preimpostato e una logica piu orientata a sequenza, hook e resa social.' : 'Qui stai creando un singolo contenuto on demand.' }}
+                        {{ $isReelPreset ? 'Qui stai creando un reel singolo guidato: hook, anchor frame, shot plan e resa social vengono ordinati prima di arrivare a Runway.' : 'Qui stai creando un singolo contenuto on demand.' }}
                     </p>
 
                     <div class="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">{{ $isReelPreset ? 'Modalita reel attiva' : 'Se vuoi un insieme di contenuti' }}</p>
                         <p class="mt-1 text-sm text-gray-700">
                             @if($isReelPreset)
-                                Il formato reel e il motore Runway partono gia selezionati. Descrivi bene apertura, scene chiave e obiettivo del contenuto, e la macchina costruira il reel seguendo brand e strategia.
+                                Il formato reel parte gia attivo. Descrivi bene hook iniziale, soggetto principale, micro-progressione delle scene e payoff finale: la macchina costruira un blueprint sintetico e lo tradurra in un input piu adatto a Runway.
                             @else
                                 Per una sequenza di pubblicazioni o un piano editoriale usa il <a href="{{ route('wizard.start') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">piano editoriale</a>, che lavora da minimo 2 contenuti.
                             @endif
@@ -233,7 +244,7 @@
                     </div>
 
                     <h3 class="mt-5 text-lg font-semibold text-gray-900">Dettagli pubblicazione</h3>
-                    <p class="mt-1 text-sm text-gray-600">Quando pubblicare e in quale formato.</p>
+                    <p class="mt-1 text-sm text-gray-600">{{ $isReelPreset ? 'Quando pubblicare il reel e con quale motore video lavorare.' : 'Quando pubblicare e in quale formato.' }}</p>
 
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
@@ -242,12 +253,20 @@
                         </div>
                         <div>
                             <label for="format" class="mb-1 block text-sm font-semibold text-gray-700">Formato</label>
-                            <select id="format" name="format" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" required>
-                                @foreach($formatOptions as $key => $label)
-                                    <option value="{{ $key }}" @selected($defaultFormat === $key)>{{ $label }}</option>
-                                @endforeach
-                            </select>
+                            @if($isReelPreset)
+                                <input type="hidden" id="format" name="format" value="reel" />
+                                <div class="flex h-[46px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 text-sm font-semibold text-indigo-700">
+                                    Reel
+                                </div>
+                            @else
+                                <select id="format" name="format" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" required>
+                                    @foreach($formatOptions as $key => $label)
+                                        <option value="{{ $key }}" @selected($defaultFormat === $key)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
                         </div>
+                        @unless($isReelPreset)
                         <div class="sm:col-span-2">
                             <label for="image_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore immagini</label>
                             <select id="image_provider" name="image_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
@@ -259,6 +278,7 @@
                                 La base resta Nano Banana. Qui puoi fare un test diverso solo per questo contenuto singolo, senza cambiare il resto dell'app.
                             </p>
                         </div>
+                        @endunless
                         <div class="sm:col-span-2">
                             <label for="video_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore video (solo reel/story)</label>
                             <select id="video_provider" name="video_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
@@ -267,7 +287,7 @@
                                 @endforeach
                             </select>
                             <p class="mt-1 text-xs text-gray-500">
-                                Per i post immagine il provider video viene ignorato. Per i reel la modalita dedicata parte su Runway, che qui usiamo come motore consigliato per sequenze e animazione delle scene.
+                                Per i post immagine il provider video viene ignorato. La modalita reel continua a partire su Runway, mentre Kling e pensato soprattutto per mantenere piu stabile lo stesso soggetto o la stessa persona nei video.
                             </p>
                         </div>
                     </div>
@@ -586,10 +606,22 @@
                 const imageProvider = (imageProviderEl?.value || 'nanobanana').toLowerCase();
 
                 if (format === 'reel') {
-                    return videoProvider === 'runway' ? 150 : 190;
+                    if (videoProvider === 'runway') {
+                        return 150;
+                    }
+                    if (videoProvider === 'kling') {
+                        return 175;
+                    }
+                    return 190;
                 }
                 if (format === 'story') {
-                    return videoProvider === 'runway' ? 120 : 150;
+                    if (videoProvider === 'runway') {
+                        return 120;
+                    }
+                    if (videoProvider === 'kling') {
+                        return 145;
+                    }
+                    return 150;
                 }
 
                 return imageProvider === 'openai' ? 35 : 55;

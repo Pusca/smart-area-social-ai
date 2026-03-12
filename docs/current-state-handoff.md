@@ -1,6 +1,6 @@
 # Current State Handoff
 
-Ultimo aggiornamento: 2026-03-11
+Ultimo aggiornamento: 2026-03-12
 
 ## Stato raggiunto
 
@@ -56,9 +56,27 @@ Ultimo aggiornamento: 2026-03-11
   - salva metadati strutturati su `asset_variables.profile` e `brand_assets.meta`
   - la pipeline AI legge ora questi campi per preservare meglio identita, volto e tratti della persona nei contenuti futuri
   - documentazione dedicata in `docs/persona-pack-v1.md`
+- Provider video Kling aggiunto come opzione extra:
+  - `Kling` ora e selezionabile accanto a `OpenAI` e `Runway`
+  - il preset reel continua a partire su `Runway`, ma nei contenuti singoli manuali si puo scegliere `Kling`
+  - focus V1: coerenza del soggetto reale nei video, soprattutto per asset `person`
+  - se c e un solo `persona pack`, la pipeline usa fino a 4 reference separate come board multi-angolo
+  - niente collage per il persona pack quando si usa Kling: le immagini vengono trattate come la stessa persona da angolazioni diverse
+  - il job salva ora anche un riepilogo di cosa e stato inviato a Kling:
+    - `request_summary`
+    - `reference_input_summary`
+  - documentazione dedicata in `docs/kling-provider-v1.md`
 - Pipeline video/copy migliorata:
   - `video_prompt` e `video_voiceover` ora sono separati dal prompt immagine
   - per video con piu location reali il sistema prova a mostrarle in sequenza, senza fonderle in una scena impossibile
+  - per i reel `Runway` la pipeline salva ora anche un `reel_blueprint` compatto:
+    - hook
+    - anchor frame
+    - continuity lock
+    - visual payoff
+    - 3-4 shot guidati
+  - il `reel_blueprint` viene trasformato in un prompt piu adatto a `Runway image-to-video`, con priorita a clip coerente + anchor frame forte invece di storyboard troppo ampi
+  - sui reel `Runway`, se arrivano piu reference image, il sistema preferisce il riferimento principale come anchor visuale e usa gli altri come contesto, evitando collage inutili
   - copy social irrigidito contro linguaggio da consulenza, KPI inventati, percentuali o risultati non presenti nel contesto
   - angoli e `key_points` del wizard sono stati riallineati a logiche piu social e meno "business deck"
 - Feedback UI resa piu smart:
@@ -81,8 +99,10 @@ Ultimo aggiornamento: 2026-03-11
   - aggiunta protezione `overflow-x-hidden` nella shell e nella dashboard per evitare scroll orizzontale su smartphone
   - pagina `Crea` ora separa in modo esplicito:
     - contenuto singolo on demand
-    - modalita `Crea reel` con preset dedicato e Runway preimpostato
     - piano editoriale / insieme di contenuti
+  - il reel ora vive in una route/sezione dedicata come contenuto singolo:
+    - `posts.reels.create`
+    - il form reel non mostra piu il selettore immagini, ma un flusso centrato su hook, anchor frame, shot plan e motore video
   - la sezione contenuti ora espone una CTA diretta `Crea reel`
   - il prompt `Runway` per i reel e ora piu reel-first:
     - hook iniziale entro il primo secondo
@@ -155,6 +175,7 @@ Argomenti da definire insieme nel passo successivo:
 - retry/log/manual publish nel calendario
 - notifiche push browser da costruire sopra la base eventi gia presente
 - dashboard o report dedicato per leggere i pattern di feedback del tenant
+- valutare un eventuale step V2 per Kling con `Build Avatar` o `advanced-custom-elements` quando il flusso asset lato persona sara abbastanza solido
 
 ## Nota recente: video AI e moderation fallback
 

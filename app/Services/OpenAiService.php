@@ -104,6 +104,10 @@ class OpenAiService
             . "Il prompt immagine deve descrivere un visual da post social: stop-scroll, leggibile anche da miniatura, con gerarchia visiva forte e soggetto principale chiaro.\n"
             . "Se il formato e video, genera anche video_prompt: breve, chiaro, compatibile con generazione video, centrato su scene, movimento, ordine delle inquadrature, transizioni e fedelta dei riferimenti reali.\n"
             . "Se il formato e video, video_prompt NON deve includere istruzioni da immagine statica come 4:5 feed, miniatura, singolo frame hero o composizione da post fermo.\n"
+            . "Se il formato e reel, genera anche reel_blueprint: un oggetto compatto per guidare un motore image-to-video.\n"
+            . "reel_blueprint deve contenere: hook (string), anchor_frame (string), continuity_lock (string), visual_payoff (string), shots (array di 3 o 4 oggetti).\n"
+            . "Ogni shot deve avere: order (numero), purpose (string), subject (string), camera (string), motion (string).\n"
+            . "Per i reel evita storyboard complessi o troppe location nella stessa clip: meglio una progressione semplice e credibile.\n"
             . "Se il formato e video e il contesto riguarda wellness, beauty, massaggi, trattamenti corpo o una persona reale del brand, scrivi video_prompt in modo professionale e sobrio: evita linguaggio sensuale, parti del corpo enfatizzate, touch insistito, close-up ambigui o tono intimo.\n"
             . "Per wellness e beauty descrivi il servizio come trattamento professionale, atmosfera curata, gesto tecnico, accoglienza e relax, senza scivolare in contenuti che possano sembrare adult o sensuali.\n"
             . "Se il formato e video, genera anche voiceover: massimo 2-3 frasi brevi, parlabili, naturali, senza hashtag, senza elenco puntato, senza CTA aggressiva e senza leggere il prompt tecnico.\n"
@@ -128,6 +132,7 @@ class OpenAiService
             . "- image_prompt (string)\n"
             . "- video_prompt (string)\n"
             . "- voiceover (string)\n"
+            . "- reel_blueprint (object|null)\n"
             . "Niente markdown. Niente code fences. Nessun testo extra.";
 
         $input = [
@@ -171,6 +176,7 @@ class OpenAiService
                 'image_prompt' => $parsed['image_prompt'] ?? null,
                 'video_prompt' => $parsed['video_prompt'] ?? null,
                 'voiceover' => $parsed['voiceover'] ?? null,
+                'reel_blueprint' => is_array($parsed['reel_blueprint'] ?? null) ? $parsed['reel_blueprint'] : null,
             ];
         } catch (Throwable $e) {
             Log::error('OpenAiService generateContent failed', [

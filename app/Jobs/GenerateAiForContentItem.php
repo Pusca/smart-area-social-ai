@@ -6,11 +6,13 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Services\MemoryBuilderService;
 use App\Support\ImagePromptRealismGuard;
+use App\Services\KlingService;
 use App\Services\NanoBananaService;
 use App\Services\Notification\WorkspaceNotificationService;
 use App\Services\OpenAiService;
 use App\Services\RunwayService;
 use App\Support\ImageProviderResolver;
+use App\Support\PublicMediaUrl;
 use App\Support\VideoProviderResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -37,6 +39,7 @@ class GenerateAiForContentItem implements ShouldQueue
     public function handle(
         OpenAiService $openAi,
         RunwayService $runway,
+        KlingService $kling,
         NanoBananaService $nanoBanana,
         MemoryBuilderService $memoryBuilder,
         WorkspaceNotificationService $workspaceNotifications
@@ -219,6 +222,16 @@ class GenerateAiForContentItem implements ShouldQueue
             if ($generatedVoiceover !== '') {
                 $nextMeta['video_voiceover'] = $generatedVoiceover;
             }
+            $normalizedReelBlueprint = $this->normalizeReelBlueprint(
+                blueprint: is_array($gen['reel_blueprint'] ?? null) ? $gen['reel_blueprint'] : [],
+                item: $item,
+                meta: $meta,
+                assetVariables: $assetVariables,
+                videoPrompt: $generatedVideoPrompt !== '' ? $generatedVideoPrompt : trim((string) ($gen['image_prompt'] ?? ''))
+            );
+            if (!empty($normalizedReelBlueprint)) {
+                $nextMeta['reel_blueprint'] = $normalizedReelBlueprint;
+            }
             $item->ai_meta = $nextMeta;
             $item->save();
         } catch (Throwable $e) {
@@ -368,6 +381,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     openAi: $openAi,
                     nanoBanana: $nanoBanana,
                     runway: $runway,
+                    kling: $kling,
                     item: $item,
                     prompt: $prompt,
                     selectedBrandImageAbs: $selectedBrandImageAbs,
@@ -420,6 +434,8 @@ class GenerateAiForContentItem implements ShouldQueue
                         'reference_validation' => $videoResult['reference_validation'] ?? null,
                         'composition_reference' => $videoResult['composition_reference'] ?? null,
                         'generation_attempts' => (int) ($videoResult['generation_attempts'] ?? 1),
+                        'request_summary' => $videoResult['request_summary'] ?? null,
+                        'reference_input_summary' => $videoResult['reference_input_summary'] ?? null,
                         'audio' => $audioAttach,
                         'fallback' => $imageSourceFallback,
                         'provider_fallback' => $videoResult['provider_fallback'] ?? null,
@@ -1036,6 +1052,7 @@ SVG;
         OpenAiService $openAi,
         NanoBananaService $nanoBanana,
         RunwayService $runway,
+        KlingService $kling,
         ContentItem $item,
         string $prompt,
         ?string $selectedBrandImageAbs,
@@ -1055,6 +1072,7 @@ SVG;
         $briefRaw = trim((string) data_get($meta, 'manual_brief', ''));
         $briefNorm = $this->normalizeText((string) data_get($meta, 'manual_brief', ''));
         $assetVariables = (array) data_get($meta, 'asset_variables', []);
+        $videoProvider = $this->resolveVideoProvider($meta);
         $explicitReferencePaths = array_values(array_filter(array_map(
             'strval',
             (array) data_get($meta, 'image_references.selected_paths', [])
@@ -1097,6 +1115,11 @@ SVG;
             && count($imageReferenceAbsPool) >= 2
             && $this->hasProtectedLocationEnvelope($assetVariables, $imageReferencePathPool);
         $mustEnforceExplicitReferences = $hasExplicitReferences && !empty($imageReferenceAbsPool) && !$locationSequenceMode;
+        $klingIdentityBoardMode = $videoProvider === 'kling'
+            && $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool);
+        $runwayPrimaryAnchorMode = $videoProvider === 'runway'
+            && Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel'
+            && count($imageReferenceAbsPool) >= 2;
         $validationReferenceAbsPool = array_values(array_slice($imageReferenceAbsPool, 0, 4));
         $generationReferenceAbsPool = $imageReferenceAbsPool;
         $compositionReference = null;
@@ -1107,6 +1130,18 @@ SVG;
             $compositionMeta = [
                 'used' => false,
                 'mode' => 'sequential_real_locations',
+                'reference_count' => count($imageReferenceAbsPool),
+            ];
+        } elseif ($klingIdentityBoardMode) {
+            $compositionMeta = [
+                'used' => false,
+                'mode' => 'kling_person_identity_reference_board',
+                'reference_count' => count($imageReferenceAbsPool),
+            ];
+        } elseif ($runwayPrimaryAnchorMode) {
+            $compositionMeta = [
+                'used' => false,
+                'mode' => 'runway_primary_anchor_reference',
                 'reference_count' => count($imageReferenceAbsPool),
             ];
         } elseif ($this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool)) {
@@ -1147,7 +1182,17 @@ SVG;
         }
 
         if (!empty($generationReferenceAbsPool)) {
-            if (count($generationReferenceAbsPool) > 1) {
+            if ($klingIdentityBoardMode) {
+                $referenceAbs = $generationReferenceAbsPool[0];
+                $referencePath = $imageReferencePathPool[0] ?? null;
+                $referencePaths = array_values(array_slice($imageReferencePathPool, 0, 4));
+                $referenceReason = 'kling_person_identity_reference_board';
+            } elseif ($runwayPrimaryAnchorMode) {
+                $referenceAbs = $generationReferenceAbsPool[0];
+                $referencePath = $imageReferencePathPool[0] ?? null;
+                $referencePaths = array_values(array_slice($imageReferencePathPool, 0, 4));
+                $referenceReason = 'runway_primary_anchor_reference';
+            } elseif (count($generationReferenceAbsPool) > 1) {
                 $collage = $this->buildVideoReferenceCollage(array_slice($generationReferenceAbsPool, 0, 4));
                 if (is_string($collage) && $collage !== '') {
                     $referenceAbs = $collage;
@@ -1171,7 +1216,7 @@ SVG;
             }
         }
 
-        if ($logoRequested && $logoAbs) {
+        if ($videoProvider !== 'kling' && $logoRequested && $logoAbs) {
             if ($referenceAbs) {
                 $composed = $this->buildVideoReferenceImage($referenceAbs, $logoAbs, $logoMode);
                 if ($composed) {
@@ -1192,6 +1237,8 @@ SVG;
                 $referencePaths = $logoPath ? [$logoPath] : [];
                 $referenceReason = 'logo_only_reference';
             }
+        } elseif ($videoProvider === 'kling' && $logoRequested && $logoAbs) {
+            $referenceReason .= '_logo_prompt_only';
         }
 
         $videoPrompt = $this->buildStrategicVideoPrompt(
@@ -1211,13 +1258,19 @@ SVG;
         );
 
         $videoOptions = [
-            'model' => (string) (config('openai.video_model') ?: 'sora-2'),
+            'model' => match ($videoProvider) {
+                'runway' => (string) (config('runway.model') ?: 'gen4_turbo'),
+                'kling' => (string) (config('kling.model') ?: 'kling-v2-6'),
+                default => (string) (config('openai.video_model') ?: 'sora-2'),
+            },
             'seconds' => $this->targetVideoSecondsForFormat($item),
             'size' => $this->targetVideoSizeForFormat($item),
         ];
-        $videoProvider = $this->resolveVideoProvider($meta);
         $runwayExecutionPrompt = $videoProvider === 'runway'
             ? $this->buildRunwayReelExecutionPrompt($videoPrompt, $item, $meta, $assetVariables)
+            : $videoPrompt;
+        $klingExecutionPrompt = $videoProvider === 'kling'
+            ? $this->buildKlingExecutionPrompt($videoPrompt, $item, $meta, $assetVariables, $activeFeedbackRequest)
             : $videoPrompt;
         $openAiExecutionPrompt = $this->prepareOpenAiVideoPromptForExecution(
             $videoPrompt,
@@ -1226,12 +1279,39 @@ SVG;
             $assetVariables
         );
 
-        if (is_string($referenceAbs) && $referenceAbs !== '') {
+        if ($videoProvider !== 'kling' && is_string($referenceAbs) && $referenceAbs !== '') {
             $prepared = $this->prepareVideoReferenceForSize($referenceAbs, (string) $videoOptions['size']);
             if ($prepared) {
                 $preparedRefPath = $prepared;
                 $referenceAbs = $preparedRefPath;
                 $referenceReason .= '_normalized_to_size';
+            }
+        }
+
+        if ($videoProvider === 'kling') {
+            try {
+                return $this->generateVideoWithKling(
+                    kling: $kling,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $prompt,
+                    videoPrompt: $klingExecutionPrompt,
+                    referenceAbsPool: $generationReferenceAbsPool,
+                    referencePaths: $imageReferencePathPool,
+                    referenceReason: $referenceReason,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $videoOptions,
+                    assetVariables: $assetVariables,
+                    activeFeedbackRequest: $activeFeedbackRequest,
+                    locationSequenceMode: $locationSequenceMode
+                );
+            } finally {
+                foreach ($tempRefPaths as $tmpPath) {
+                    if (is_string($tmpPath) && $tmpPath !== '' && is_file($tmpPath)) {
+                        @unlink($tmpPath);
+                    }
+                }
             }
         }
 
@@ -1401,6 +1481,167 @@ SVG;
     }
 
     /**
+     * @param  array<string, mixed>  $blueprint
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<string, mixed>
+     */
+    private function normalizeReelBlueprint(
+        array $blueprint,
+        ContentItem $item,
+        array $meta,
+        array $assetVariables,
+        string $videoPrompt
+    ): array {
+        if (Str::lower(trim((string) ($item->format ?? 'post'))) !== 'reel') {
+            return [];
+        }
+
+        $fallback = $this->fallbackReelBlueprint($item, $meta, $assetVariables, $videoPrompt);
+        if (empty($blueprint)) {
+            return $fallback;
+        }
+
+        $shots = [];
+        foreach (array_slice((array) ($blueprint['shots'] ?? []), 0, 4) as $index => $shot) {
+            if (!is_array($shot)) {
+                continue;
+            }
+
+            $purpose = Str::limit(trim((string) ($shot['purpose'] ?? '')), 120, '');
+            $subject = Str::limit(trim((string) ($shot['subject'] ?? '')), 120, '');
+            $camera = Str::limit(trim((string) ($shot['camera'] ?? '')), 90, '');
+            $motion = Str::limit(trim((string) ($shot['motion'] ?? '')), 90, '');
+
+            if ($purpose === '' && $subject === '' && $camera === '' && $motion === '') {
+                continue;
+            }
+
+            $shots[] = [
+                'order' => max(1, (int) ($shot['order'] ?? ($index + 1))),
+                'purpose' => $purpose !== '' ? $purpose : (string) data_get($fallback, "shots.{$index}.purpose", ''),
+                'subject' => $subject !== '' ? $subject : (string) data_get($fallback, "shots.{$index}.subject", ''),
+                'camera' => $camera !== '' ? $camera : (string) data_get($fallback, "shots.{$index}.camera", ''),
+                'motion' => $motion !== '' ? $motion : (string) data_get($fallback, "shots.{$index}.motion", ''),
+            ];
+        }
+
+        if (count($shots) < 3) {
+            $shots = (array) ($fallback['shots'] ?? []);
+        }
+
+        return [
+            'hook' => Str::limit(trim((string) ($blueprint['hook'] ?? '')), 140, '') ?: (string) ($fallback['hook'] ?? ''),
+            'anchor_frame' => Str::limit(trim((string) ($blueprint['anchor_frame'] ?? '')), 160, '') ?: (string) ($fallback['anchor_frame'] ?? ''),
+            'continuity_lock' => Str::limit(trim((string) ($blueprint['continuity_lock'] ?? '')), 220, '') ?: (string) ($fallback['continuity_lock'] ?? ''),
+            'visual_payoff' => Str::limit(trim((string) ($blueprint['visual_payoff'] ?? '')), 140, '') ?: (string) ($fallback['visual_payoff'] ?? ''),
+            'shots' => array_values($shots),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<string, mixed>
+     */
+    private function fallbackReelBlueprint(
+        ContentItem $item,
+        array $meta,
+        array $assetVariables,
+        string $videoPrompt
+    ): array {
+        $objective = trim((string) data_get($meta, 'item_brain.objective', data_get($meta, 'plan.goal', 'awareness')));
+        $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
+        $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
+        $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+        $mainSubject = $hasPersonVariable
+            ? 'la persona reale del brand, uguale ai riferimenti'
+            : 'il soggetto principale del contenuto, riconoscibile da subito';
+        $anchor = $hasPersonVariable
+            ? 'medium shot verticale della persona reale del brand nel contesto vero, subito riconoscibile'
+            : 'hero frame verticale pulito del soggetto principale nel contesto reale del brand';
+        $continuity = $hasPersonVariable
+            ? 'mantieni sempre la stessa persona, stesso volto, stessi lineamenti e stessa presenza'
+            : 'mantieni lo stesso spazio, lo stesso soggetto principale e la stessa palette del brand';
+        $payoff = $angle !== ''
+            ? "chiusura pulita che fa percepire {$angle}"
+            : 'chiusura pulita con payoff visivo coerente con il brand';
+        $hook = $objective !== ''
+            ? "apertura forte entro il primo secondo per far percepire {$objective}"
+            : 'apertura forte entro il primo secondo con soggetto chiaro e leggibile';
+        $toneHint = $tone !== '' ? "con tono {$tone}" : 'con tono coerente al brand';
+
+        return [
+            'hook' => $hook,
+            'anchor_frame' => $anchor,
+            'continuity_lock' => $continuity,
+            'visual_payoff' => $payoff,
+            'shots' => [
+                [
+                    'order' => 1,
+                    'purpose' => 'hook iniziale immediato',
+                    'subject' => $mainSubject,
+                    'camera' => 'wide o medium shot verticale leggibile',
+                    'motion' => 'push-in leggero o reveal breve',
+                ],
+                [
+                    'order' => 2,
+                    'purpose' => $angle !== '' ? "sviluppo dell angolo {$angle}" : 'sviluppo del contesto e del valore del contenuto',
+                    'subject' => $mainSubject,
+                    'camera' => 'angolazione diversa ma coerente',
+                    'motion' => 'tracking morbido o micro parallax',
+                ],
+                [
+                    'order' => 3,
+                    'purpose' => $objective !== '' ? "chiusura che spinge {$objective}" : 'payoff finale del reel',
+                    'subject' => $mainSubject,
+                    'camera' => 'close medium o dettaglio premium',
+                    'motion' => 'movimento pulito e conclusivo',
+                ],
+            ],
+            'source_prompt' => Str::limit($videoPrompt, 180, ''),
+            'tone_hint' => $toneHint,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $blueprint
+     * @return array<string, mixed>|null
+     */
+    private function compactReelBlueprintSummary(array $blueprint): ?array
+    {
+        if (empty($blueprint)) {
+            return null;
+        }
+
+        $shots = collect((array) ($blueprint['shots'] ?? []))
+            ->map(function ($shot) {
+                if (!is_array($shot)) {
+                    return null;
+                }
+
+                return [
+                    'order' => (int) ($shot['order'] ?? 0),
+                    'purpose' => Str::limit(trim((string) ($shot['purpose'] ?? '')), 70, ''),
+                    'camera' => Str::limit(trim((string) ($shot['camera'] ?? '')), 60, ''),
+                    'motion' => Str::limit(trim((string) ($shot['motion'] ?? '')), 60, ''),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        return [
+            'hook' => Str::limit(trim((string) ($blueprint['hook'] ?? '')), 90, ''),
+            'anchor_frame' => Str::limit(trim((string) ($blueprint['anchor_frame'] ?? '')), 90, ''),
+            'continuity_lock' => Str::limit(trim((string) ($blueprint['continuity_lock'] ?? '')), 120, ''),
+            'visual_payoff' => Str::limit(trim((string) ($blueprint['visual_payoff'] ?? '')), 90, ''),
+            'shot_count' => count($shots),
+            'shots' => $shots,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $meta
      * @param  array<string, mixed>  $assetVariables
      */
@@ -1420,14 +1661,19 @@ SVG;
         $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
         $series = trim((string) data_get($meta, 'item_brain.series', data_get($meta, 'editorial.series', '')));
         $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+        $blueprint = $this->normalizeReelBlueprint(
+            blueprint: is_array(data_get($meta, 'reel_blueprint', [])) ? (array) data_get($meta, 'reel_blueprint', []) : [],
+            item: $item,
+            meta: $meta,
+            assetVariables: $assetVariables,
+            videoPrompt: $videoPrompt
+        );
 
         $parts = [$videoPrompt];
+        $parts[] = 'Runway execution mode: una sola clip coerente, guidata da un anchor frame forte e da una progressione breve.';
         $parts[] = 'Costruisci il contenuto come un vero reel social di 3-5 shot concatenati, non come una clip piatta o ripetitiva.';
-        $parts[] = 'Struttura consigliata: hook visivo entro il primo secondo, sviluppo con 2 o 3 scene leggibili, chiusura con payoff visivo pulito.';
-        $parts[] = 'Ogni shot deve cambiare davvero per angolazione, distanza, movimento camera o dettaglio principale, mantenendo continuita narrativa.';
-        $parts[] = 'Movimenti camera preferiti: push-in leggero, reveal laterale, tracking morbido, micro parallax. Evita motion caotico.';
+        $parts[] = 'Mantieni un hook visivo entro il primo secondo, con soggetto chiaro e subito leggibile.';
         $parts[] = 'Deve sembrare un reel nativo da feed Instagram: stop-scroll, ritmo chiaro, soggetto forte, non una brochure animata.';
-
         if ($objective !== '') {
             $parts[] = "Obiettivo strategico da far percepire nel reel: {$objective}.";
         }
@@ -1441,11 +1687,89 @@ SVG;
             $parts[] = "Filone editoriale: {$series}.";
         }
         if ($hasPersonVariable) {
-            $parts[] = 'Se compare la persona del brand, deve restare chiaramente la stessa in tutti gli shot del reel.';
+            $parts[] = 'Se compare la persona del brand, deve restare la stessa in tutti gli shot del reel.';
         }
+        if (!empty($blueprint)) {
+            $parts[] = 'Hook: ' . (string) ($blueprint['hook'] ?? '');
+            $parts[] = 'Anchor frame: ' . (string) ($blueprint['anchor_frame'] ?? '');
+            $parts[] = 'Continuity lock: ' . (string) ($blueprint['continuity_lock'] ?? '');
+            foreach ((array) ($blueprint['shots'] ?? []) as $shot) {
+                if (!is_array($shot)) {
+                    continue;
+                }
+                $parts[] = sprintf(
+                    'Shot %d: %s. Soggetto: %s. Camera: %s. Movimento: %s.',
+                    max(1, (int) ($shot['order'] ?? 1)),
+                    trim((string) ($shot['purpose'] ?? '')),
+                    trim((string) ($shot['subject'] ?? '')),
+                    trim((string) ($shot['camera'] ?? '')),
+                    trim((string) ($shot['motion'] ?? ''))
+                );
+            }
+            $parts[] = 'Payoff finale: ' . (string) ($blueprint['visual_payoff'] ?? '');
+        } else {
+            $parts[] = 'Struttura consigliata: hook visivo entro il primo secondo, sviluppo con 2 o 3 scene leggibili, chiusura con payoff visivo pulito.';
+        }
+        $parts[] = 'Ogni shot deve cambiare davvero per angolazione, distanza, movimento camera o dettaglio principale, mantenendo continuita narrativa.';
+        $parts[] = 'Movimenti camera preferiti: push-in leggero, reveal laterale, tracking morbido, micro parallax. Evita motion caotico.';
 
         $limit = (int) (config('runway.max_prompt_chars') ?: 980);
         $limit = max(300, min(1000, $limit));
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), $limit, '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<string, mixed>  $activeFeedbackRequest
+     */
+    private function buildKlingExecutionPrompt(
+        string $videoPrompt,
+        ContentItem $item,
+        array $meta,
+        array $assetVariables,
+        array $activeFeedbackRequest
+    ): string {
+        $objective = trim((string) data_get($meta, 'item_brain.objective', data_get($meta, 'plan.goal', '')));
+        $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
+        $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
+        $series = trim((string) data_get($meta, 'item_brain.series', data_get($meta, 'editorial.series', '')));
+        $isReel = Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel';
+        $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+
+        $parts = [$videoPrompt];
+        $parts[] = 'Kling execution rule: if multiple reference images are present, they describe the same real subject from different angles, not different people.';
+        $parts[] = 'Keep one single subject identity across the full video: same face, same age perception, same hair, same body proportions, same overall presence.';
+        $parts[] = 'Change scene, camera, gesture, styling and lighting only when useful, but do not drift identity.';
+        $parts[] = 'No duplicate subject, no face swap, no identity drift, no extra people replacing the brand subject.';
+
+        if ($isReel) {
+            $parts[] = 'Build a vertical 9:16 social reel with 3 to 5 clear shots, a fast hook in the first second and a clean visual payoff at the end.';
+            $parts[] = 'Treat it like a native Instagram reel: quick readability, clear camera intention, premium pacing, no static brochure feel.';
+        }
+
+        if ($objective !== '') {
+            $parts[] = "Strategic objective: {$objective}.";
+        }
+        if ($tone !== '') {
+            $parts[] = "Brand tone: {$tone}.";
+        }
+        if ($angle !== '') {
+            $parts[] = "Narrative angle: {$angle}.";
+        }
+        if ($series !== '') {
+            $parts[] = "Editorial series: {$series}.";
+        }
+        if ($hasPersonVariable) {
+            $parts[] = 'Use the persona pack as an identity board first, and only secondarily as style guidance.';
+        }
+        if ($this->feedbackTargetsVisual($activeFeedbackRequest)) {
+            $parts[] = 'This generation follows a correction request: the new result must visibly improve, not just slightly vary the previous cut.';
+        }
+
+        $limit = (int) (config('kling.max_prompt_chars') ?: 1400);
+        $limit = max(400, min(1800, $limit));
 
         return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), $limit, '');
     }
@@ -1927,6 +2251,252 @@ SVG;
      * @param  array<string, mixed>  $videoOptions
      * @return array<string, mixed>
      */
+    private function generateVideoWithKling(
+        KlingService $kling,
+        ContentItem $item,
+        string $briefRaw,
+        string $fallbackPrompt,
+        string $videoPrompt,
+        array $referenceAbsPool,
+        array $referencePaths,
+        string $referenceReason,
+        ?array $compositionMeta,
+        array $brandDecision,
+        array $videoOptions,
+        array $assetVariables,
+        array $activeFeedbackRequest,
+        bool $locationSequenceMode
+    ): array {
+        $referenceBundle = $this->buildKlingReferenceInputs($referenceAbsPool, $referencePaths);
+        $referenceInputs = (array) ($referenceBundle['inputs'] ?? []);
+        $requestMode = $kling->resolveRequestMode($referenceInputs);
+
+        if ($locationSequenceMode && count($referenceInputs) > 1) {
+            $referenceInputs = array_values(array_slice($referenceInputs, 0, 1));
+            $requestMode = $kling->resolveRequestMode($referenceInputs, 'image');
+            $referenceReason .= '_primary_location_anchor_only';
+        }
+
+        $requestSummary = (array) ($referenceBundle['summary'] ?? []);
+        $requestSummary['identity_board_applied'] = $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $referencePaths);
+        $requestSummary['location_sequence_mode'] = $locationSequenceMode;
+        $requestSummary['reference_count'] = count($referenceInputs);
+        $requestSummary['reference_paths'] = array_values(array_slice($referencePaths, 0, 4));
+
+        $klingOptions = [
+            'request_mode' => $requestMode,
+            'model' => (string) (config('kling.model') ?: 'kling-v2-6'),
+            'mode' => (string) (config('kling.mode') ?: 'pro'),
+            'seconds' => (int) ($videoOptions['seconds'] ?? (int) (config('kling.video_seconds') ?: 5)),
+            'size' => (string) ($videoOptions['size'] ?? '720x1280'),
+            'negative_prompt' => $this->buildKlingNegativePrompt(
+                $item,
+                $assetVariables,
+                $activeFeedbackRequest,
+                $locationSequenceMode
+            ),
+            'external_task_id' => 'socialai-item-' . $item->id . '-' . now()->timestamp,
+        ];
+
+        $job = $kling->createVideoJob($videoPrompt, $referenceInputs, $klingOptions);
+        $taskId = (string) ($job['id'] ?? '');
+        $jobFinal = $kling->waitForVideoCompletion($taskId, (string) ($job['request_mode'] ?? $requestMode));
+        $videoBytes = $kling->downloadVideoContent($jobFinal);
+        $thumbBytes = $kling->downloadThumbnailContent($jobFinal);
+
+        $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
+        $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
+        Storage::disk('public')->put($videoPath, $videoBytes);
+
+        $thumbPath = null;
+        if (is_string($thumbBytes) && $thumbBytes !== '') {
+            $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
+            $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
+            Storage::disk('public')->put($thumbPath, $thumbBytes);
+        }
+
+        return [
+            'source' => 'kling_video_generation',
+            'provider' => 'kling',
+            'video_id' => $taskId,
+            'video_path' => $videoPath,
+            'thumbnail_path' => $thumbPath,
+            'reference_path' => $referencePaths[0] ?? '',
+            'reference_paths' => array_values(array_slice($referencePaths, 0, 4)),
+            'reference_reason' => $referenceReason,
+            'reference_validation' => null,
+            'composition_reference' => $compositionMeta,
+            'generation_attempts' => 1,
+            'job_status' => (string) (
+                data_get($jobFinal, 'data.task_status')
+                ?? data_get($jobFinal, 'task_status')
+                ?? 'succeed'
+            ),
+            'brand_selection' => $brandDecision,
+            'provider_fallback' => null,
+            'request_summary' => $job['request_summary'] ?? null,
+            'reference_input_summary' => $requestSummary,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $referenceAbsPool
+     * @param  array<int, string>  $referencePaths
+     * @return array{inputs: array<int, string>, summary: array<string, mixed>}
+     */
+    private function buildKlingReferenceInputs(array $referenceAbsPool, array $referencePaths): array
+    {
+        $referenceAbsPool = array_values(array_filter(
+            array_map(fn ($value) => trim((string) $value), $referenceAbsPool),
+            fn ($value) => $value !== ''
+        ));
+        $referencePaths = array_values(array_filter(
+            array_map(fn ($value) => trim((string) $value), $referencePaths),
+            fn ($value) => $value !== ''
+        ));
+
+        $inputs = [];
+        $inputModes = [];
+        $pairedPaths = [];
+        $limit = max(1, min(4, (int) (config('kling.max_reference_images') ?: 4)));
+
+        foreach (array_values(array_slice($referencePaths, 0, $limit)) as $index => $path) {
+            $absolutePath = $referenceAbsPool[$index] ?? '';
+            $input = $this->buildKlingReferenceInput($path, $absolutePath);
+            if ($input === null) {
+                continue;
+            }
+
+            $inputs[] = $input['value'];
+            $inputModes[] = $input['mode'];
+            $pairedPaths[] = $path;
+        }
+
+        if (empty($inputs)) {
+            foreach (array_values(array_slice($referenceAbsPool, 0, $limit)) as $absolutePath) {
+                $dataUri = $this->buildKlingDataUri($absolutePath);
+                if ($dataUri === null) {
+                    continue;
+                }
+
+                $inputs[] = $dataUri;
+                $inputModes[] = 'data_uri';
+            }
+        }
+
+        return [
+            'inputs' => $inputs,
+            'summary' => [
+                'input_modes' => array_values(array_unique($inputModes)),
+                'paired_reference_paths' => $pairedPaths,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{mode:string,value:string}|null
+     */
+    private function buildKlingReferenceInput(string $storagePath, string $absolutePath): ?array
+    {
+        try {
+            return [
+                'mode' => 'public_url',
+                'value' => PublicMediaUrl::build($storagePath),
+            ];
+        } catch (Throwable) {
+            $dataUri = $this->buildKlingDataUri($absolutePath);
+            if ($dataUri === null) {
+                return null;
+            }
+
+            return [
+                'mode' => 'data_uri',
+                'value' => $dataUri,
+            ];
+        }
+    }
+
+    private function buildKlingDataUri(string $absolutePath): ?string
+    {
+        $absolutePath = trim($absolutePath);
+        if ($absolutePath === '' || !is_file($absolutePath)) {
+            return null;
+        }
+
+        $mime = strtolower((string) (mime_content_type($absolutePath) ?: ''));
+        if (!str_starts_with($mime, 'image/')) {
+            return null;
+        }
+
+        $bytes = @file_get_contents($absolutePath);
+        if (!is_string($bytes) || $bytes === '') {
+            return null;
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<string, mixed>  $activeFeedbackRequest
+     */
+    private function buildKlingNegativePrompt(
+        ContentItem $item,
+        array $assetVariables,
+        array $activeFeedbackRequest,
+        bool $locationSequenceMode
+    ): string {
+        $parts = [
+            'identity drift',
+            'different face',
+            'different age',
+            'duplicate subject',
+            'extra people replacing the main subject',
+            'uncanny eyes',
+            'deformed hands',
+            'bad anatomy',
+            'plastic skin',
+            'cartoon look',
+            'cgi render',
+            'text overlay',
+            'watermark',
+            'fake logo',
+        ];
+
+        if ($this->hasPersonAssetVariable($assetVariables)) {
+            $parts[] = 'different hairstyle';
+            $parts[] = 'different facial structure';
+            $parts[] = 'subject inconsistency between shots';
+        }
+
+        if ($locationSequenceMode) {
+            $parts[] = 'merged rooms';
+            $parts[] = 'changed architecture';
+            $parts[] = 'invented interiors';
+        }
+
+        if ($this->feedbackTargetsVisual($activeFeedbackRequest)) {
+            $parts[] = 'too similar to previous version';
+        }
+
+        if (Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel') {
+            $parts[] = 'flat pacing';
+            $parts[] = 'static brochure style';
+        }
+
+        return Str::limit(implode(', ', array_values(array_unique($parts))), 600, '');
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<int, string>  $generationReferenceAbsPool
+     * @param  array<int, string>  $imageReferencePathPool
+     * @param  array<int, string>  $validationReferenceAbsPool
+     * @param  array<string, mixed>|null  $compositionMeta
+     * @param  array<string, mixed>  $brandDecision
+     * @param  array<string, mixed>  $videoOptions
+     * @return array<string, mixed>
+     */
     private function generateVideoWithRunway(
         RunwayService $runway,
         OpenAiService $openAi,
@@ -2048,6 +2618,10 @@ SVG;
                     Storage::disk('public')->put($thumbPath, $thumbBytes);
                 }
 
+                $reelBlueprintSummary = $this->compactReelBlueprintSummary(
+                    is_array(data_get($item->ai_meta, 'reel_blueprint', [])) ? (array) data_get($item->ai_meta, 'reel_blueprint', []) : []
+                );
+
                 return [
                     'source' => 'runway_video_generation',
                     'provider' => 'runway',
@@ -2062,6 +2636,20 @@ SVG;
                     'generation_attempts' => $attempt + 1,
                     'job_status' => (string) ($jobFinal['status'] ?? data_get($jobFinal, 'task.status', 'completed')),
                     'brand_selection' => $brandDecision,
+                    'request_summary' => [
+                        'mode' => 'image_to_video',
+                        'model' => (string) ($runwayOptions['model'] ?? ''),
+                        'seconds' => (string) ($runwayOptions['seconds'] ?? ''),
+                        'size' => (string) ($runwayOptions['size'] ?? ''),
+                        'has_prompt_image' => is_string($attemptReferenceAbs) && $attemptReferenceAbs !== '',
+                        'reel_blueprint' => $reelBlueprintSummary,
+                    ],
+                    'reference_input_summary' => [
+                        'requested_reference_count' => count($imageReferencePathPool),
+                        'active_reference_count' => count(array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== ''))),
+                        'validation_reference_count' => count($validationReferenceAbsPool),
+                        'reference_reason' => $attemptReferenceReason,
+                    ],
                 ];
             } catch (Throwable $attemptError) {
                 $lastError = $attemptError;
