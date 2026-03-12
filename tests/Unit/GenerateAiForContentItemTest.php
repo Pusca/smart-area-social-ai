@@ -74,6 +74,7 @@ class GenerateAiForContentItemTest extends TestCase
                     ['name' => 'Terrazza Esterna', 'kind' => 'location'],
                 ],
             ],
+            [],
             false,
             null,
             'scene',
@@ -174,6 +175,71 @@ class GenerateAiForContentItemTest extends TestCase
         ]);
 
         $this->assertSame(['brand-assets/11/persona/front.jpg'], $paths);
+    }
+
+    public function test_feedback_driven_video_instruction_forces_material_change_and_identity_lock(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'feedbackDrivenVideoInstruction');
+        $method->setAccessible(true);
+
+        $instruction = $method->invoke(
+            $job,
+            [
+                'category' => 'visual_composition',
+                'scope' => 'visual_first',
+                'reason' => 'Non sembra lei e il video e troppo simile a prima',
+            ],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                        'profile' => [
+                            'immutable_traits' => 'volto, capelli, lineamenti',
+                        ],
+                    ],
+                ],
+            ],
+            false
+        );
+
+        $this->assertStringContainsString('deve cambiare in modo evidente', strtolower($instruction));
+        $this->assertStringContainsString('stessa tra una versione e l altra', strtolower($instruction));
+        $this->assertStringContainsString('sembrare davvero quella dei riferimenti', strtolower($instruction));
+        $this->assertStringContainsString('cambia in modo netto lo shot plan', strtolower($instruction));
+    }
+
+    public function test_it_prioritizes_person_reference_pool_using_shot_order(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'prioritizeVideoReferencePoolsForPersonVariable');
+        $method->setAccessible(true);
+
+        [$abs, $paths] = $method->invoke(
+            $job,
+            ['abs-profile', 'abs-front', 'abs-half', 'abs-left'],
+            ['profile.jpg', 'front.jpg', 'half.jpg', 'left.jpg'],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                        'profile' => [
+                            'shot_summary' => [
+                                ['slot' => 'front', 'path' => 'front.jpg'],
+                                ['slot' => 'three_quarter_left', 'path' => 'left.jpg'],
+                                ['slot' => 'half_body', 'path' => 'half.jpg'],
+                                ['slot' => 'profile', 'path' => 'profile.jpg'],
+                            ],
+                        ],
+                    ],
+                ],
+            ]
+        );
+
+        $this->assertSame(['front.jpg', 'left.jpg', 'half.jpg', 'profile.jpg'], $paths);
+        $this->assertSame(['abs-front', 'abs-left', 'abs-half', 'abs-profile'], $abs);
     }
 
 }

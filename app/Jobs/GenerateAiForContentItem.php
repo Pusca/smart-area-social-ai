@@ -375,6 +375,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     selectedBrandImagePath: $selectedBrandImage,
                     selectedBrandImagePaths: $selectedBrandImagePaths,
                     logoRuntime: $logoRuntime,
+                    activeFeedbackRequest: $activeFeedbackRequest,
                     brandDecision: $brandDecision
                 );
 
@@ -1042,6 +1043,7 @@ SVG;
         ?string $selectedBrandImagePath,
         array $selectedBrandImagePaths,
         array $logoRuntime,
+        array $activeFeedbackRequest,
         array $brandDecision
     ): array {
         $logoRequested = (bool) ($logoRuntime['requested'] ?? false);
@@ -1086,6 +1088,11 @@ SVG;
         if (empty($imageReferencePathPool) && is_string($imageReferencePath) && $imageReferencePath !== '') {
             $imageReferencePathPool = [$imageReferencePath];
         }
+        [$imageReferenceAbsPool, $imageReferencePathPool] = $this->prioritizeVideoReferencePoolsForPersonVariable(
+            $imageReferenceAbsPool,
+            $imageReferencePathPool,
+            $assetVariables
+        );
         $locationSequenceMode = $hasExplicitReferences
             && count($imageReferenceAbsPool) >= 2
             && $this->hasProtectedLocationEnvelope($assetVariables, $imageReferencePathPool);
@@ -1100,6 +1107,12 @@ SVG;
             $compositionMeta = [
                 'used' => false,
                 'mode' => 'sequential_real_locations',
+                'reference_count' => count($imageReferenceAbsPool),
+            ];
+        } elseif ($this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool)) {
+            $compositionMeta = [
+                'used' => false,
+                'mode' => 'person_identity_reference_board',
                 'reference_count' => count($imageReferenceAbsPool),
             ];
         } elseif ($mustEnforceExplicitReferences && count($imageReferenceAbsPool) >= 2) {
@@ -1189,6 +1202,7 @@ SVG;
             generationReferenceAbsPool: $generationReferenceAbsPool,
             referencePaths: $referencePaths,
             assetVariables: $assetVariables,
+            activeFeedbackRequest: $activeFeedbackRequest,
             logoRequested: $logoRequested,
             logoAbs: $logoAbs,
             logoMode: $logoMode,
@@ -1317,6 +1331,7 @@ SVG;
         array $generationReferenceAbsPool,
         array $referencePaths,
         array $assetVariables,
+        array $activeFeedbackRequest,
         bool $logoRequested,
         ?string $logoAbs,
         string $logoMode,
@@ -1344,6 +1359,8 @@ SVG;
         $parts[] = 'Apri con un primo secondo forte e dinamico, poi accompagna la scena con movimenti fluidi e naturali.';
         $parts[] = 'Niente testo in sovraimpressione, niente watermark, niente loghi inventati, niente look da spot corporate.';
         $parts[] = 'Se compaiono persone, devono sembrare reali, spontanee e coerenti con il contesto.';
+        $parts[] = $this->personIdentityVideoInstruction($assetVariables);
+        $parts[] = $this->feedbackDrivenVideoInstruction($activeFeedbackRequest, $assetVariables, $locationSequenceMode);
 
         if ($locationSequenceMode) {
             $locationNames = $this->videoLocationSequenceNames($assetVariables);
@@ -1597,6 +1614,58 @@ SVG;
     /**
      * @param  array<string, mixed>  $feedbackRequest
      * @param  array<string, mixed>  $assetVariables
+     */
+    private function feedbackDrivenVideoInstruction(
+        array $feedbackRequest,
+        array $assetVariables,
+        bool $locationSequenceMode = false
+    ): string {
+        if (!$this->feedbackTargetsVisual($feedbackRequest)) {
+            return '';
+        }
+
+        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $reason = trim((string) ($feedbackRequest['reason'] ?? ''));
+        $reasonNormalized = $this->normalizeText($reason);
+        $parts = [];
+
+        if ($reason !== '') {
+            $parts[] = 'Correzione video prioritaria da rispettare davvero: ' . $reason . '.';
+        }
+
+        $parts[] = 'Questa e una rigenerazione dopo feedback negativo: il nuovo video deve cambiare in modo evidente rispetto alla versione precedente, non basta una micro-variazione.';
+        $parts[] = 'Cambia davvero apertura, sequenza delle scene, regia, camera movement, ritmo o styling mantenendo obiettivo e strategia.';
+
+        if ($this->hasPersonAssetVariable($assetVariables)) {
+            $parts[] = 'Se c e una persona di riferimento del brand, la sua identita deve restare la stessa tra una versione e l altra: stesso volto, stessi lineamenti, stessa eta apparente e stessa presenza.';
+        }
+
+        if ($this->feedbackDemandsPersonaIdentityLock($reasonNormalized)) {
+            $parts[] = 'La persona deve sembrare davvero quella dei riferimenti: usa volto, lineamenti, proporzioni, capelli e presenza come ancora rigida.';
+        }
+
+        if ($locationSequenceMode || $category === 'location_integrity') {
+            $parts[] = 'Mantieni i luoghi reali autentici e separati se sono ambienti diversi, senza fonderli o inventare spazi nuovi.';
+        }
+
+        if ($category === 'realism') {
+            $parts[] = 'Volti, mani, postura, sguardo e movimenti devono risultare naturali e credibili, senza uncanny effect.';
+        }
+
+        if ($category === 'visual_composition') {
+            $parts[] = 'Cambia in modo netto lo shot plan: inquadratura iniziale, ordine dei frame, distanze camera e gerarchia visiva delle scene.';
+        }
+
+        if ($category === 'brand_alignment') {
+            $parts[] = 'Riallinea outfit, atmosfera, ambiente, luce e comportamento del soggetto al posizionamento reale del brand.';
+        }
+
+        return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $feedbackRequest
+     * @param  array<string, mixed>  $assetVariables
      * @param  array<int, string>  $selectedBrandImagePaths
      */
     private function feedbackForcesPrimaryLocationAnchor(
@@ -1625,6 +1694,30 @@ SVG;
             'non inventare',
         ] as $needle) {
             if ($reason !== '' && str_contains($reason, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function feedbackDemandsPersonaIdentityLock(string $reasonNormalized): bool
+    {
+        if ($reasonNormalized === '') {
+            return false;
+        }
+
+        foreach ([
+            'non sembra lei',
+            'non e lei',
+            'non è lei',
+            'volto diverso',
+            'viso diverso',
+            'faccia diversa',
+            'non sembra la persona',
+            'non riconoscibile',
+        ] as $needle) {
+            if (str_contains($reasonNormalized, $needle)) {
                 return true;
             }
         }
@@ -2212,6 +2305,52 @@ SVG;
     }
 
     /**
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function personIdentityVideoInstruction(array $assetVariables): string
+    {
+        $row = $this->singleResolvedPersonVariable($assetVariables);
+        if ($row === null) {
+            return '';
+        }
+
+        $name = trim((string) ($row['name'] ?? ''));
+        $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+        $role = trim((string) ($profile['role'] ?? ''));
+        $immutable = trim((string) ($profile['immutable_traits'] ?? ''));
+        $lookNotes = trim((string) ($profile['look_notes'] ?? ''));
+        $stylingNotes = trim((string) ($profile['styling_notes'] ?? ''));
+        $promptNotes = trim((string) ($profile['prompt_notes'] ?? ''));
+
+        $parts = [];
+        $parts[] = $name !== '' ? "Persona di riferimento del brand: {$name}." : 'Persona di riferimento del brand presente nei riferimenti.';
+        if ($role !== '') {
+            $parts[] = "Ruolo reale: {$role}.";
+        }
+        if ($immutable !== '') {
+            $parts[] = "Tratti da non cambiare mai: {$immutable}.";
+        }
+        if ($lookNotes !== '') {
+            $parts[] = "Aspetto e presenza: {$lookNotes}.";
+        }
+        if ($stylingNotes !== '') {
+            $parts[] = "Stile e presenza scenica: {$stylingNotes}.";
+        }
+        if ($promptNotes !== '') {
+            $parts[] = "Indicazioni operative: {$promptNotes}.";
+        }
+        if (!empty((array) ($profile['shot_summary'] ?? []))) {
+            $parts[] = 'Usa il pack multi-angolo come board identitaria dello stesso soggetto, non come persone diverse.';
+        }
+        if (trim((string) ($profile['reference_video_path'] ?? '')) !== '') {
+            $parts[] = 'Il video reale di riferimento serve come guida per postura, mimica e presenza della stessa persona.';
+        }
+        $parts[] = 'Non cambiare identita del soggetto tra una generazione e l altra: varia scena e regia, non il volto.';
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), 420, '');
+    }
+
+    /**
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
@@ -2344,6 +2483,21 @@ SVG;
         return false;
     }
 
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<string, mixed>|null
+     */
+    private function singleResolvedPersonVariable(array $assetVariables): ?array
+    {
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+        $persons = array_values(array_filter(
+            $resolved,
+            fn ($row) => strtolower(trim((string) ($row['kind'] ?? 'custom'))) === 'person'
+        ));
+
+        return count($persons) === 1 ? $persons[0] : null;
+    }
+
     private function needsWellnessSafetyLanguage(string $text): bool
     {
         $normalized = Str::lower($this->normalizeText($text));
@@ -2372,6 +2526,102 @@ SVG;
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $imageReferenceAbsPool
+     * @param  array<int, string>  $imageReferencePathPool
+     * @param  array<string, mixed>  $assetVariables
+     * @return array{0: array<int, string>, 1: array<int, string>}
+     */
+    private function prioritizeVideoReferencePoolsForPersonVariable(
+        array $imageReferenceAbsPool,
+        array $imageReferencePathPool,
+        array $assetVariables
+    ): array {
+        $row = $this->singleResolvedPersonVariable($assetVariables);
+        if ($row === null) {
+            return [$imageReferenceAbsPool, $imageReferencePathPool];
+        }
+
+        $pathToAbs = [];
+        foreach ($imageReferencePathPool as $index => $path) {
+            $path = trim((string) $path);
+            $abs = isset($imageReferenceAbsPool[$index]) ? trim((string) $imageReferenceAbsPool[$index]) : '';
+            if ($path === '' || $abs === '') {
+                continue;
+            }
+            $pathToAbs[$path] = $abs;
+        }
+
+        if (empty($pathToAbs)) {
+            return [$imageReferenceAbsPool, $imageReferencePathPool];
+        }
+
+        $orderedPaths = $this->orderedPersonImagePaths($row, array_keys($pathToAbs));
+        if (empty($orderedPaths)) {
+            return [$imageReferenceAbsPool, $imageReferencePathPool];
+        }
+
+        $orderedAbs = array_values(array_map(fn ($path) => $pathToAbs[$path], $orderedPaths));
+
+        return [$orderedAbs, $orderedPaths];
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<int, string>  $referencePaths
+     */
+    private function shouldUsePersonIdentityReferenceBoard(array $assetVariables, array $referencePaths): bool
+    {
+        return $this->singleResolvedPersonVariable($assetVariables) !== null
+            && count(array_values(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''))) >= 2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int, string>  $availablePaths
+     * @return array<int, string>
+     */
+    private function orderedPersonImagePaths(array $row, array $availablePaths): array
+    {
+        $availableLookup = array_fill_keys($availablePaths, true);
+        $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+        $shotSummary = is_array($profile['shot_summary'] ?? null) ? $profile['shot_summary'] : [];
+
+        $slotPriority = [
+            'front',
+            'three_quarter_left',
+            'three_quarter_right',
+            'half_body',
+            'profile',
+        ];
+
+        $ordered = [];
+        foreach ($slotPriority as $slot) {
+            foreach ($shotSummary as $shot) {
+                if (!is_array($shot)) {
+                    continue;
+                }
+                if (trim((string) ($shot['slot'] ?? '')) !== $slot) {
+                    continue;
+                }
+                $path = trim((string) ($shot['path'] ?? ''));
+                if ($path !== '' && isset($availableLookup[$path])) {
+                    $ordered[] = $path;
+                    unset($availableLookup[$path]);
+                }
+            }
+        }
+
+        foreach ($availablePaths as $path) {
+            if (isset($availableLookup[$path])) {
+                $ordered[] = $path;
+                unset($availableLookup[$path]);
+            }
+        }
+
+        return array_values(array_unique($ordered));
     }
 
     /**

@@ -158,6 +158,8 @@ Argomenti da definire insieme nel passo successivo:
   - declassare nomi propri e linguaggio sensibile tipo `massaggio tecnico` verso formulazioni piu professionali
   - applicare questo guard rail gia prima della chiamata a OpenAI nei casi `persona reale + wellness/beauty`
   - filtrare i riferimenti visuali in modo che nelle image references non entrino file video del persona pack
+  - usare il feedback negativo video come correzione forte: la rigenerazione deve cambiare davvero regia, ordine scene e apertura, non solo fare micro-varianti
+  - usare il persona pack come board identitaria multi-angolo quando c e un solo soggetto persona, evitando di fonderlo in una scena-lock innaturale
   - non cambiare provider automaticamente se l utente ha scelto `OpenAI`: dopo il retry sicuro resta su OpenAI e, se ancora bloccato, fallisce in modo esplicito
 - File chiave:
   - `app/Jobs/GenerateAiForContentItem.php`
