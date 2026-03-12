@@ -108,8 +108,9 @@ Ultimo aggiornamento: 2026-03-12
     - header mobile leggero con logo + shortcut rapidi
     - bottom nav mobile ridotta a 4 voci
   - nuove versioni logo/icona sincronizzate da `app/` a `public/brand`
-  - da `app/logo-socialai.png` viene ora derivata anche un icona brand dedicata servita da `public/brand/icona-socialai.png`
-  - palette base aggiornata su blu inchiostro, royal blue e glow ciano estratti dal nuovo segno
+  - gli asset sorgente correnti sono `app/logo.png` e `app/icona.png`
+  - gli asset serviti dal sito restano `public/brand/logo-socialai.png` e `public/brand/icona-socialai.png`
+  - palette base aggiornata su blu inchiostro, royal blue e glow ciano, con gradienti resi piu sobri per alleggerire la UI
   - ridotti i CTA neri residui nelle aree operative principali
   - aggiunta protezione `overflow-x-hidden` nella shell e nella dashboard per evitare scroll orizzontale su smartphone
   - pagina `Crea` ora separa in modo esplicito:

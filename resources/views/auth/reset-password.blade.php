@@ -1,7 +1,7 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md ui-reveal">
         <div class="ui-card p-6 sm:p-7">
-            <x-application-logo class="h-10 w-auto" />
+            <x-application-logo class="h-12 w-auto" />
             <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Scegli una nuova password</h1>
             <p class="mt-3 text-sm leading-6 text-muted">
                 Aggiorna l'accesso del tuo workspace e rientra subito nel flusso di lavoro.

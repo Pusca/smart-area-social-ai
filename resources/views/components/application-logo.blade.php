@@ -9,8 +9,8 @@
         ? asset('brand/icona-socialai.png')
         : asset('brand/logo-socialai.png');
     $defaultClasses = $isIcon
-        ? 'block h-10 w-10 object-contain'
-        : 'block h-10 w-auto object-contain';
+        ? 'block h-11 w-11 object-contain'
+        : 'block h-12 w-auto object-contain';
 @endphp
 
 <img

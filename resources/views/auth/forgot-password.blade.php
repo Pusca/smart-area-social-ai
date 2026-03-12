@@ -1,7 +1,7 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md ui-reveal">
         <div class="ui-card p-6 sm:p-7">
-            <x-application-logo class="h-10 w-auto" />
+            <x-application-logo class="h-12 w-auto" />
             <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Recupera l'accesso</h1>
             <div class="mt-3 text-sm leading-6 text-muted">
                 Inserisci la tua email e ti inviamo il link per scegliere una nuova password.
