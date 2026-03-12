@@ -1,7 +1,7 @@
 <x-guest-layout>
     <div class="mx-auto max-w-md ui-reveal">
         <div class="ui-card p-6 sm:p-7">
-            <x-application-logo class="h-12 w-auto" />
+            <x-application-logo class="h-14 w-auto" />
             <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Conferma la tua email</h1>
             <div class="mt-3 text-sm leading-6 text-muted">
                 Prima di iniziare, conferma il tuo indirizzo email dal link che ti abbiamo inviato. Se non lo trovi, puoi richiederne uno nuovo qui sotto.

@@ -4,7 +4,7 @@
             <div class="grid gap-10 p-6 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:p-9">
                 <div>
                     <div class="inline-flex items-center gap-2 rounded-full border border-brand bg-white px-3 py-1 text-xs font-semibold text-brand">
-                        <x-application-logo variant="icon" class="h-6 w-6" />
+                        <x-application-logo variant="icon" class="h-7 w-7" />
                         Social AI
                     </div>
                     <h1 class="mt-5 max-w-2xl text-4xl font-semibold tracking-tight text-gray-900 sm:text-5xl">
@@ -47,7 +47,7 @@
                             <p class="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Primo impatto</p>
                             <h2 class="mt-2 text-xl font-semibold text-gray-900">Una presenza social che alza subito il livello</h2>
                         </div>
-                        <x-application-logo variant="icon" class="h-16 w-16 shrink-0" />
+                        <x-application-logo variant="icon" class="h-20 w-20 shrink-0" />
                     </div>
 
                     <div class="space-y-3">
@@ -113,7 +113,7 @@
                 </div>
 
                 <div class="rounded-[1.75rem] border border-brand bg-white/88 p-5 shadow-card">
-                    <x-application-logo class="h-11 w-auto" />
+                    <x-application-logo class="h-12 w-auto" />
                     <h3 class="mt-5 text-lg font-semibold text-gray-900">Più valore percepito, più ordine, più contenuti che puoi usare davvero</h3>
                     <p class="mt-2 text-sm leading-6 text-muted">
                         Dal primo accesso alla gestione quotidiana, Social AI è pensato per darti subito la sensazione di una regia più solida, più chiara e più utile sui tuoi contenuti social.

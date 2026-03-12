@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ config('app.name', 'Social AI') }} - Admin</title>
-    <meta name="theme-color" content="#0E3B8F">
+    <meta name="theme-color" content="#0A2D6F">
     <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
@@ -12,7 +12,7 @@
     <header class="sticky top-0 z-40 border-b border-app bg-white/90 backdrop-blur-xl">
         <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
             <div class="flex items-center gap-3">
-                <x-application-logo class="h-16 w-auto" />
+                <x-application-logo class="h-[4.5rem] w-auto" />
                 <div class="leading-tight">
                     <div class="text-sm font-semibold">{{ config('app.name', 'Social AI') }}</div>
                     <div class="text-[11px] text-muted">Controllo amministrativo</div>

@@ -2,7 +2,7 @@
     <div class="mx-auto max-w-md">
         <div class="overflow-hidden rounded-[2rem] border border-app bg-white/94 shadow-panel">
             <div class="border-b border-app bg-[var(--gradient-soft)] px-6 py-6">
-                <x-application-logo class="h-12 w-auto" />
+                <x-application-logo class="h-14 w-auto" />
                 <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Rientra e riprendi il ritmo dei tuoi contenuti</h1>
                 <p class="mt-2 text-sm leading-6 text-muted">
                     Ritrovi subito calendario, contenuti e approvazioni in uno spazio ordinato e facile da leggere.

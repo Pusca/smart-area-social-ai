@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <title>{{ config('app.name', 'Social AI') }}</title>
-    <meta name="theme-color" content="#0E3B8F">
+    <meta name="theme-color" content="#0A2D6F">
     <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -28,15 +28,15 @@
     @endphp
 
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div class="absolute -left-20 top-0 h-72 w-72 rounded-full blur-3xl" style="background: rgba(160, 224, 255, 0.16);"></div>
-        <div class="absolute right-0 top-0 h-80 w-80 rounded-full blur-3xl" style="background: rgba(0, 64, 128, 0.1);"></div>
+        <div class="absolute -left-20 top-0 h-72 w-72 rounded-full blur-3xl" style="background: rgba(59, 200, 255, 0.14);"></div>
+        <div class="absolute right-0 top-0 h-80 w-80 rounded-full blur-3xl" style="background: rgba(10, 45, 111, 0.08);"></div>
     </div>
 
     <div class="min-h-screen">
         <header class="sticky top-0 z-40 hidden border-b border-app bg-white/88 backdrop-blur-xl sm:block">
             <div class="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-3">
                 <a href="{{ route('dashboard') }}" class="shrink-0">
-                    <x-application-logo class="h-16 w-auto" />
+                    <x-application-logo class="h-[4.75rem] w-auto" />
                 </a>
 
                 <nav class="flex items-center gap-2 text-sm">
@@ -56,7 +56,7 @@
 
                 <div class="flex items-center gap-3">
                     <a href="{{ route('settings') }}" class="inline-flex items-center gap-3 rounded-2xl border border-app bg-surface-2 px-3 py-2 transition hover:bg-white">
-                        <x-application-logo variant="icon" class="h-9 w-9" />
+                        <x-application-logo variant="icon" class="h-10 w-10" />
                         <div class="hidden text-left lg:block">
                             <p class="text-[11px] uppercase tracking-[0.18em] text-muted">Account</p>
                             <p class="text-sm font-semibold text-gray-900">{{ auth()->user()?->name }}</p>
@@ -69,7 +69,7 @@
         <header class="sticky top-0 z-40 border-b border-app bg-white/92 backdrop-blur-xl sm:hidden">
             <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
                 <a href="{{ route('dashboard') }}" class="shrink-0">
-                    <x-application-logo class="h-11 w-auto" />
+                    <x-application-logo class="h-12 w-auto" />
                 </a>
 
                 <a

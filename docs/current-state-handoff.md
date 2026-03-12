@@ -1,6 +1,6 @@
 # Current State Handoff
 
-Ultimo aggiornamento: 2026-03-12
+Ultimo aggiornamento: 2026-03-13
 
 ## Stato raggiunto
 
@@ -99,7 +99,7 @@ Ultimo aggiornamento: 2026-03-12
   - demo iniziale ora tratta Instagram e Facebook come canali distinti, non come stringa unica
   - aggiunto stato persistente `quickstart_dismissed_at` per distinguere demo attiva da quickstart chiuso
 - Brand system riallineato ai nuovi asset:
-  - `logo-socialai.png` e `icona-socialai.png` copiati in `public/brand`
+  - `logo-socialai.png` e `icona-socialai.png` sincronizzati in `public/brand`
   - componenti logo aggiornati per usare sempre gli asset veri, non placeholder testuali
   - palette globale ora derivata dal logo Social AI
   - layout guest/app/admin, homepage, auth, dashboard e wizard start riallineati a una UX piu chiara e meno tecnica
@@ -110,7 +110,7 @@ Ultimo aggiornamento: 2026-03-12
   - nuove versioni logo/icona sincronizzate da `app/` a `public/brand`
   - gli asset sorgente correnti sono `app/logo.png` e `app/icona.png`
   - gli asset serviti dal sito restano `public/brand/logo-socialai.png` e `public/brand/icona-socialai.png`
-  - palette base aggiornata su blu inchiostro, royal blue e glow ciano, con gradienti resi piu sobri per alleggerire la UI
+  - palette base aggiornata sul nuovo segno navy + ciano, con gradienti tenuti piu contenuti per non appesantire la UI
   - ridotti i CTA neri residui nelle aree operative principali
   - aggiunta protezione `overflow-x-hidden` nella shell e nella dashboard per evitare scroll orizzontale su smartphone
   - pagina `Crea` ora separa in modo esplicito:
