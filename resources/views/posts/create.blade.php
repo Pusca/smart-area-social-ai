@@ -27,15 +27,22 @@
     ];
 
     $tz = config('app.timezone', 'Europe/Rome');
+    $createPreset = ($createPreset ?? request()->query('preset', 'default'));
+    $createPreset = $createPreset === 'reel' ? 'reel' : 'default';
+    $isReelPreset = $createPreset === 'reel';
     $defaultPlatforms = old('platforms', $profile?->default_platforms ?? ['instagram']);
     if (!is_array($defaultPlatforms)) {
         $defaultPlatforms = ['instagram'];
     }
 
-    $defaultFormat = old('format', (is_array($profile?->default_formats ?? null) && !empty($profile->default_formats))
-        ? (string) $profile->default_formats[0]
-        : 'post');
-    $defaultVideoProvider = old('video_provider', (string) config('generation.video_provider_default', 'openai'));
+    $defaultFormat = old('format', $isReelPreset
+        ? 'reel'
+        : ((is_array($profile?->default_formats ?? null) && !empty($profile->default_formats))
+            ? (string) $profile->default_formats[0]
+            : 'post'));
+    $defaultVideoProvider = old('video_provider', $isReelPreset
+        ? 'runway'
+        : (string) config('generation.video_provider_default', 'openai'));
     if (!array_key_exists($defaultVideoProvider, $videoProviderOptions)) {
         $defaultVideoProvider = 'openai';
     }
@@ -72,6 +79,9 @@
         fn ($v) => (int) $v,
         array_filter($selectedVariableIds, fn ($v) => (int) $v > 0)
     )));
+    $briefPlaceholder = $isReelPreset
+        ? "Es. Crea un reel per Instagram che apra con un hook forte, mostri due o tre scene reali del locale e chiuda con un payoff visivo coerente col brand."
+        : "Es. Crea un post su Jaguar usando l'ultima immagine caricata e il logo sullo sfondo.";
 @endphp
 
 <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -79,22 +89,25 @@
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
             <div>
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Area Crea</div>
-                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Scegli se partire da un contenuto o da un piano</h1>
+                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Scegli se partire da un contenuto, da un reel o da un piano</h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    Da qui puoi creare un contenuto singolo al volo oppure impostare un piano editoriale vero e proprio, con almeno 2 contenuti.
+                    Qui puoi creare un contenuto singolo, aprire una modalita reel gia pronta per Runway oppure impostare un piano editoriale con almeno 2 contenuti.
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Singolo o piano</span>
+                    <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Singolo, reel o piano</span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        AI + scheduling
+                        AI + scheduling + strategy
                     </span>
                 </div>
             </div>
 
             <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
-                <div class="mt-3 grid grid-cols-1 gap-2">
+                <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <a href="{{ route('posts.create', ['preset' => 'reel']) }}" class="ui-btn-primary justify-center">
+                        Crea reel
+                    </a>
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Torna ai contenuti
                     </a>
@@ -109,15 +122,15 @@
         </div>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-2">
-        <article id="single-content-option" class="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-6 shadow-sm">
+    <div class="grid gap-4 lg:grid-cols-3">
+        <article id="single-content-option" class="rounded-3xl border {{ $isReelPreset ? 'border-gray-200 bg-white' : 'border-indigo-200 bg-indigo-50/60' }} p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Contenuto singolo</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide {{ $isReelPreset ? 'text-gray-500' : 'text-indigo-700' }}">Contenuto singolo</p>
                     <h2 class="mt-2 text-xl font-semibold text-gray-900">Quando hai gia un'idea precisa e vuoi produrla subito</h2>
                 </div>
-                <span class="inline-flex items-center rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                    Attivo ora
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $isReelPreset ? 'border-gray-200 bg-white text-gray-600' : 'border-indigo-200 bg-white text-indigo-700' }}">
+                    {{ $isReelPreset ? 'Disponibile' : 'Attivo ora' }}
                 </span>
             </div>
             <p class="mt-3 text-sm leading-6 text-gray-600">
@@ -129,8 +142,33 @@
                 <span class="ui-chip">Controllo puntuale</span>
             </div>
             <div class="mt-5">
-                <a href="#single-content-form" class="ui-btn-primary">
+                <a href="{{ $isReelPreset ? route('posts.create') . '#single-content-form' : '#single-content-form' }}" class="{{ $isReelPreset ? 'ui-btn-secondary' : 'ui-btn-primary' }}">
                     Continua con contenuto singolo
+                </a>
+            </div>
+        </article>
+
+        <article class="rounded-3xl border {{ $isReelPreset ? 'border-indigo-200 bg-indigo-50/60' : 'border-brand bg-brand-soft/60' }} p-6 shadow-sm">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide {{ $isReelPreset ? 'text-indigo-700' : 'text-brand' }}">Crea reel</p>
+                    <h2 class="mt-2 text-xl font-semibold text-gray-900">Quando vuoi un reel con sequenze, ritmo e resa social</h2>
+                </div>
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $isReelPreset ? 'border-indigo-200 bg-white text-indigo-700' : 'border-brand bg-white text-brand' }}">
+                    {{ $isReelPreset ? 'Modalita attiva' : 'Runway consigliato' }}
+                </span>
+            </div>
+            <p class="mt-3 text-sm leading-6 text-gray-600">
+                Questa modalita preimposta il formato reel e ti porta su un flusso pensato per Runway, con piu attenzione a hook, sequenza di scene, ritmo e coerenza con brand e strategia.
+            </p>
+            <div class="mt-4 flex flex-wrap gap-2">
+                <span class="ui-chip">Formato reel</span>
+                <span class="ui-chip">Runway preimpostato</span>
+                <span class="ui-chip">Sequenza guidata</span>
+            </div>
+            <div class="mt-5">
+                <a href="{{ $isReelPreset ? '#single-content-form' : route('posts.create', ['preset' => 'reel']) . '#single-content-form' }}" class="{{ $isReelPreset ? 'ui-btn-primary' : 'ui-btn-secondary' }}">
+                    {{ $isReelPreset ? 'Continua con reel' : 'Attiva modalita reel' }}
                 </a>
             </div>
         </article>
@@ -178,13 +216,19 @@
                 @csrf
 
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h2 class="text-lg font-semibold text-gray-900">Contenuto singolo</h2>
-                    <p class="mt-1 text-sm text-gray-600">Qui stai creando un singolo contenuto on demand.</p>
+                    <h2 class="text-lg font-semibold text-gray-900">{{ $isReelPreset ? 'Crea reel' : 'Contenuto singolo' }}</h2>
+                    <p class="mt-1 text-sm text-gray-600">
+                        {{ $isReelPreset ? 'Qui stai creando un reel guidato, con Runway preimpostato e una logica piu orientata a sequenza, hook e resa social.' : 'Qui stai creando un singolo contenuto on demand.' }}
+                    </p>
 
                     <div class="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 px-4 py-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Se vuoi un insieme di contenuti</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">{{ $isReelPreset ? 'Modalita reel attiva' : 'Se vuoi un insieme di contenuti' }}</p>
                         <p class="mt-1 text-sm text-gray-700">
-                            Per una sequenza di pubblicazioni o un piano editoriale usa il <a href="{{ route('wizard.start') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">piano editoriale</a>, che lavora da minimo 2 contenuti.
+                            @if($isReelPreset)
+                                Il formato reel e il motore Runway partono gia selezionati. Descrivi bene apertura, scene chiave e obiettivo del contenuto, e la macchina costruira il reel seguendo brand e strategia.
+                            @else
+                                Per una sequenza di pubblicazioni o un piano editoriale usa il <a href="{{ route('wizard.start') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">piano editoriale</a>, che lavora da minimo 2 contenuti.
+                            @endif
                         </p>
                     </div>
 
@@ -223,7 +267,7 @@
                                 @endforeach
                             </select>
                             <p class="mt-1 text-xs text-gray-500">
-                                Per i post immagine il provider video viene ignorato. Per reel/story puoi confrontare output Runway vs Sora.
+                                Per i post immagine il provider video viene ignorato. Per i reel la modalita dedicata parte su Runway, che qui usiamo come motore consigliato per sequenze e animazione delle scene.
                             </p>
                         </div>
                     </div>
@@ -354,7 +398,7 @@
                     <div class="mt-4 space-y-4">
                         <div>
                             <label for="generation_brief" class="mb-1 block text-sm font-semibold text-gray-700">Cosa deve generare l AI</label>
-                            <textarea id="generation_brief" name="generation_brief" rows="7" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Es. Crea un post reel su Jaguar usando l'ultima immagine caricata e il logo sullo sfondo..." required>{{ old('generation_brief', old('caption', old('title', ''))) }}</textarea>
+                            <textarea id="generation_brief" name="generation_brief" rows="7" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="{{ $briefPlaceholder }}" required>{{ old('generation_brief', old('caption', old('title', ''))) }}</textarea>
                             <p class="mt-1 text-xs text-gray-500">Per riferimenti puntuali usa i numeri: "usa foto #1 #2 #3 per il volto e #7 per l auto". Puoi combinarli con la selezione checkbox sopra.</p>
                             <div class="mt-2 rounded-xl border border-indigo-200 bg-indigo-50/50 px-3 py-2">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Variabili riconosciute nel brief</p>
@@ -366,7 +410,7 @@
 
                         <div>
                             <label for="goal_hint" class="mb-1 block text-sm font-semibold text-gray-700">Obiettivo (opzionale)</label>
-                            <input id="goal_hint" type="text" name="goal_hint" value="{{ old('goal_hint') }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Es. Lead generation, awareness, engagement" />
+                            <input id="goal_hint" type="text" name="goal_hint" value="{{ old('goal_hint', $isReelPreset ? ($profile?->default_goal ?: '') : '') }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Es. Lead generation, awareness, engagement" />
                         </div>
                     </div>
                 </div>
@@ -396,7 +440,7 @@
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">3. Output</p>
-                        <p class="mt-1 text-sm font-semibold text-gray-900">Viene creato 1 post nel giorno impostato</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ $isReelPreset ? 'Viene creato 1 reel pronto per il feed, allineato a brand e strategia' : 'Viene creato 1 post nel giorno impostato' }}</p>
                     </div>
                 </div>
             </div>
@@ -424,6 +468,7 @@
 @include('partials.generation-loader')
 <script>
     (function () {
+        const presetMode = @json($createPreset);
         const briefEl = document.getElementById('generation_brief');
         const recognizedWrap = document.getElementById('recognizedAssetVariables');
         const variableCheckboxes = Array.from(document.querySelectorAll('.js-asset-variable-checkbox'));
@@ -431,10 +476,7 @@
         const formatEl = document.getElementById('format');
         const videoProviderEl = document.getElementById('video_provider');
         const imageProviderEl = document.getElementById('image_provider');
-
-        if (!briefEl || !recognizedWrap || variableCheckboxes.length === 0) {
-            return;
-        }
+        let videoProviderTouched = false;
 
         const normalize = (value) => {
             return (value || '')
@@ -456,6 +498,10 @@
         };
 
         const renderRecognized = (items) => {
+            if (!recognizedWrap) {
+                return;
+            }
+
             recognizedWrap.innerHTML = '';
             if (items.length === 0) {
                 const empty = document.createElement('span');
@@ -474,6 +520,10 @@
         };
 
         const syncRecognition = () => {
+            if (!briefEl || !recognizedWrap || variableCheckboxes.length === 0) {
+                return;
+            }
+
             const text = normalize(briefEl.value || '');
             const recognized = [];
 
@@ -507,11 +557,29 @@
             renderRecognized(unique);
         };
 
-        briefEl.addEventListener('input', syncRecognition);
-        variableCheckboxes.forEach((cb) => cb.addEventListener('change', syncRecognition));
-        syncRecognition();
+        if (briefEl && recognizedWrap && variableCheckboxes.length > 0) {
+            briefEl.addEventListener('input', syncRecognition);
+            variableCheckboxes.forEach((cb) => cb.addEventListener('change', syncRecognition));
+            syncRecognition();
+        }
 
         if (createForm && window.HostupGenerationLoader) {
+            const syncVideoProviderWithFormat = () => {
+                if (!formatEl || !videoProviderEl) {
+                    return;
+                }
+
+                const format = (formatEl.value || 'post').toLowerCase();
+                const currentProvider = (videoProviderEl.value || '').toLowerCase();
+                if (format !== 'reel') {
+                    return;
+                }
+
+                if (presetMode === 'reel' || (!videoProviderTouched && (currentProvider === '' || currentProvider === 'openai'))) {
+                    videoProviderEl.value = 'runway';
+                }
+            };
+
             const estimateSeconds = () => {
                 const format = (formatEl?.value || 'post').toLowerCase();
                 const videoProvider = (videoProviderEl?.value || 'openai').toLowerCase();
@@ -544,10 +612,20 @@
                 ];
             };
 
+            if (videoProviderEl) {
+                videoProviderEl.addEventListener('change', () => {
+                    videoProviderTouched = true;
+                });
+            }
+            if (formatEl) {
+                formatEl.addEventListener('change', syncVideoProviderWithFormat);
+            }
+            syncVideoProviderWithFormat();
+
             createForm.addEventListener('submit', () => {
                 const format = (formatEl?.value || 'post').toLowerCase();
                 const subtitle = format === 'reel' || format === 'story'
-                    ? 'Sto preparando script, caption, visual e video finale. I reel richiedono piu tempo dei post statici.'
+                    ? 'Sto preparando script, shot plan, caption e video finale. I reel richiedono piu tempo dei post statici.'
                     : 'Sto preparando caption, prompt e visual finale in linea con il brand.';
 
                 window.HostupGenerationLoader.show({

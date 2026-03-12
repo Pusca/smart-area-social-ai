@@ -81,7 +81,13 @@ Ultimo aggiornamento: 2026-03-11
   - aggiunta protezione `overflow-x-hidden` nella shell e nella dashboard per evitare scroll orizzontale su smartphone
   - pagina `Crea` ora separa in modo esplicito:
     - contenuto singolo on demand
+    - modalita `Crea reel` con preset dedicato e Runway preimpostato
     - piano editoriale / insieme di contenuti
+  - la sezione contenuti ora espone una CTA diretta `Crea reel`
+  - il prompt `Runway` per i reel e ora piu reel-first:
+    - hook iniziale entro il primo secondo
+    - progressione in 3-5 shot concatenati
+    - payoff visivo finale coerente con brand, strategia e obiettivo del contenuto
   - il piano editoriale ora richiede minimo `2` contenuti anche lato validazione/controller, non solo lato copy
   - header desktop con logo piu grande e copy pre-login riscritto in ottica benefici/possibilita, meno descrittivo-tecnico
   - landing ulteriormente ripulita dal linguaggio "prova" nelle CTA principali, con messaggi piu orientati al valore percepito

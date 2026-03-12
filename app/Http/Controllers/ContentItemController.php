@@ -144,8 +144,9 @@ class ContentItemController extends Controller
 
         $referenceImages = $this->loadBrandReferenceImages($tenantId);
         $assetVariables = $this->assetVariableService->catalogForTenant($tenantId);
+        $createPreset = $this->normalizeCreatePreset((string) $request->query('preset', ''));
 
-        return view('posts.create', compact('profile', 'referenceImages', 'assetVariables'));
+        return view('posts.create', compact('profile', 'referenceImages', 'assetVariables', 'createPreset'));
     }
 
     public function generating(Request $request, ContentItem $contentItem): View
@@ -1142,6 +1143,13 @@ class ContentItemController extends Controller
             'Scrittura caption e prompt visuale',
             'Generazione immagine e controllo finale',
         ];
+    }
+
+    private function normalizeCreatePreset(string $preset): string
+    {
+        $preset = Str::lower(trim($preset));
+
+        return $preset === 'reel' ? 'reel' : 'default';
     }
 
 }

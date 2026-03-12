@@ -1216,6 +1216,9 @@ SVG;
             'size' => $this->targetVideoSizeForFormat($item),
         ];
         $videoProvider = $this->resolveVideoProvider($meta);
+        $runwayExecutionPrompt = $videoProvider === 'runway'
+            ? $this->buildRunwayReelExecutionPrompt($videoPrompt, $item, $meta, $assetVariables)
+            : $videoPrompt;
         $openAiExecutionPrompt = $this->prepareOpenAiVideoPromptForExecution(
             $videoPrompt,
             $briefRaw !== '' ? $briefRaw : $prompt,
@@ -1240,7 +1243,7 @@ SVG;
                     item: $item,
                     briefRaw: $briefRaw,
                     fallbackPrompt: $prompt,
-                    videoPrompt: $videoPrompt,
+                    videoPrompt: $runwayExecutionPrompt,
                     referenceAbs: $referenceAbs,
                     referencePath: $referencePath,
                     referencePaths: $referencePaths,
@@ -1395,6 +1398,56 @@ SVG;
         }
 
         return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), 900, '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     */
+    private function buildRunwayReelExecutionPrompt(
+        string $videoPrompt,
+        ContentItem $item,
+        array $meta,
+        array $assetVariables
+    ): string {
+        $format = Str::lower(trim((string) ($item->format ?? 'post')));
+        if ($format !== 'reel') {
+            return $videoPrompt;
+        }
+
+        $objective = trim((string) data_get($meta, 'item_brain.objective', data_get($meta, 'plan.goal', '')));
+        $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
+        $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
+        $series = trim((string) data_get($meta, 'item_brain.series', data_get($meta, 'editorial.series', '')));
+        $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+
+        $parts = [$videoPrompt];
+        $parts[] = 'Costruisci il contenuto come un vero reel social di 3-5 shot concatenati, non come una clip piatta o ripetitiva.';
+        $parts[] = 'Struttura consigliata: hook visivo entro il primo secondo, sviluppo con 2 o 3 scene leggibili, chiusura con payoff visivo pulito.';
+        $parts[] = 'Ogni shot deve cambiare davvero per angolazione, distanza, movimento camera o dettaglio principale, mantenendo continuita narrativa.';
+        $parts[] = 'Movimenti camera preferiti: push-in leggero, reveal laterale, tracking morbido, micro parallax. Evita motion caotico.';
+        $parts[] = 'Deve sembrare un reel nativo da feed Instagram: stop-scroll, ritmo chiaro, soggetto forte, non una brochure animata.';
+
+        if ($objective !== '') {
+            $parts[] = "Obiettivo strategico da far percepire nel reel: {$objective}.";
+        }
+        if ($tone !== '') {
+            $parts[] = "Tono del brand: {$tone}.";
+        }
+        if ($angle !== '') {
+            $parts[] = "Angolo narrativo: {$angle}.";
+        }
+        if ($series !== '') {
+            $parts[] = "Filone editoriale: {$series}.";
+        }
+        if ($hasPersonVariable) {
+            $parts[] = 'Se compare la persona del brand, deve restare chiaramente la stessa in tutti gli shot del reel.';
+        }
+
+        $limit = (int) (config('runway.max_prompt_chars') ?: 980);
+        $limit = max(300, min(1000, $limit));
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), $limit, '');
     }
 
     /**

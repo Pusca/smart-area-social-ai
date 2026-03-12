@@ -88,6 +88,47 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringContainsString('Sala 1', $prompt);
     }
 
+    public function test_it_enhances_runway_reel_prompt_with_social_sequence_direction(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildRunwayReelExecutionPrompt');
+        $method->setAccessible(true);
+
+        $prompt = $method->invoke(
+            $job,
+            'Crea un reel verticale 9:16 del ristorante.',
+            new \App\Models\ContentItem(['format' => 'reel']),
+            [
+                'item_brain' => [
+                    'objective' => 'Awareness',
+                    'angle' => 'atmosfera serale del locale',
+                    'series' => 'signature reels',
+                ],
+                'strategy' => [
+                    'brand_voice' => [
+                        'tone' => 'caldo e premium',
+                    ],
+                ],
+            ],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Erika',
+                        'kind' => 'person',
+                    ],
+                ],
+            ]
+        );
+
+        $this->assertStringContainsString('3-5 shot concatenati', $prompt);
+        $this->assertStringContainsString('hook visivo entro il primo secondo', strtolower($prompt));
+        $this->assertStringContainsString('stop-scroll', strtolower($prompt));
+        $this->assertStringContainsString('Awareness', $prompt);
+        $this->assertStringContainsString('atmosfera serale del locale', $prompt);
+        $this->assertStringContainsString('signature reels', $prompt);
+        $this->assertStringContainsString('stessa in tutti gli shot', strtolower($prompt));
+    }
+
     public function test_it_detects_openai_video_moderation_blocks(): void
     {
         $job = new GenerateAiForContentItem(1);
