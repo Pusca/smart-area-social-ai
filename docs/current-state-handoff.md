@@ -108,6 +108,8 @@ Ultimo aggiornamento: 2026-03-12
     - header mobile leggero con logo + shortcut rapidi
     - bottom nav mobile ridotta a 4 voci
   - nuove versioni logo/icona sincronizzate da `app/` a `public/brand`
+  - da `app/logo-socialai.png` viene ora derivata anche un icona brand dedicata servita da `public/brand/icona-socialai.png`
+  - palette base aggiornata su blu inchiostro, royal blue e glow ciano estratti dal nuovo segno
   - ridotti i CTA neri residui nelle aree operative principali
   - aggiunta protezione `overflow-x-hidden` nella shell e nella dashboard per evitare scroll orizzontale su smartphone
   - pagina `Crea` ora separa in modo esplicito:
@@ -117,6 +119,11 @@ Ultimo aggiornamento: 2026-03-12
     - `posts.reels.create`
     - il form reel non mostra piu il selettore immagini, ma un flusso centrato su hook, anchor frame, shot plan e motore video
   - la sezione contenuti ora espone una CTA diretta `Crea reel`
+  - information architecture riallineata nelle shell e nelle pagine chiave:
+    - desktop: `Panoramica -> Pianifica -> Crea -> Libreria -> Brand`
+    - mobile: `Home -> Piano -> Crea -> Libreria`
+    - `App e connessioni` resta dentro l area account, non come voce principale di navigazione
+  - dashboard, libreria, calendario, area crea, wizard, brand e settings ora usano naming coerente e quick link allineati alla stessa mappa del workspace
   - il prompt `Runway` per i reel e ora piu reel-first:
     - hook iniziale entro il primo secondo
     - progressione in 3-5 shot concatenati

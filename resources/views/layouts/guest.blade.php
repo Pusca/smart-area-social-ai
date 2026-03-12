@@ -4,16 +4,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ config('app.name', 'Social AI') }}</title>
-    <meta name="theme-color" content="#1737B6">
+    <meta name="theme-color" content="#0E3B8F">
     <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 
 <body class="min-h-screen bg-app text-text antialiased">
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div class="absolute -left-24 -top-16 h-72 w-72 rounded-full bg-cyan-200/30 blur-3xl"></div>
-        <div class="absolute right-0 top-0 h-80 w-80 rounded-full bg-blue-200/25 blur-3xl"></div>
-        <div class="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-cyan-100/30 blur-3xl"></div>
+        <div class="absolute -left-24 -top-16 h-72 w-72 rounded-full blur-3xl" style="background: rgba(79, 215, 255, 0.24);"></div>
+        <div class="absolute right-0 top-0 h-80 w-80 rounded-full blur-3xl" style="background: rgba(2, 23, 56, 0.16);"></div>
+        <div class="absolute bottom-0 left-1/3 h-64 w-64 rounded-full blur-3xl" style="background: rgba(156, 235, 255, 0.24);"></div>
     </div>
 
     <header class="sticky top-0 z-40 border-b border-app bg-white/86 backdrop-blur-xl">

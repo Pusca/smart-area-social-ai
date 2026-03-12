@@ -21,6 +21,18 @@
                     Contenuti, calendario e pubblicazioni in una vista semplice da leggere, cosi sai subito dove intervenire.
                 </p>
 
+                <div class="mt-5 flex flex-wrap gap-2">
+                    <a href="{{ route('posts.create') }}" class="ui-btn-primary">
+                        Apri area crea
+                    </a>
+                    <a href="{{ route('wizard.start') }}" class="ui-btn-secondary">
+                        Nuovo piano editoriale
+                    </a>
+                    <a href="{{ route('calendar') }}" class="ui-btn-secondary">
+                        Vai alla pianificazione
+                    </a>
+                </div>
+
                 <div class="mt-5 flex flex-wrap items-center gap-2">
                     <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $scoreBadgeClass }}">
                         Salute workspace {{ $workspaceScore }} / 100 - {{ $scoreLabel }}
@@ -42,12 +54,12 @@
             <div class="min-w-0 rounded-[1.75rem] border border-brand bg-[var(--gradient-soft)] p-5 shadow-card">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <div class="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Settimana corrente</div>
-                        <p class="mt-2 text-sm text-muted">Una lettura rapida di quello che stai portando online.</p>
+                        <div class="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Flusso del giorno</div>
+                        <p class="mt-2 text-sm text-muted">Le azioni piu utili per non perdere ritmo tra creazione e pubblicazione.</p>
                     </div>
                     <x-application-logo variant="icon" class="h-12 w-12" />
                 </div>
-                <div class="mt-3 grid grid-cols-2 gap-3">
+                <div class="mt-4 grid grid-cols-2 gap-3">
                     <div class="rounded-2xl border border-app bg-white/90 p-3">
                         <div class="text-xs text-gray-500">In calendario</div>
                         <div class="mt-1 text-xl font-semibold text-gray-900">{{ $weekPlanned }}</div>
@@ -56,6 +68,14 @@
                         <div class="text-xs text-gray-500">Pubblicati</div>
                         <div class="mt-1 text-xl font-semibold text-gray-900">{{ $weekPublished }}</div>
                     </div>
+                </div>
+                <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
+                        Crea contenuto
+                    </a>
+                    <a href="{{ route('posts.reels.create') }}" class="ui-btn-secondary justify-center">
+                        Crea reel
+                    </a>
                 </div>
             </div>
         </div>
@@ -341,33 +361,33 @@
             </div>
 
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Vai dove ti serve</h2>
-                <p class="mt-1 text-sm text-gray-600">Entrate rapide nelle aree che usi ogni giorno.</p>
+                <h2 class="text-lg font-semibold text-gray-900">Mappa del workspace</h2>
+                <p class="mt-1 text-sm text-gray-600">Le aree giuste, nell'ordine in cui di solito ti servono durante la giornata.</p>
 
                 <div class="mt-4 space-y-2">
-                    <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Profilo Brand</p>
-                        <p class="mt-1 text-xs text-gray-600">Aggiorna dati azienda, tone e assets.</p>
-                    </a>
                     <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Nuovo Piano</p>
-                        <p class="mt-1 text-xs text-gray-600">Imposta strategia e calendario.</p>
+                        <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
+                        <p class="mt-1 text-xs text-gray-600">Imposti un insieme di contenuti con una logica di periodo.</p>
                     </a>
                     <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Calendario</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla uscite e copertura settimanale.</p>
-                    </a>
-                    <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Libreria Contenuti</p>
-                        <p class="mt-1 text-xs text-gray-600">Gestisci bozze, output AI e pubblicazione.</p>
+                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
+                        <p class="mt-1 text-xs text-gray-600">Controlli uscite, approvazioni e copertura del calendario.</p>
                     </a>
                     <a href="{{ route('posts.create') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Nuovo Contenuto</p>
-                        <p class="mt-1 text-xs text-gray-600">Crea manualmente un item operativo.</p>
+                        <p class="text-sm font-semibold text-gray-900">Crea</p>
+                        <p class="mt-1 text-xs text-gray-600">Apri l'area per contenuti singoli, reel o nuovi piani.</p>
+                    </a>
+                    <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
+                        <p class="mt-1 text-xs text-gray-600">Rivedi bozze, output AI e stato di pubblicazione.</p>
+                    </a>
+                    <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
+                        <p class="mt-1 text-xs text-gray-600">Aggiorna materiali, variabili e linee guida che aiutano l'AI.</p>
                     </a>
                     <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Account</p>
-                        <p class="mt-1 text-xs text-gray-600">Connessioni social, preferenze e impostazioni.</p>
+                        <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
+                        <p class="mt-1 text-xs text-gray-600">Gestisci Meta, notifiche push e preferenze del workspace.</p>
                     </a>
                 </div>
             </div>

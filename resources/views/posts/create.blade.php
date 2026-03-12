@@ -113,24 +113,24 @@
             <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Apri libreria
+                    </a>
                     <a href="{{ $reelCreateUrl }}" class="ui-btn-primary justify-center">
                         Crea reel
                     </a>
-                    <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Torna ai contenuti
-                    </a>
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri calendario
+                        Vai alla pianificazione
                     </a>
-                    <a href="{{ route('profile.brand') }}" class="ui-btn-primary justify-center">
-                        Profilo brand
+                    <a href="{{ route('profile.brand') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Brand e asset
                     </a>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-2">
+    <div class="grid gap-4 {{ $isReelPreset ? 'lg:grid-cols-2' : 'lg:grid-cols-3' }}">
         <article id="single-content-option" class="rounded-3xl border {{ $isReelPreset ? 'border-gray-200 bg-white' : 'border-indigo-200 bg-indigo-50/60' }} p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
@@ -156,15 +156,14 @@
             </div>
         </article>
 
-        @if($isReelPreset)
-        <article class="rounded-3xl border border-indigo-200 bg-indigo-50/60 p-6 shadow-sm">
+        <article class="rounded-3xl border {{ $isReelPreset ? 'border-indigo-200 bg-indigo-50/60' : 'border-gray-200 bg-white' }} p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Sezione reel</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide {{ $isReelPreset ? 'text-indigo-700' : 'text-gray-500' }}">Sezione reel</p>
                     <h2 class="mt-2 text-xl font-semibold text-gray-900">Un solo reel, costruito come contenuto singolo</h2>
                 </div>
-                <span class="inline-flex items-center rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                    Runway image-to-video
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $isReelPreset ? 'border-indigo-200 bg-white text-indigo-700' : 'border-gray-200 bg-white text-gray-600' }}">
+                    {{ $isReelPreset ? 'Runway image-to-video' : 'Editor reel dedicato' }}
                 </span>
             </div>
             <p class="mt-3 text-sm leading-6 text-gray-600">
@@ -176,13 +175,13 @@
                 <span class="ui-chip">Shot plan guidato</span>
             </div>
             <div class="mt-5">
-                <a href="#single-content-form" class="ui-btn-primary">
-                    Continua con reel
+                <a href="{{ $isReelPreset ? '#single-content-form' : $reelCreateUrl . '#single-content-form' }}" class="{{ $isReelPreset ? 'ui-btn-primary' : 'ui-btn-secondary' }}">
+                    {{ $isReelPreset ? 'Continua con reel' : 'Apri editor reel' }}
                 </a>
             </div>
         </article>
 
-        @else
+        @unless($isReelPreset)
         <article class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
             <div class="flex items-start justify-between gap-4">
                 <div>
@@ -207,7 +206,7 @@
                 </a>
             </div>
         </article>
-        @endif
+        @endunless
     </div>
 
     @if($errors->any())

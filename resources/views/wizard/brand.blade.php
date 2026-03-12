@@ -1168,20 +1168,20 @@
                 <p class="mt-1 text-sm text-gray-600">Aree principali collegate al profilo brand.</p>
                 <div class="mt-4 space-y-2">
                     <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Wizard Piano</p>
-                        <p class="mt-1 text-xs text-gray-600">Imposta strategia e periodo contenuti.</p>
+                        <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
+                        <p class="mt-1 text-xs text-gray-600">Imposta strategia, volume e periodo dei contenuti.</p>
                     </a>
                     <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Calendario</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla distribuzione uscite.</p>
+                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
+                        <p class="mt-1 text-xs text-gray-600">Controlla distribuzione uscite e copertura dei giorni.</p>
                     </a>
                     <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                         <p class="mt-1 text-xs text-gray-600">Gestisci post e output AI.</p>
                     </a>
                     <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Settings</p>
-                        <p class="mt-1 text-xs text-gray-600">Configura opzioni applicazione.</p>
+                        <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
+                        <p class="mt-1 text-xs text-gray-600">Configura Meta, notifiche e opzioni del workspace.</p>
                     </a>
                 </div>
             </div>

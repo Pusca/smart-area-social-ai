@@ -30,10 +30,10 @@
     <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
             <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Content Library</div>
-                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Gestione contenuti</h1>
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Libreria contenuti</div>
+                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Tutti i contenuti in un solo posto</h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    Vista operativa su post, avanzamento AI, pubblicazioni e coda da completare.
+                    Qui rivedi cosa e stato creato, cosa sta ancora lavorando e cosa e pronto per andare in calendario o online.
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -52,14 +52,14 @@
             <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
+                        Apri area crea
+                    </a>
                     <a href="{{ route('posts.reels.create') }}" class="ui-btn-primary justify-center">
                         Crea reel
                     </a>
-                    <a href="{{ route('posts.create') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Nuovo contenuto
-                    </a>
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri calendario
+                        Vai alla pianificazione
                     </a>
                     <a href="{{ route('wizard.start') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Piano editoriale
@@ -325,24 +325,28 @@
             </div>
 
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Collegamenti utili</h2>
-                <p class="mt-1 text-sm text-gray-600">Aree collegate alla libreria contenuti.</p>
+                <h2 class="text-lg font-semibold text-gray-900">Dove andare dopo</h2>
+                <p class="mt-1 text-sm text-gray-600">I collegamenti piu utili quando hai finito di rivedere la libreria.</p>
                 <div class="mt-4 space-y-2">
+                    <a href="{{ route('posts.create') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Area crea</p>
+                        <p class="mt-1 text-xs text-gray-600">Apri il punto di partenza per contenuti singoli, reel o piani.</p>
+                    </a>
                     <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Calendario</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla pianificazione settimanale.</p>
+                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
+                        <p class="mt-1 text-xs text-gray-600">Controlla la distribuzione dei contenuti e le prossime uscite.</p>
                     </a>
                     <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Profilo Brand</p>
-                        <p class="mt-1 text-xs text-gray-600">Aggiorna tono, asset e linee guida.</p>
+                        <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
+                        <p class="mt-1 text-xs text-gray-600">Migliora materiali e riferimenti che guidano le prossime generazioni.</p>
                     </a>
                     <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Wizard Piano</p>
-                        <p class="mt-1 text-xs text-gray-600">Definisci strategia e frequenza.</p>
+                        <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
+                        <p class="mt-1 text-xs text-gray-600">Costruisci un insieme di contenuti con logica di periodo.</p>
                     </a>
                     <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Settings</p>
-                        <p class="mt-1 text-xs text-gray-600">Configura opzioni operative dell'app.</p>
+                        <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
+                        <p class="mt-1 text-xs text-gray-600">Rivedi Meta, notifiche e preferenze operative.</p>
                     </a>
                 </div>
             </div>

@@ -119,13 +119,13 @@
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Torna ai contenuti
+                        Apri libreria
                     </a>
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri calendario
+                        Vai alla pianificazione
                     </a>
                     <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
-                        Nuovo contenuto
+                        Apri area crea
                     </a>
                 </div>
             </div>

@@ -36,7 +36,7 @@
         <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
             <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
                 <div>
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Calendar Overview</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Pianifica</div>
                     <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Calendario editoriale</h1>
                     <p class="mt-3 max-w-2xl text-sm text-gray-600">
                         Settimana {{ $weekStart->format('d/m') }} - {{ $weekEnd->format('d/m') }}: avanzamento pubblicazioni, copertura giorni e stato AI.
@@ -58,23 +58,26 @@
                     </div>
                 </div>
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
-                    <div class="mt-3 grid grid-cols-1 gap-2">
-                        <a href="{{ route('calendar', ['date' => $prevDate]) }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            Settimana precedente
+            <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
+                <div class="mt-3 grid grid-cols-1 gap-2">
+                    <a href="{{ route('wizard.start') }}" class="ui-btn-primary justify-center">
+                        Nuovo piano editoriale
+                    </a>
+                    <a href="{{ route('posts.create') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Apri area crea
+                    </a>
+                    <a href="{{ route('calendar', ['date' => $prevDate]) }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Settimana precedente
+                    </a>
+                    <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Torna a oggi
                         </a>
-                        <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            Torna a oggi
-                        </a>
-                        <a href="{{ route('calendar', ['date' => $nextDate]) }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            Settimana successiva
-                        </a>
-                        <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
-                            Nuovo contenuto
-                        </a>
-                    </div>
+                    <a href="{{ route('calendar', ['date' => $nextDate]) }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Settimana successiva
+                    </a>
                 </div>
+            </div>
             </div>
         </div>
 
@@ -270,25 +273,29 @@
                 </div>
 
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h2 class="text-lg font-semibold text-gray-900">Collegamenti utili</h2>
-                    <p class="mt-1 text-sm text-gray-600">Funzioni principali collegate al calendario.</p>
+                    <h2 class="text-lg font-semibold text-gray-900">Aree collegate</h2>
+                    <p class="mt-1 text-sm text-gray-600">Le funzioni che usi di piu quando stai pianificando o sistemando una settimana.</p>
 
                     <div class="mt-4 space-y-2">
+                        <a href="{{ route('posts.create') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                            <p class="text-sm font-semibold text-gray-900">Area crea</p>
+                            <p class="mt-1 text-xs text-gray-600">Apri contenuti singoli, reel o nuovi piani da un solo punto.</p>
+                        </a>
                         <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                            <p class="text-sm font-semibold text-gray-900">Nuovo piano editoriale</p>
-                            <p class="mt-1 text-xs text-gray-600">Definisci strategia e frequenza contenuti.</p>
+                            <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
+                            <p class="mt-1 text-xs text-gray-600">Definisci strategia, volume e orizzonte dei contenuti.</p>
                         </a>
                         <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                            <p class="text-sm font-semibold text-gray-900">Profilo Brand</p>
-                            <p class="mt-1 text-xs text-gray-600">Aggiorna linea editoriale e asset base.</p>
+                            <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
+                            <p class="mt-1 text-xs text-gray-600">Aggiorna i riferimenti che aiutano caption, visual e reel.</p>
                         </a>
                         <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                             <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                             <p class="mt-1 text-xs text-gray-600">Modifica post, stati e dettagli AI.</p>
                         </a>
                         <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                            <p class="text-sm font-semibold text-gray-900">Settings</p>
-                            <p class="mt-1 text-xs text-gray-600">Configura notifiche e opzioni operative.</p>
+                            <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
+                            <p class="mt-1 text-xs text-gray-600">Rivedi Meta, notifiche e configurazione operativa.</p>
                         </a>
                     </div>
                 </div>

@@ -187,7 +187,7 @@
 
                 <div class="flex flex-wrap items-center justify-end gap-2">
                     <a href="{{ route('posts.index') }}" class="ui-btn-secondary">
-                        Vai ai contenuti
+                        Apri libreria
                     </a>
                     <button type="submit" class="ui-btn-primary">
                         Continua al riepilogo

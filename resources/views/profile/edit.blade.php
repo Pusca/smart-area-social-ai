@@ -1,7 +1,7 @@
 <x-app-layout>
     <section class="ui-shell ui-page space-y-5">
         <div class="ui-card p-6">
-            <div class="ui-kicker">Account Settings</div>
+            <div class="ui-kicker">Account</div>
             <h1 class="mt-2 ui-title-xl">{{ __('Profile') }}</h1>
             <p class="mt-2 ui-subtitle">Aggiorna dati account, password e impostazioni di sicurezza.</p>
         </div>

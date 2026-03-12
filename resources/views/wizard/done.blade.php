@@ -330,12 +330,12 @@
                 <p class="mt-1 text-sm text-gray-600">Aree operative collegate al wizard.</p>
                 <div class="mt-4 space-y-2">
                     <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Profilo Brand</p>
-                        <p class="mt-1 text-xs text-gray-600">Aggiorna base strategica e assets.</p>
+                        <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
+                        <p class="mt-1 text-xs text-gray-600">Aggiorna base strategica, riferimenti e materiali.</p>
                     </a>
                     <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Calendario</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla distribuzione settimanale.</p>
+                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
+                        <p class="mt-1 text-xs text-gray-600">Controlla distribuzione settimanale e prossime uscite.</p>
                     </a>
                     <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>

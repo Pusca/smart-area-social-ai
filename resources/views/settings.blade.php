@@ -14,10 +14,10 @@
     <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
             <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">System Settings</div>
-                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Impostazioni app</h1>
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">App e connessioni</div>
+                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Impostazioni operative del workspace</h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    Gestisci installazione PWA, notifiche push, connessioni Meta e configurazioni operative di base.
+                    Qui raccogli tutto quello che riguarda dispositivo, notifiche, Meta e collegamenti tecnici dell'app.
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -37,19 +37,22 @@
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
                     <a href="{{ route('dashboard') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Torna dashboard
+                        Torna alla panoramica
+                    </a>
+                    <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Vai alla pianificazione
                     </a>
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Vai ai contenuti
-                    </a>
-                    <a href="{{ route('profile.brand') }}" class="ui-btn-primary justify-center">
-                        Apri profilo brand
+                        Apri libreria
                     </a>
                     @if($metaReady)
                         <a href="{{ route('settings.social.meta.redirect') }}" class="inline-flex items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-700 hover:bg-cyan-100">
                             Collega Meta
                         </a>
                     @endif
+                    <a href="{{ route('profile.brand') }}" class="ui-btn-primary justify-center">
+                        Brand e asset
+                    </a>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
                         <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
@@ -256,20 +259,24 @@
             </div>
 
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Collegamenti utili</h2>
-                <p class="mt-1 text-sm text-gray-600">Aree collegate alla configurazione applicativa.</p>
+                <h2 class="text-lg font-semibold text-gray-900">Aree collegate</h2>
+                <p class="mt-1 text-sm text-gray-600">I punti del workspace che di solito seguono la fase di configurazione.</p>
                 <div class="mt-4 space-y-2">
                     <a href="{{ route('dashboard') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Dashboard</p>
+                        <p class="text-sm font-semibold text-gray-900">Panoramica</p>
                         <p class="mt-1 text-xs text-gray-600">Panoramica generale dell'app.</p>
                     </a>
                     <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Calendario</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla pianificazione editoriale.</p>
+                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
+                        <p class="mt-1 text-xs text-gray-600">Controlla calendario, uscite e copertura editoriale.</p>
                     </a>
                     <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                         <p class="mt-1 text-xs text-gray-600">Gestisci post, stati e output AI.</p>
+                    </a>
+                    <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
+                        <p class="mt-1 text-xs text-gray-600">Aggiorna riferimenti e materiali che guidano l'AI.</p>
                     </a>
                 </div>
             </div>

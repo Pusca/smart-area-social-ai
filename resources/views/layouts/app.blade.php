@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <title>{{ config('app.name', 'Social AI') }}</title>
-    <meta name="theme-color" content="#1737B6">
+    <meta name="theme-color" content="#0E3B8F">
     <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -13,23 +13,24 @@
 <body class="overflow-x-hidden font-sans antialiased bg-app text-text">
     @php
         $desktopNavItems = [
-            ['route' => 'dashboard', 'label' => 'Home', 'active' => 'dashboard'],
-            ['route' => 'calendar', 'label' => 'Calendario', 'active' => 'calendar'],
-            ['route' => 'posts.index', 'label' => 'Contenuti', 'active' => 'posts*'],
-            ['route' => 'profile.brand', 'label' => 'Brand', 'active' => 'profile.brand*'],
+            ['route' => 'dashboard', 'label' => 'Panoramica', 'active' => ['dashboard']],
+            ['route' => 'calendar', 'label' => 'Pianifica', 'active' => ['calendar', 'wizard*', 'plans.generating']],
+            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create', 'posts.reels.create']],
+            ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
+            ['route' => 'profile.brand', 'label' => 'Brand', 'active' => ['profile.brand*']],
         ];
         $mobileNavItems = [
-            ['route' => 'dashboard', 'label' => 'Home', 'active' => 'dashboard'],
-            ['route' => 'calendar', 'label' => 'Agenda', 'active' => 'calendar'],
-            ['route' => 'posts.index', 'label' => 'Contenuti', 'active' => 'posts*'],
-            ['route' => 'profile.brand', 'label' => 'Brand', 'active' => 'profile.brand*'],
+            ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
+            ['route' => 'calendar', 'label' => 'Piano', 'active' => ['calendar', 'wizard*', 'plans.generating']],
+            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create', 'posts.reels.create']],
+            ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
         ];
     @endphp
 
     <div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div class="absolute -left-24 top-0 h-80 w-80 rounded-full bg-cyan-200/25 blur-3xl"></div>
-        <div class="absolute right-0 top-0 h-96 w-96 rounded-full bg-blue-200/20 blur-3xl"></div>
-        <div class="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-cyan-100/25 blur-3xl"></div>
+        <div class="absolute -left-24 top-0 h-80 w-80 rounded-full blur-3xl" style="background: rgba(79, 215, 255, 0.22);"></div>
+        <div class="absolute right-0 top-0 h-96 w-96 rounded-full blur-3xl" style="background: rgba(2, 23, 56, 0.16);"></div>
+        <div class="absolute bottom-0 left-1/3 h-72 w-72 rounded-full blur-3xl" style="background: rgba(156, 235, 255, 0.22);"></div>
     </div>
 
     <div class="min-h-screen">
@@ -41,9 +42,13 @@
 
                 <nav class="flex items-center gap-2 text-sm">
                     @foreach($desktopNavItems as $item)
+                        @php
+                            $patterns = \Illuminate\Support\Arr::wrap($item['active']);
+                            $isActive = collect($patterns)->contains(fn ($pattern) => request()->routeIs($pattern));
+                        @endphp
                         <a
                             href="{{ route($item['route']) }}"
-                            class="{{ request()->routeIs($item['active']) ? 'ui-nav-link-active' : 'ui-nav-link' }}"
+                            class="{{ $isActive ? 'ui-nav-link-active' : 'ui-nav-link' }}"
                         >
                             {{ $item['label'] }}
                         </a>
@@ -68,28 +73,16 @@
                     <x-application-logo class="h-9 w-auto" />
                 </a>
 
-                <div class="flex items-center gap-2">
-                    <a
-                        href="{{ route('posts.create') }}"
-                        class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-brand bg-brand-soft text-brand transition hover:bg-white"
-                        aria-label="Nuovo contenuto"
-                        title="Nuovo contenuto"
-                    >
-                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path d="M10 4a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 10 4Z"/>
-                        </svg>
-                    </a>
-                    <a
-                        href="{{ route('settings') }}"
-                        class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-app bg-surface-2 text-gray-700 transition hover:bg-white"
-                        aria-label="Account"
-                        title="Account"
-                    >
-                        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path d="M10 2.75a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5ZM5.5 6.5a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.52 15.1a5.75 5.75 0 0 1 5.32-3.6h2.32a5.75 5.75 0 0 1 5.32 3.6.75.75 0 1 1-1.39.56A4.25 4.25 0 0 0 11.16 13H8.84a4.25 4.25 0 0 0-3.93 2.66.75.75 0 1 1-1.39-.56Z"/>
-                        </svg>
-                    </a>
-                </div>
+                <a
+                    href="{{ route('settings') }}"
+                    class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-app bg-surface-2 text-gray-700 transition hover:bg-white"
+                    aria-label="Account"
+                    title="Account"
+                >
+                    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path d="M10 2.75a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5ZM5.5 6.5a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.52 15.1a5.75 5.75 0 0 1 5.32-3.6h2.32a5.75 5.75 0 0 1 5.32 3.6.75.75 0 1 1-1.39.56A4.25 4.25 0 0 0 11.16 13H8.84a4.25 4.25 0 0 0-3.93 2.66.75.75 0 1 1-1.39-.56Z"/>
+                    </svg>
+                </a>
             </div>
         </header>
 
@@ -114,9 +107,13 @@
         <div class="mx-auto max-w-7xl px-3 pb-[env(safe-area-inset-bottom)]">
             <div class="grid grid-cols-4 gap-2 py-2 text-center text-[11px]">
                 @foreach($mobileNavItems as $item)
+                    @php
+                        $patterns = \Illuminate\Support\Arr::wrap($item['active']);
+                        $isActive = collect($patterns)->contains(fn ($pattern) => request()->routeIs($pattern));
+                    @endphp
                     <a
                         href="{{ route($item['route']) }}"
-                        class="touch-manipulation select-none rounded-2xl px-2 py-3 {{ request()->routeIs($item['active']) ? 'bg-brand text-white font-semibold shadow-lg shadow-blue-900/10' : 'text-gray-700 hover:bg-surface-2' }}"
+                        class="touch-manipulation select-none rounded-2xl px-2 py-3 {{ $isActive ? 'bg-brand text-white font-semibold shadow-lg shadow-blue-900/10' : 'text-gray-700 hover:bg-surface-2' }}"
                     >
                         {{ $item['label'] }}
                     </a>
