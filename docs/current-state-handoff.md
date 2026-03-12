@@ -26,6 +26,18 @@ Ultimo aggiornamento: 2026-03-12
   - trigger su generazione AI, publish Meta e connessioni social
   - route/pagina inbox non piu esposte in navigazione
   - da riusare come sorgente per vere push browser/app
+- Platform admin ristretto a un solo accesso autorizzato:
+  - la dashboard admin esiste gia su `/admin`
+  - ora il controllo non si basa piu solo sul `role`, ma anche su una whitelist email
+  - default attuale: `puscastanislav0@gmail.com`
+  - comando disponibile per creare/aggiornare l account admin:
+    - `php artisan platform-admin:ensure --email=... --password=... --name=...`
+  - il platform admin puo avere `tenant_id = null`
+  - la dashboard admin mostra:
+    - tutti i tenant
+    - tutte le utenze registrate
+    - utenze collegate a ogni tenant
+    - metriche base su piani, contenuti e stato AI
 - UX attesa generazione migliorata:
   - overlay animato su create/edit/wizard generate
   - stima tempi e stato macchina in lavorazione

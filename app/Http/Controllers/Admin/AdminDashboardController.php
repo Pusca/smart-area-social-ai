@@ -16,32 +16,19 @@ use Illuminate\Support\Str;
 
 class AdminDashboardController extends Controller
 {
-    /**
-     * @return array<int, string>
-     */
-    private function adminRoles(): array
-    {
-        return ['admin', 'super_admin'];
-    }
-
     public function index(Request $request)
     {
-        $adminRoles = $this->adminRoles();
-
         $allUsers = User::query()
             ->with('tenant')
             ->orderByDesc('id')
             ->get();
 
-        $adminUsers = $allUsers->filter(function (User $user) use ($adminRoles) {
-            $role = strtolower(trim((string) ($user->role ?? '')));
-            return in_array($role, $adminRoles, true);
-        })->values();
+        $adminUsers = $allUsers->filter(fn (User $user) => $user->isPlatformAdmin())->values();
 
-        $managedUsers = $allUsers->filter(function (User $user) use ($adminRoles) {
-            $role = strtolower(trim((string) ($user->role ?? '')));
-            return !in_array($role, $adminRoles, true);
-        })->values();
+        $managedUsers = $allUsers->reject(fn (User $user) => $user->isPlatformAdmin())->values();
+        $usersByTenant = $managedUsers
+            ->filter(fn (User $user) => $user->tenant_id !== null)
+            ->groupBy(fn (User $user) => (int) $user->tenant_id);
 
         $tenants = Tenant::query()
             ->orderByDesc('id')
@@ -86,7 +73,8 @@ class AdminDashboardController extends Controller
             $planAgg,
             $assetAgg,
             $profileAgg,
-            $lastActivityRaw
+            $lastActivityRaw,
+            $usersByTenant
         ) {
             $tenantId = (int) $tenant->id;
             $content = $contentAgg->get($tenantId);
@@ -94,6 +82,7 @@ class AdminDashboardController extends Controller
             $asset = $assetAgg->get($tenantId);
             $profile = $profileAgg->get($tenantId);
             $lastAct = $lastActivityRaw->get($tenantId);
+            $tenantUsers = $usersByTenant->get($tenantId, collect())->values();
 
             $lastActivityAt = $lastAct && !empty($lastAct->last_activity_at)
                 ? Carbon::parse((string) $lastAct->last_activity_at)
@@ -108,6 +97,11 @@ class AdminDashboardController extends Controller
                 'ai_queued' => (int) ($content->ai_queued ?? 0),
                 'ai_error' => (int) ($content->ai_error ?? 0),
                 'assets_total' => (int) ($asset->total ?? 0),
+                'users' => $tenantUsers->map(fn (User $user) => [
+                    'name' => (string) ($user->name ?: 'Utente'),
+                    'email' => (string) $user->email,
+                    'role' => (string) ($user->role ?: 'editor'),
+                ])->all(),
                 'brand_completed_at' => !empty($profile->completed_at) ? Carbon::parse((string) $profile->completed_at) : null,
                 'last_activity_at' => $lastActivityAt,
                 'is_active_recently' => $lastActivityAt ? $lastActivityAt->gte(now()->subDays(7)) : false,
@@ -145,8 +139,7 @@ class AdminDashboardController extends Controller
 
     public function updateUserTenant(Request $request, User $user): RedirectResponse
     {
-        $adminRoles = $this->adminRoles();
-        if (in_array(strtolower(trim((string) ($user->role ?? ''))), $adminRoles, true)) {
+        if ($user->isPlatformAdmin()) {
             return back()->with('status', 'Non puoi modificare il tenant di un utente admin.');
         }
 

@@ -53,4 +53,30 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Tenant::class);
     }
+
+    public function hasPlatformAdminRole(): bool
+    {
+        $role = strtolower(trim((string) ($this->role ?? '')));
+
+        return in_array($role, ['admin', 'super_admin'], true);
+    }
+
+    public function isPlatformAdmin(): bool
+    {
+        if (!$this->hasPlatformAdminRole()) {
+            return false;
+        }
+
+        $email = strtolower(trim((string) ($this->email ?? '')));
+        if ($email === '') {
+            return false;
+        }
+
+        $authorizedEmails = array_values(array_filter(array_map(
+            static fn ($value) => strtolower(trim((string) $value)),
+            (array) config('platform_admin.authorized_emails', [])
+        )));
+
+        return in_array($email, $authorizedEmails, true);
+    }
 }

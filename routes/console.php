@@ -9,6 +9,39 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Artisan::command('platform-admin:ensure {--email=} {--password=} {--name=}', function () {
+    $email = strtolower(trim((string) ($this->option('email') ?: config('platform_admin.default_email'))));
+    $password = trim((string) ($this->option('password') ?: env('PLATFORM_ADMIN_PASSWORD', '')));
+    $name = trim((string) ($this->option('name') ?: config('platform_admin.default_name', 'Social AI Admin')));
+
+    if ($email === '') {
+        $this->error('Email admin mancante.');
+        return self::FAILURE;
+    }
+
+    if ($password === '') {
+        $this->error('Password admin mancante. Passa --password oppure imposta PLATFORM_ADMIN_PASSWORD.');
+        return self::FAILURE;
+    }
+
+    /** @var \App\Models\User $user */
+    $user = \App\Models\User::query()->firstOrNew(['email' => $email]);
+    $user->name = $name !== '' ? $name : 'Social AI Admin';
+    $user->password = $password;
+    $user->tenant_id = null;
+    $user->role = 'super_admin';
+    if ($user->email_verified_at === null) {
+        $user->email_verified_at = now();
+    }
+    $user->save();
+
+    $this->info("Platform admin pronto: {$user->email}");
+    $this->line('Ruolo: super_admin');
+    $this->line('Tenant: nessuno');
+
+    return self::SUCCESS;
+})->purpose('Create or update the single platform admin account');
+
 Artisan::command('media:backfill-video-thumbnails {--tenant=} {--limit=300} {--dry-run}', function () {
     $tenant = (int) ($this->option('tenant') ?: 0);
     $limit = max(1, min(5000, (int) ($this->option('limit') ?: 300)));

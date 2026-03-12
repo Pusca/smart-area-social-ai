@@ -163,6 +163,7 @@
                             <tr>
                                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Tenant</th>
                                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Utenti</th>
+                                <th class="px-3 py-2 text-left font-semibold text-gray-600">Utenze collegate</th>
                                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Piani</th>
                                 <th class="px-3 py-2 text-left font-semibold text-gray-600">Contenuti</th>
                                 <th class="px-3 py-2 text-left font-semibold text-gray-600">AI done/queued/error</th>
@@ -179,6 +180,17 @@
                                         <p class="text-xs text-gray-500">#{{ $tenant->id }} - {{ $tenant->slug }}</p>
                                     </td>
                                     <td class="px-3 py-2 align-top text-gray-700">{{ (int) $row['users_total'] }}</td>
+                                    <td class="px-3 py-2 align-top">
+                                        <div class="flex min-w-[220px] flex-wrap gap-1.5">
+                                            @forelse($row['users'] as $tenantUser)
+                                                <span class="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                                                    {{ $tenantUser['email'] }}
+                                                </span>
+                                            @empty
+                                                <span class="text-xs text-gray-500">Nessuna utenza collegata</span>
+                                            @endforelse
+                                        </div>
+                                    </td>
                                     <td class="px-3 py-2 align-top text-gray-700">{{ (int) $row['plans_total'] }}</td>
                                     <td class="px-3 py-2 align-top text-gray-700">{{ (int) $row['contents_total'] }}</td>
                                     <td class="px-3 py-2 align-top text-gray-700">
@@ -205,7 +217,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="px-3 py-6 text-center text-sm text-gray-600">
+                                    <td colspan="8" class="px-3 py-6 text-center text-sm text-gray-600">
                                         Nessun tenant disponibile.
                                     </td>
                                 </tr>
