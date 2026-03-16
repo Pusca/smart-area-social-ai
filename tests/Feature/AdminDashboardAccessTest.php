@@ -4,14 +4,23 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class AdminDashboardAccessTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Tenant::flushSchemaSupportCache();
+    }
 
     public function test_authorized_platform_admin_can_access_admin_dashboard(): void
     {
@@ -40,6 +49,40 @@ class AdminDashboardAccessTest extends TestCase
             ->assertOk()
             ->assertSee('Controllo account e tenant')
             ->assertSee('tenant-admin');
+    }
+
+    public function test_platform_admin_dashboard_still_loads_when_limits_column_is_missing(): void
+    {
+        Schema::table('tenants', function (Blueprint $table) {
+            $table->dropColumn('limits');
+        });
+
+        Tenant::flushSchemaSupportCache();
+
+        $tenant = Tenant::create([
+            'name' => 'Tenant Senza Limits',
+            'slug' => 'tenant-senza-limits',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        User::factory()->create([
+            'tenant_id' => $tenant->id,
+            'role' => 'owner',
+        ]);
+
+        $admin = User::factory()->create([
+            'email' => 'puscastanislav0@gmail.com',
+            'tenant_id' => null,
+            'role' => 'super_admin',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Controllo account e tenant');
+
+        Tenant::flushSchemaSupportCache();
     }
 
     public function test_non_authorized_admin_email_gets_forbidden_on_admin_dashboard(): void

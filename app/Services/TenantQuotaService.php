@@ -125,7 +125,7 @@ class TenantQuotaService
 
     private function limitValue(?Tenant $tenant, string $key): ?int
     {
-        if (!$tenant) {
+        if (!$tenant || !Tenant::supportsLimitsColumn()) {
             return null;
         }
 
