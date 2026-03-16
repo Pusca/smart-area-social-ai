@@ -12,7 +12,8 @@ use Illuminate\Support\Str;
 class GuidedAssetVariableService
 {
     public function __construct(
-        private readonly AssetVariableService $assetVariableService
+        private readonly AssetVariableService $assetVariableService,
+        private readonly AssetIdentityService $assetIdentityService
     ) {
     }
 
@@ -113,14 +114,30 @@ class GuidedAssetVariableService
                 'role' => trim((string) ($data['persona_role'] ?? '')),
                 'identity_summary' => trim((string) ($data['description'] ?? '')),
                 'immutable_traits' => trim((string) ($data['immutable_traits'] ?? '')),
+                'descriptor' => [
+                    'summary' => trim((string) ($data['description'] ?? '')),
+                    'stable_traits' => trim((string) ($data['immutable_traits'] ?? '')),
+                ],
                 'look_notes' => trim((string) ($data['look_notes'] ?? '')),
                 'styling_notes' => trim((string) ($data['styling_notes'] ?? '')),
+                'prompt_lock' => [
+                    'immutable_elements' => trim((string) ($data['immutable_traits'] ?? '')),
+                    'lock_copy' => trim((string) ($data['immutable_traits'] ?? '')),
+                ],
+                'allowed_transforms' => $this->assetIdentityService->parseAllowedTransforms([
+                    'pose variation',
+                    'camera angle variation',
+                    'lighting adaptation',
+                    'seasonal props',
+                    'brand styling changes',
+                ]),
                 'prompt_notes' => trim((string) ($data['prompt_notes'] ?? '')),
                 'usage_notes' => trim((string) ($data['usage_notes'] ?? '')),
                 'shot_count' => count($shotSummary),
                 'shot_summary' => $shotSummary,
                 'recommended_prompt' => $this->buildRecommendedPrompt($name, $data, $shotSummary, $referenceVideoPath),
                 'preferred_still_asset_id' => $primaryStillAssetId,
+                'canonical_asset_id' => $primaryStillAssetId,
                 'reference_video_asset_id' => $referenceVideoAssetId,
                 'reference_video_path' => $referenceVideoPath,
                 'created_from_brand_center' => true,
@@ -131,22 +148,20 @@ class GuidedAssetVariableService
                 'name' => $name,
                 'slug' => $slug,
                 'kind' => 'person',
+                'asset_role' => 'presenter',
                 'description' => trim((string) ($data['description'] ?? '')),
                 'asset_ids' => array_values(array_unique(array_filter(array_map(
                     fn ($id) => (int) $id,
                     $assetIds
                 ), fn ($id) => $id > 0))),
+                'canonical_asset_id' => $primaryStillAssetId,
+                'identity_mode' => 'strict',
+                'consistency_threshold' => 92,
                 'profile' => $profile,
                 'is_active' => true,
             ]);
 
-            foreach ($assets as $asset) {
-                $meta = is_array($asset->meta) ? $asset->meta : [];
-                $meta['linked_variable_id'] = (int) $variable->id;
-                $meta['linked_variable_slug'] = (string) $variable->slug;
-                $asset->meta = $meta;
-                $asset->save();
-            }
+            $this->assetIdentityService->syncAssetMetaForVariable($variable, $assetIds);
 
             return [
                 'variable' => $variable,

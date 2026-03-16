@@ -81,6 +81,19 @@
         fn ($v) => (int) $v,
         array_filter($selectedVariableIds, fn ($v) => (int) $v > 0)
     )));
+    $presenterVariables = array_values(array_filter($assetVariables, fn ($var) => (($var['kind'] ?? null) === 'person')));
+    $productVariables = array_values(array_filter($assetVariables, fn ($var) => (($var['kind'] ?? null) === 'product')));
+    $placeVariables = array_values(array_filter($assetVariables, fn ($var) => (($var['kind'] ?? null) === 'location')));
+    $selectedPresenterId = (int) old('presenter_variable_id', 0);
+    $selectedProductId = (int) old('product_variable_id', 0);
+    $selectedPlaceId = (int) old('place_variable_id', 0);
+    $selectedConsistencyMode = old('consistency_mode', 'balanced');
+    $seasonalOverlay = old('seasonal_overlay', '');
+    $consistencyModeOptions = [
+        'strict' => 'Strict',
+        'balanced' => 'Balanced',
+        'creative' => 'Creative',
+    ];
     $briefPlaceholder = $isReelPreset
         ? "Es. Crea un reel per Instagram che apra con un hook forte, mostri due o tre scene reali del locale e chiuda con un payoff visivo coerente col brand."
         : "Es. Crea un post su Jaguar usando l'ultima immagine caricata e il logo sullo sfondo.";
@@ -359,6 +372,67 @@
                             @endforeach
                         </div>
                     @endif
+                </div>
+
+                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h2 class="text-lg font-semibold text-gray-900">Identita da preservare</h2>
+                        <span class="text-xs font-semibold text-gray-500">Presenter / product / place</span>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-600">
+                        Questi slot spingono la generazione verso identita persistenti: stessa persona, stesso prodotto, stesso luogo, con variazioni controllate.
+                    </p>
+
+                    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div>
+                            <label for="presenter_variable_id" class="mb-1 block text-sm font-semibold text-gray-700">Presenter</label>
+                            <select id="presenter_variable_id" name="presenter_variable_id" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                <option value="">Nessuno</option>
+                                @foreach($presenterVariables as $var)
+                                    <option value="{{ (int) ($var['id'] ?? 0) }}" @selected($selectedPresenterId === (int) ($var['id'] ?? 0))>
+                                        {{ (string) ($var['name'] ?? 'Presenter') }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="product_variable_id" class="mb-1 block text-sm font-semibold text-gray-700">Product</label>
+                            <select id="product_variable_id" name="product_variable_id" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                <option value="">Nessuno</option>
+                                @foreach($productVariables as $var)
+                                    <option value="{{ (int) ($var['id'] ?? 0) }}" @selected($selectedProductId === (int) ($var['id'] ?? 0))>
+                                        {{ (string) ($var['name'] ?? 'Product') }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="place_variable_id" class="mb-1 block text-sm font-semibold text-gray-700">Place</label>
+                            <select id="place_variable_id" name="place_variable_id" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                <option value="">Nessuno</option>
+                                @foreach($placeVariables as $var)
+                                    <option value="{{ (int) ($var['id'] ?? 0) }}" @selected($selectedPlaceId === (int) ($var['id'] ?? 0))>
+                                        {{ (string) ($var['name'] ?? 'Place') }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="seasonal_overlay" class="mb-1 block text-sm font-semibold text-gray-700">Overlay stagionale o tema</label>
+                            <input id="seasonal_overlay" type="text" name="seasonal_overlay" value="{{ $seasonalOverlay }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Es. Natale, back to school, summer drop, promo weekend" />
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label for="consistency_mode" class="mb-1 block text-sm font-semibold text-gray-700">Consistency mode</label>
+                            <select id="consistency_mode" name="consistency_mode" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($consistencyModeOptions as $modeValue => $modeLabel)
+                                    <option value="{{ $modeValue }}" @selected($selectedConsistencyMode === $modeValue)>{{ $modeLabel }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Strict forza maggiore fedelta all'identita, Balanced lascia piu regia mantenendo il soggetto, Creative allenta il vincolo se vuoi piu variazione.
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">

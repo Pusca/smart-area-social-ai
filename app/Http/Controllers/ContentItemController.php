@@ -7,6 +7,7 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\ContentMediaPreviewService;
 use App\Services\Editorial\EditorialStrategyService;
@@ -27,6 +28,7 @@ class ContentItemController extends Controller
 {
     public function __construct(
         private readonly MemoryBuilderService $memoryBuilder,
+        private readonly AssetIdentityService $assetIdentityService,
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentMediaPreviewService $mediaPreviewService,
         private readonly AssetVariableService $assetVariableService,
@@ -210,6 +212,11 @@ class ContentItemController extends Controller
             'reference_asset_ids.*' => 'integer',
             'asset_variable_ids' => 'nullable|array',
             'asset_variable_ids.*' => 'integer',
+            'presenter_variable_id' => 'nullable|integer',
+            'product_variable_id' => 'nullable|integer',
+            'place_variable_id' => 'nullable|integer',
+            'seasonal_overlay' => 'nullable|string|max:160',
+            'consistency_mode' => 'nullable|string|in:strict,balanced,creative',
         ]);
 
         $platforms = $this->extractPlatforms($request, $data);
@@ -267,16 +274,22 @@ class ContentItemController extends Controller
             fn ($v) => (int) $v,
             array_filter((array) ($data['reference_asset_ids'] ?? []), fn ($v) => (int) $v > 0)
         )));
-        $requestedVariableIds = array_values(array_unique(array_map(
+        $slotVariableIds = array_values(array_unique(array_filter([
+            (int) ($data['presenter_variable_id'] ?? 0),
+            (int) ($data['product_variable_id'] ?? 0),
+            (int) ($data['place_variable_id'] ?? 0),
+        ], fn ($v) => (int) $v > 0)));
+        $requestedVariableIds = array_values(array_unique(array_merge(array_map(
             fn ($v) => (int) $v,
             array_filter((array) ($data['asset_variable_ids'] ?? []), fn ($v) => (int) $v > 0)
-        )));
+        ), $slotVariableIds)));
 
         $assetVariableRefs = $this->assetVariableService->resolveForBrief(
             tenantId: $tenantId,
             brief: $brief,
             requestedIds: $requestedVariableIds
         );
+        $assetIdentity = $this->buildAssetIdentityContext($data, $assetVariableRefs);
 
         if ($strictAssetMode && !empty($requestedVariableIds) && empty((array) ($assetVariableRefs['resolved_ids'] ?? []))) {
             return back()
@@ -344,6 +357,7 @@ class ContentItemController extends Controller
         $item->hashtags = [];
         $item->assets = [];
         $item->source_refs = array_merge(
+            $this->buildSourceRefsFromAssetIdentity($assetIdentity),
             $this->buildSourceRefsFromAssetVariables($assetVariableRefs),
             $this->buildSourceRefsFromExplicitImageReferences($explicitImageReferences)
         );
@@ -357,6 +371,7 @@ class ContentItemController extends Controller
             'brand_assets' => $assets,
             'image_references' => $explicitImageReferences,
             'asset_variables' => $assetVariableRefs,
+            'asset_identity' => $assetIdentity,
             'plan' => [
                 'goal' => $goalHint !== '' ? $goalHint : data_get($plan->settings, 'goal'),
                 'tone' => data_get($plan->settings, 'tone', $profile?->default_tone),
@@ -374,7 +389,7 @@ class ContentItemController extends Controller
                 'objective' => $goalHint !== '' ? $goalHint : 'Awareness',
                 'key_points' => [$brief],
                 'cta' => (string) ($profile?->cta ?: 'Scrivici per maggiori informazioni.'),
-                'image_direction' => $this->buildImageDirectionWithVariables($brief, $assetVariableRefs),
+                'image_direction' => $this->buildImageDirectionWithVariables($brief, $assetVariableRefs, $assetIdentity),
                 'series_name' => 'contenuto-singolo',
                 'series_step' => 1,
                 'standalone_rule' => 'Il contenuto deve essere completo anche se letto singolarmente.',
@@ -801,12 +816,12 @@ class ContentItemController extends Controller
         return $out;
     }
 
-    private function buildImageDirectionWithVariables(string $brief, array $assetVariableRefs): string
+    private function buildImageDirectionWithVariables(string $brief, array $assetVariableRefs, array $assetIdentity = []): string
     {
         $base = 'Visual coerente con il brand e con questo brief: ' . Str::limit($brief, 220, '');
         $resolved = is_array($assetVariableRefs['resolved'] ?? null) ? $assetVariableRefs['resolved'] : [];
         if (empty($resolved)) {
-            return $base;
+            return $this->appendAssetIdentityDirections($base, $assetIdentity);
         }
 
         $labels = [];
@@ -823,7 +838,7 @@ class ContentItemController extends Controller
         }
 
         if (empty($labels)) {
-            return $base;
+            return $this->appendAssetIdentityDirections($base, $assetIdentity);
         }
 
         $direction = $base . '. Variabili oggetto da rispettare: ' . implode(', ', array_slice($labels, 0, 6)) . '.';
@@ -851,6 +866,159 @@ class ContentItemController extends Controller
 
         if ($hasLocationEnvelope) {
             $direction .= ' Se nei riferimenti c e un luogo reale, quello resta l involucro principale: mantieni riconoscibili struttura, ambientazione e dettagli distintivi, aggiungendo creativita solo negli elementi secondari.';
+        }
+
+        return $this->appendAssetIdentityDirections($direction, $assetIdentity);
+    }
+
+    /**
+     * Traduce gli slot presenter/product/place in un payload chiaro per il job AI.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $assetVariableRefs
+     * @return array<string, mixed>
+     */
+    private function buildAssetIdentityContext(array $data, array $assetVariableRefs): array
+    {
+        $resolvedRows = collect(is_array($assetVariableRefs['resolved'] ?? null) ? $assetVariableRefs['resolved'] : []);
+        $slotMap = [
+            'presenter' => (int) ($data['presenter_variable_id'] ?? 0),
+            'product' => (int) ($data['product_variable_id'] ?? 0),
+            'place' => (int) ($data['place_variable_id'] ?? 0),
+        ];
+
+        $slots = [];
+        $lockedElements = [];
+        $allowedChanges = [];
+
+        foreach ($slotMap as $slot => $variableId) {
+            if ($variableId < 1) {
+                continue;
+            }
+
+            $row = $resolvedRows->first(fn ($variable) => (int) ($variable['id'] ?? 0) === $variableId);
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+            $locked = trim((string) data_get($profile, 'prompt_lock.immutable_elements', data_get($profile, 'immutable_traits', '')));
+            if ($locked !== '') {
+                $lockedElements[] = $locked;
+            }
+
+            foreach ((array) data_get($profile, 'allowed_transforms', []) as $transform) {
+                $transform = trim((string) $transform);
+                if ($transform !== '') {
+                    $allowedChanges[] = $transform;
+                }
+            }
+
+            $slots[$slot] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'name' => (string) ($row['name'] ?? ''),
+                'kind' => (string) ($row['kind'] ?? 'custom'),
+                'asset_role' => (string) ($row['asset_role'] ?? ''),
+                'canonical_asset_id' => isset($row['canonical_asset_id']) ? (int) $row['canonical_asset_id'] : null,
+                'canonical_asset_path' => (string) ($row['canonical_asset_path'] ?? ''),
+                'identity_mode' => (string) ($row['identity_mode'] ?? 'balanced'),
+                'consistency_threshold' => isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : null,
+                'locked_elements' => $locked !== '' ? [$locked] : [],
+                'allowed_transforms' => array_values(array_filter(array_map('strval', (array) data_get($profile, 'allowed_transforms', [])))),
+                'descriptor' => [
+                    'summary' => (string) data_get($profile, 'descriptor.summary', data_get($profile, 'identity_summary', '')),
+                ],
+            ];
+        }
+
+        $seasonalOverlay = trim((string) ($data['seasonal_overlay'] ?? ''));
+        if ($seasonalOverlay !== '') {
+            $allowedChanges[] = $seasonalOverlay;
+        }
+
+        return [
+            'slots' => $slots,
+            'slot_ids' => array_values(array_map(fn ($row) => (int) ($row['id'] ?? 0), $slots)),
+            'seasonal_overlay' => $seasonalOverlay,
+            'consistency_mode' => $this->assetIdentityService->normalizeIdentityMode((string) ($data['consistency_mode'] ?? 'balanced')),
+            'locked_elements' => array_values(array_unique(array_filter($lockedElements))),
+            'allowed_changes' => array_values(array_unique(array_filter($allowedChanges))),
+        ];
+    }
+
+    /**
+     * Salviamo anche source refs espliciti per capire da quali slot nasce il contenuto.
+     *
+     * @param  array<string, mixed>  $assetIdentity
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildSourceRefsFromAssetIdentity(array $assetIdentity): array
+    {
+        $slots = is_array($assetIdentity['slots'] ?? null) ? $assetIdentity['slots'] : [];
+        $out = [];
+
+        foreach ($slots as $slot => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $out[] = [
+                'type' => 'asset_identity_slot',
+                'slot' => (string) $slot,
+                'variable_id' => isset($row['id']) ? (int) $row['id'] : null,
+                'name' => (string) ($row['name'] ?? ''),
+                'kind' => (string) ($row['kind'] ?? 'custom'),
+                'canonical_asset_path' => (string) ($row['canonical_asset_path'] ?? ''),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Aggiunge al brief visuale i nuovi vincoli persistenti presenter/product/place.
+     *
+     * @param  array<string, mixed>  $assetIdentity
+     */
+    private function appendAssetIdentityDirections(string $direction, array $assetIdentity): string
+    {
+        $slots = is_array($assetIdentity['slots'] ?? null) ? $assetIdentity['slots'] : [];
+        $consistencyMode = trim((string) ($assetIdentity['consistency_mode'] ?? ''));
+        $seasonalOverlay = trim((string) ($assetIdentity['seasonal_overlay'] ?? ''));
+        $lockedElements = array_values(array_filter(array_map('strval', (array) ($assetIdentity['locked_elements'] ?? []))));
+        $allowedChanges = array_values(array_filter(array_map('strval', (array) ($assetIdentity['allowed_changes'] ?? []))));
+
+        if (!empty($slots)) {
+            $slotLabels = [];
+            foreach ($slots as $slot => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                $slotLabels[] = $slot . ': ' . $name;
+            }
+
+            if (!empty($slotLabels)) {
+                $direction .= ' Slot identitari selezionati: ' . implode(', ', $slotLabels) . '.';
+            }
+        }
+
+        if ($consistencyMode !== '') {
+            $direction .= ' Modalita coerenza: ' . $consistencyMode . '.';
+        }
+        if ($seasonalOverlay !== '') {
+            $direction .= ' Overlay o tema da applicare senza cambiare il soggetto base: ' . Str::limit($seasonalOverlay, 120, '') . '.';
+        }
+        if (!empty($lockedElements)) {
+            $direction .= ' Elementi da non alterare: ' . implode('; ', array_slice($lockedElements, 0, 4)) . '.';
+        }
+        if (!empty($allowedChanges)) {
+            $direction .= ' Cambi ammessi: ' . implode(', ', array_slice($allowedChanges, 0, 6)) . '.';
         }
 
         return $direction;

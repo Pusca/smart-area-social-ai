@@ -54,10 +54,14 @@ class GuidedPersonaPackTest extends TestCase
         $variable = AssetVariable::query()->where('tenant_id', $tenant->id)->first();
         $this->assertNotNull($variable);
         $this->assertSame('person', $variable->kind);
+        $this->assertSame('presenter', $variable->asset_role);
         $this->assertSame('Chef Erika', $variable->name);
+        $this->assertSame('strict', $variable->identity_mode);
+        $this->assertSame(92, (int) $variable->consistency_threshold);
         $this->assertIsArray($variable->profile);
         $this->assertSame('guided_persona_pack', data_get($variable->profile, 'source_mode'));
         $this->assertSame('Chef e volto del brand', data_get($variable->profile, 'role'));
+        $this->assertSame((int) $variable->canonical_asset_id, (int) data_get($variable->profile, 'canonical_asset_id'));
         $this->assertSame(5, (int) data_get($variable->profile, 'shot_count'));
         $this->assertNotEmpty(data_get($variable->profile, 'reference_video_path'));
 

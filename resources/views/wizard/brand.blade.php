@@ -1002,6 +1002,60 @@
                         </div>
                     </div>
 
+                    <div class="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                        <div>
+                            <label for="var_asset_role" class="{{ $labelClass }}">Ruolo operativo</label>
+                            <input id="var_asset_role" type="text" name="asset_role" value="{{ old('asset_role') }}" placeholder="Es. presenter, office, hero_product" class="{{ $inputClass }}">
+                        </div>
+                        <div>
+                            <label for="var_identity_mode" class="{{ $labelClass }}">Consistency mode</label>
+                            <select id="var_identity_mode" name="identity_mode" class="{{ $inputClass }}">
+                                <option value="strict" @selected(old('identity_mode') === 'strict')>Strict</option>
+                                <option value="balanced" @selected(old('identity_mode', 'balanced') === 'balanced')>Balanced</option>
+                                <option value="creative" @selected(old('identity_mode') === 'creative')>Creative</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="var_consistency_threshold" class="{{ $labelClass }}">Threshold coerenza</label>
+                            <input id="var_consistency_threshold" type="number" name="consistency_threshold" min="50" max="99" value="{{ old('consistency_threshold', 85) }}" class="{{ $inputClass }}">
+                        </div>
+                        <div>
+                            <label for="var_canonical_asset_id" class="{{ $labelClass }}">Asset canonico</label>
+                            <select id="var_canonical_asset_id" name="canonical_asset_id" class="{{ $inputClass }}">
+                                <option value="">Primo asset selezionato</option>
+                                @foreach($variableCandidateAssets as $asset)
+                                    <option value="{{ (int) $asset->id }}" @selected((int) old('canonical_asset_id', 0) === (int) $asset->id)>
+                                        #{{ (int) $asset->id }} - {{ \Illuminate\Support\Str::limit((string) ($asset->original_name ?? basename((string) $asset->path)), 28, '...') }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div>
+                            <label for="var_descriptor_summary" class="{{ $labelClass }}">Descrittore stabile</label>
+                            <textarea id="var_descriptor_summary" name="descriptor_summary" rows="3" class="{{ $inputClass }}" placeholder="Es. Ufficio principale con reception, vetrate, bancone chiaro e logo sul muro">{{ old('descriptor_summary') }}</textarea>
+                        </div>
+                        <div>
+                            <label for="var_immutable_elements" class="{{ $labelClass }}">Elementi immutabili</label>
+                            <textarea id="var_immutable_elements" name="immutable_elements" rows="3" class="{{ $inputClass }}" placeholder="Es. layout ufficio, volto della persona, forma del prodotto, dettagli packaging">{{ old('immutable_elements') }}</textarea>
+                        </div>
+                        <div>
+                            <label for="var_allowed_transforms" class="{{ $labelClass }}">Trasformazioni ammesse</label>
+                            <textarea id="var_allowed_transforms" name="allowed_transforms" rows="3" class="{{ $inputClass }}" placeholder="Una per riga:&#10;decorazioni natalizie&#10;luci piu calde&#10;props da campagna">{{ old('allowed_transforms') }}</textarea>
+                        </div>
+                        <div>
+                            <label for="var_prompt_notes" class="{{ $labelClass }}">Indicazioni AI e uso</label>
+                            <textarea id="var_prompt_notes" name="prompt_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. mantieni prospettiva credibile, evita collage, non alterare logo o proporzioni">{{ old('prompt_notes') }}</textarea>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="var_usage_notes" class="{{ $labelClass }}">Quando usarla</label>
+                        <textarea id="var_usage_notes" name="usage_notes" rows="2" class="{{ $inputClass }}" placeholder="Es. presentazioni prodotto, dietro le quinte, post stagionali, lancio collezione">{{ old('usage_notes') }}</textarea>
+                    </div>
+
                     @if($variableCandidateAssets->isEmpty())
                         <div class="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-4 text-sm text-gray-600">
                             Nessun asset disponibile: carica prima immagini/logo dal blocco Upload assets.
@@ -1062,6 +1116,13 @@
                                 $varRole = trim((string) ($varProfile['role'] ?? ''));
                                 $varImmutableTraits = trim((string) ($varProfile['immutable_traits'] ?? ''));
                                 $varPromptNotes = trim((string) ($varProfile['prompt_notes'] ?? ''));
+                                $varDescriptor = trim((string) data_get($varProfile, 'descriptor.summary', ''));
+                                $varLocked = trim((string) data_get($varProfile, 'prompt_lock.immutable_elements', $varImmutableTraits));
+                                $varAllowedTransforms = (array) data_get($varProfile, 'allowed_transforms', []);
+                                $varIdentityMode = trim((string) ($variable['identity_mode'] ?? ''));
+                                $varThreshold = (int) ($variable['consistency_threshold'] ?? 0);
+                                $varAssetRole = trim((string) ($variable['asset_role'] ?? ''));
+                                $varCanonicalPath = trim((string) ($variable['canonical_asset_path'] ?? ''));
                                 $varVideoCount = collect($varAssets)->where('kind', 'video')->count();
                             @endphp
                             <article class="rounded-xl border border-gray-200 bg-white p-4">
@@ -1095,6 +1156,25 @@
                                         @endif
                                     </div>
                                 @endif
+                                @if($varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '')
+                                    <div class="mt-3 space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+                                        @if($varAssetRole !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Asset role:</span> {{ $varAssetRole }}</p>
+                                        @endif
+                                        @if($varIdentityMode !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Mode:</span> {{ $varIdentityMode }}@if($varThreshold > 0) / soglia {{ $varThreshold }}@endif</p>
+                                        @endif
+                                        @if($varDescriptor !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Descrittore:</span> {{ $varDescriptor }}</p>
+                                        @endif
+                                        @if($varLocked !== '')
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Da non cambiare:</span> {{ $varLocked }}</p>
+                                        @endif
+                                        @if(!empty($varAllowedTransforms))
+                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Trasformazioni ammesse:</span> {{ implode(', ', array_slice(array_values(array_filter(array_map('strval', $varAllowedTransforms))), 0, 6)) }}</p>
+                                        @endif
+                                    </div>
+                                @endif
                                 @if($varVideoCount > 0)
                                     <p class="mt-3 text-xs font-semibold text-indigo-700">Include anche {{ $varVideoCount }} video di riferimento</p>
                                 @endif
@@ -1105,7 +1185,10 @@
                                             $assetKind = (string) ($assetPreview['kind'] ?? '');
                                         @endphp
                                         @if($assetPath !== '')
-                                            <div class="aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                                            <div class="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                                                @if($varCanonicalPath !== '' && $varCanonicalPath === $assetPath)
+                                                    <div class="absolute left-1.5 top-1.5 z-10 rounded-full bg-indigo-700 px-2 py-0.5 text-[10px] font-semibold text-white">CANON</div>
+                                                @endif
                                                 @if($assetKind === 'video')
                                                     <div class="flex h-full items-center justify-center bg-slate-950 px-2 text-center text-[11px] font-semibold text-white">
                                                         VIDEO

@@ -35,7 +35,8 @@ class AssetVariableService
             ->where('tenant_id', $tenantId)
             ->whereNull('content_plan_id')
             ->whereIn('id', $allAssetIds)
-            ->get(['id', 'kind', 'path', 'original_name', 'mime'])
+            // I meta servono per capire se un asset e anchor canonico o parte di un pack guidato.
+            ->get(['id', 'kind', 'path', 'original_name', 'mime', 'meta'])
             ->keyBy('id');
 
         $out = [];
@@ -57,12 +58,22 @@ class AssetVariableService
                 ->values()
                 ->all();
 
+            $canonicalAssetId = (int) ($variable->canonical_asset_id ?? 0);
+            $canonicalAsset = $canonicalAssetId > 0 ? $assets->get($canonicalAssetId) : null;
+
             $out[] = [
                 'id' => (int) $variable->id,
                 'name' => (string) $variable->name,
                 'slug' => (string) $variable->slug,
                 'kind' => (string) $variable->kind,
+                'asset_role' => (string) ($variable->asset_role ?? ''),
                 'description' => (string) ($variable->description ?? ''),
+                'canonical_asset_id' => $canonicalAssetId > 0 ? $canonicalAssetId : null,
+                'canonical_asset_path' => $canonicalAsset ? (string) ($canonicalAsset->path ?? '') : '',
+                'identity_mode' => (string) ($variable->identity_mode ?? 'balanced'),
+                'consistency_threshold' => $variable->consistency_threshold !== null
+                    ? (int) $variable->consistency_threshold
+                    : null,
                 'profile' => is_array($variable->profile) ? $variable->profile : [],
                 'asset_ids' => $assetIds->all(),
                 'asset_paths' => $assetPaths,
@@ -105,20 +116,7 @@ class AssetVariableService
         $recognizedTerms = [];
 
         foreach ($catalog as $variable) {
-            $name = $this->normalize((string) ($variable['name'] ?? ''));
-            $slug = $this->normalize(str_replace('-', ' ', (string) ($variable['slug'] ?? '')));
-            if ($name === '' && $slug === '') {
-                continue;
-            }
-
-            $matched = false;
-            if ($name !== '' && $this->containsToken($normalizedBrief, $name)) {
-                $matched = true;
-            }
-            if (!$matched && $slug !== '' && $this->containsToken($normalizedBrief, $slug)) {
-                $matched = true;
-            }
-            if (!$matched) {
+            if (!$this->variableMatchesBrief($normalizedBrief, $variable)) {
                 continue;
             }
 
@@ -263,6 +261,58 @@ class AssetVariableService
         }
 
         return str_contains($haystack, '@' . str_replace(' ', '', $token));
+    }
+
+    /**
+     * Oltre a nome e slug, usiamo ruolo e descrittori per riconoscere identita nel brief.
+     *
+     * @param  array<string, mixed>  $variable
+     */
+    private function variableMatchesBrief(string $normalizedBrief, array $variable): bool
+    {
+        if ($normalizedBrief === '') {
+            return false;
+        }
+
+        $tokens = [
+            $this->normalize((string) ($variable['name'] ?? '')),
+            $this->normalize(str_replace('-', ' ', (string) ($variable['slug'] ?? ''))),
+            $this->normalize((string) ($variable['asset_role'] ?? '')),
+            $this->normalize((string) ($variable['description'] ?? '')),
+            $this->normalize((string) data_get($variable, 'profile.role', '')),
+            $this->normalize((string) data_get($variable, 'profile.identity_summary', '')),
+            $this->normalize((string) data_get($variable, 'profile.descriptor.summary', '')),
+            $this->normalize((string) data_get($variable, 'profile.prompt_lock.immutable_elements', '')),
+        ];
+
+        foreach ($this->allowedTransformTokens($variable) as $token) {
+            $tokens[] = $this->normalize($token);
+        }
+
+        foreach ($tokens as $token) {
+            if ($token === '') {
+                continue;
+            }
+
+            if ($this->containsToken($normalizedBrief, $token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $variable
+     * @return array<int, string>
+     */
+    private function allowedTransformTokens(array $variable): array
+    {
+        return collect((array) data_get($variable, 'profile.allowed_transforms', []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->values()
+            ->all();
     }
 
     private function normalize(string $value): string

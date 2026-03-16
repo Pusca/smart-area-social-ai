@@ -61,10 +61,12 @@ class GenerateAiForContentItem implements ShouldQueue
         $memorySummary = $memoryBuilder->buildForTenant((int) $item->tenant_id, 40);
         $activeFeedbackRequest = $this->normalizeFeedbackRequest((array) data_get($meta, 'feedback_loop.active_request', []));
         $assetVariables = $this->resolveAssetVariableContext($meta, $strategy);
+        $assetIdentity = $this->resolveAssetIdentityContext($meta, $assetVariables);
         $meta['memory_summary'] = $memorySummary;
         $meta['image_provider'] = $this->resolveImageProvider($meta);
         $meta['asset_variables'] = $assetVariables;
         $meta['asset_variables_catalog'] = (array) ($assetVariables['catalog'] ?? []);
+        $meta['asset_identity'] = $assetIdentity;
         $meta['strategy_snapshot'] = [
             'strategy_id' => data_get($strategy, 'strategy_id'),
             'strategy_updated_at' => data_get($strategy, 'strategy_updated_at'),
@@ -144,6 +146,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     $planCaptions
                 ),
                 'asset_variables' => $assetVariables,
+                'asset_identity' => $assetIdentity,
                 'repetition_rules' => [
                     'avoid_list' => array_values(array_unique(array_filter(array_merge(
                         (array) data_get($itemBrain, 'avoid_list', []),
@@ -304,6 +307,7 @@ class GenerateAiForContentItem implements ShouldQueue
                 $publishingCadence = (string) data_get($strategy, 'publishing_system.cadence_rule', '');
                 $strategyNotes = (string) data_get($strategy, 'strategy_notes', '');
                 $assetVariableHint = $this->buildAssetVariablePromptHint($assetVariables);
+                $assetIdentityHint = $this->buildAssetIdentityPromptHint($assetIdentity);
                 $locationEnvelopeHint = $this->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
                 $feedbackVisualHint = $this->feedbackDrivenImageInstruction(
                     $activeFeedbackRequest,
@@ -325,6 +329,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     . ($publishingCadence !== '' ? "Coerenza publishing: {$publishingCadence}. " : '')
                     . ($strategyNotes !== '' ? "Note strategiche: {$strategyNotes}. " : '')
                     . ($assetVariableHint !== '' ? "Variabili asset obbligatorie: {$assetVariableHint}. " : '')
+                    . ($assetIdentityHint !== '' ? "Regole identitarie del contenuto: {$assetIdentityHint}. " : '')
                     . ($locationEnvelopeHint !== '' ? $locationEnvelopeHint . ' ' : '')
                     . ($feedbackVisualHint !== '' ? $feedbackVisualHint . ' ' : '')
                     . ($socialPublicationHint !== '' ? $socialPublicationHint . ' ' : '')
@@ -4466,6 +4471,54 @@ SVG;
     }
 
     /**
+     * Normalizza il payload presenter/product/place senza perdere i riferimenti risolti.
+     *
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     * @return array<string, mixed>
+     */
+    private function resolveAssetIdentityContext(array $meta, array $assetVariables): array
+    {
+        $payload = (array) data_get($meta, 'asset_identity', []);
+        $resolved = collect($this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', [])));
+        $slots = [];
+
+        foreach ((array) data_get($payload, 'slots', []) as $slot => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $resolvedRow = $resolved->first(fn ($variable) => (int) ($variable['id'] ?? 0) === (int) ($row['id'] ?? 0));
+            $merged = is_array($resolvedRow) ? array_replace($resolvedRow, $row) : $row;
+            $slots[(string) $slot] = $merged;
+        }
+
+        return [
+            'slots' => $slots,
+            'slot_ids' => collect((array) data_get($payload, 'slot_ids', []))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all(),
+            'seasonal_overlay' => trim((string) data_get($payload, 'seasonal_overlay', '')),
+            'consistency_mode' => trim((string) data_get($payload, 'consistency_mode', 'balanced')),
+            'locked_elements' => collect((array) data_get($payload, 'locked_elements', []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->unique()
+                ->values()
+                ->all(),
+            'allowed_changes' => collect((array) data_get($payload, 'allowed_changes', []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->unique()
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $assetVariables
      */
     private function buildAssetVariablePromptHint(array $assetVariables): string
@@ -4485,6 +4538,18 @@ SVG;
             $label = $name !== '' ? $name : ($slug !== '' ? '@' . $slug : 'variabile');
             if ($kind !== '') {
                 $label .= ' [' . $kind . ']';
+            }
+            $assetRole = trim((string) ($row['asset_role'] ?? ''));
+            if ($assetRole !== '') {
+                $label .= ' role: ' . $assetRole;
+            }
+            $identityMode = trim((string) ($row['identity_mode'] ?? ''));
+            if ($identityMode !== '') {
+                $label .= ' mode: ' . $identityMode;
+            }
+            $threshold = isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : 0;
+            if ($threshold > 0) {
+                $label .= ' soglia: ' . $threshold;
             }
 
             $refs = collect((array) ($row['asset_paths'] ?? []))
@@ -4514,7 +4579,87 @@ SVG;
                 }
             }
 
+            $locked = trim((string) data_get($profile, 'prompt_lock.immutable_elements', ''));
+            if ($locked !== '' && $kind !== 'person') {
+                $label .= ' non cambiare: ' . Str::limit($locked, 120, '');
+            }
+
+            $allowedTransforms = collect((array) data_get($profile, 'allowed_transforms', []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->take(3)
+                ->values()
+                ->all();
+            if (!empty($allowedTransforms)) {
+                $label .= ' cambia solo: ' . implode(', ', $allowedTransforms);
+            }
+
             $parts[] = $label;
+        }
+
+        return Str::limit(implode('; ', $parts), 520, '');
+    }
+
+    /**
+     * Questo hint e piu sintetico e specifico per il singolo contenuto in costruzione.
+     *
+     * @param  array<string, mixed>  $assetIdentity
+     */
+    private function buildAssetIdentityPromptHint(array $assetIdentity): string
+    {
+        $slots = is_array($assetIdentity['slots'] ?? null) ? $assetIdentity['slots'] : [];
+        if (empty($slots) && empty((array) ($assetIdentity['locked_elements'] ?? [])) && trim((string) ($assetIdentity['seasonal_overlay'] ?? '')) === '') {
+            return '';
+        }
+
+        $parts = [];
+
+        foreach ($slots as $slot => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $label = $slot . ': ' . $name;
+            $descriptor = trim((string) data_get($row, 'descriptor.summary', data_get($row, 'profile.descriptor.summary', '')));
+            if ($descriptor !== '') {
+                $label .= ' (' . Str::limit($descriptor, 90, '') . ')';
+            }
+            $locked = collect((array) ($row['locked_elements'] ?? []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->take(1)
+                ->values()
+                ->all();
+            if (!empty($locked)) {
+                $label .= ' fisso: ' . Str::limit($locked[0], 100, '');
+            }
+
+            $parts[] = $label;
+        }
+
+        $seasonalOverlay = trim((string) ($assetIdentity['seasonal_overlay'] ?? ''));
+        if ($seasonalOverlay !== '') {
+            $parts[] = 'overlay: ' . Str::limit($seasonalOverlay, 80, '');
+        }
+
+        $allowedChanges = collect((array) ($assetIdentity['allowed_changes'] ?? []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->take(4)
+            ->values()
+            ->all();
+        if (!empty($allowedChanges)) {
+            $parts[] = 'cambi ammessi: ' . implode(', ', $allowedChanges);
+        }
+
+        $consistencyMode = trim((string) ($assetIdentity['consistency_mode'] ?? ''));
+        if ($consistencyMode !== '') {
+            $parts[] = 'consistency: ' . $consistencyMode;
         }
 
         return Str::limit(implode('; ', $parts), 520, '');
@@ -4575,7 +4720,12 @@ SVG;
                 'name' => $name,
                 'slug' => $slug,
                 'kind' => trim((string) ($row['kind'] ?? 'custom')),
+                'asset_role' => trim((string) ($row['asset_role'] ?? '')),
                 'description' => trim((string) ($row['description'] ?? '')),
+                'canonical_asset_id' => isset($row['canonical_asset_id']) ? (int) $row['canonical_asset_id'] : null,
+                'canonical_asset_path' => trim((string) ($row['canonical_asset_path'] ?? '')),
+                'identity_mode' => trim((string) ($row['identity_mode'] ?? 'balanced')),
+                'consistency_threshold' => isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : null,
                 'profile' => is_array($row['profile'] ?? null) ? $row['profile'] : [],
                 'asset_ids' => $assetIds,
                 'asset_paths' => $assetPaths,
@@ -4598,9 +4748,13 @@ SVG;
         $name = $this->normalizeText((string) ($row['name'] ?? ''));
         $slug = $this->normalizeText(str_replace('-', ' ', (string) ($row['slug'] ?? '')));
         $profileText = $this->normalizeText(implode(' ', array_filter([
+            (string) ($row['asset_role'] ?? ''),
             (string) data_get($row, 'profile.role', ''),
             (string) data_get($row, 'profile.identity_summary', ''),
             (string) data_get($row, 'profile.immutable_traits', ''),
+            (string) data_get($row, 'profile.descriptor.summary', ''),
+            (string) data_get($row, 'profile.prompt_lock.immutable_elements', ''),
+            implode(' ', (array) data_get($row, 'profile.allowed_transforms', [])),
         ])));
 
         if ($name !== '' && str_contains(' ' . $briefNormalized . ' ', ' ' . $name . ' ')) {

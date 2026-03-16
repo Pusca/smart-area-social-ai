@@ -7,6 +7,7 @@ use App\Models\BrandAsset;
 use App\Models\ContentPlan;
 use App\Models\EditorialStrategy;
 use App\Models\TenantProfile;
+use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\GuidedAssetVariableService;
@@ -22,6 +23,7 @@ class TenantProfileController extends Controller
 {
     public function __construct(
         private readonly EditorialStrategyService $editorialStrategyService,
+        private readonly AssetIdentityService $assetIdentityService,
         private readonly AssetVariableService $assetVariableService,
         private readonly GuidedAssetVariableService $guidedAssetVariableService,
         private readonly QuickstartOnboardingService $quickstartOnboardingService,
@@ -393,9 +395,18 @@ class TenantProfileController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:120',
             'kind' => 'required|string|in:person,location,product,custom',
+            'asset_role' => 'nullable|string|max:60',
             'description' => 'nullable|string|max:1000',
             'asset_ids' => 'nullable|array',
             'asset_ids.*' => 'integer',
+            'canonical_asset_id' => 'nullable|integer',
+            'identity_mode' => 'nullable|string|in:strict,balanced,creative',
+            'consistency_threshold' => 'nullable|integer|min:50|max:99',
+            'descriptor_summary' => 'nullable|string|max:1000',
+            'immutable_elements' => 'nullable|string|max:1200',
+            'allowed_transforms' => 'nullable|string|max:2000',
+            'prompt_notes' => 'nullable|string|max:1200',
+            'usage_notes' => 'nullable|string|max:1200',
         ]);
 
         $assetIds = $this->assetVariableService->sanitizeAssetIdsForTenant($tenantId, (array) ($data['asset_ids'] ?? []));
@@ -405,19 +416,50 @@ class TenantProfileController extends Controller
                 ->with('status', 'Seleziona almeno 1 asset valido per creare la variabile.');
         }
 
-        $slug = $this->assetVariableService->buildUniqueSlugForTenant($tenantId, (string) $data['name']);
+        $canonicalAssetId = (int) ($data['canonical_asset_id'] ?? 0);
+        if ($canonicalAssetId > 0 && !in_array($canonicalAssetId, $assetIds, true)) {
+            return redirect()
+                ->route('profile.brand')
+                ->withInput()
+                ->with('status', 'L asset canonico deve far parte degli asset selezionati.');
+        }
+        if ($canonicalAssetId < 1) {
+            $canonicalAssetId = (int) ($assetIds[0] ?? 0);
+        }
 
-        AssetVariable::query()->create([
+        $slug = $this->assetVariableService->buildUniqueSlugForTenant($tenantId, (string) $data['name']);
+        $linkedAssets = BrandAsset::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('content_plan_id')
+            ->whereIn('id', $assetIds)
+            ->get();
+
+        // Le regole identitarie servono al job AI per distinguere cosa resta fisso e cosa puo cambiare.
+        $profile = $this->assetIdentityService->buildManualProfile($data, $linkedAssets);
+        $profile['role'] = $this->assetIdentityService->normalizeRole((string) $data['kind'], (string) ($data['asset_role'] ?? ''));
+        $profile['identity_mode'] = $this->assetIdentityService->normalizeIdentityMode((string) ($data['identity_mode'] ?? 'balanced'));
+        $profile['consistency_threshold'] = $this->assetIdentityService->normalizeConsistencyThreshold(
+            $data['consistency_threshold'] ?? null
+        );
+
+        $variable = AssetVariable::query()->create([
             'tenant_id' => $tenantId,
             'name' => trim((string) $data['name']),
             'slug' => $slug,
             'kind' => (string) $data['kind'],
+            'asset_role' => $profile['role'],
             'description' => trim((string) ($data['description'] ?? '')),
             'asset_ids' => $assetIds,
+            'canonical_asset_id' => $canonicalAssetId > 0 ? $canonicalAssetId : null,
+            'identity_mode' => $profile['identity_mode'],
+            'consistency_threshold' => $profile['consistency_threshold'],
+            'profile' => $profile,
             'is_active' => true,
         ]);
 
-        return redirect()->route('profile.brand')->with('status', 'Variabile asset creata.');
+        $this->assetIdentityService->syncAssetMetaForVariable($variable, $assetIds);
+
+        return redirect()->route('profile.brand')->with('status', 'Identita asset creata e collegata al Brand Center.');
     }
 
     public function storeGuidedPersonaVariable(Request $request)
