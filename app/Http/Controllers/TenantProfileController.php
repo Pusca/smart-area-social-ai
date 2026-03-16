@@ -11,6 +11,7 @@ use App\Services\AssetVariableService;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\GuidedAssetVariableService;
 use App\Services\Onboarding\QuickstartOnboardingService;
+use App\Services\TenantQuotaService;
 use App\Support\GenerationExecution;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -23,7 +24,8 @@ class TenantProfileController extends Controller
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly AssetVariableService $assetVariableService,
         private readonly GuidedAssetVariableService $guidedAssetVariableService,
-        private readonly QuickstartOnboardingService $quickstartOnboardingService
+        private readonly QuickstartOnboardingService $quickstartOnboardingService,
+        private readonly TenantQuotaService $tenantQuotaService
     ) {
     }
 
@@ -88,6 +90,14 @@ class TenantProfileController extends Controller
             'quickstart_variable_kind' => 'nullable|string|in:person,location,product,custom',
             'quickstart_variable_description' => 'nullable|string|max:255',
         ]);
+
+        try {
+            $this->tenantQuotaService->assertCanCreateContentItems((int) $request->user()->tenant_id, 3);
+        } catch (\RuntimeException $e) {
+            return back()
+                ->withInput()
+                ->withErrors(['quickstart' => $e->getMessage()]);
+        }
 
         try {
             $result = $this->quickstartOnboardingService->runQuickstart(

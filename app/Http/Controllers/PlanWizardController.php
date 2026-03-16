@@ -12,6 +12,7 @@ use App\Services\Editorial\ContentHistoryAnalyzer;
 use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
+use App\Services\TenantQuotaService;
 use App\Support\GenerationExecution;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +29,8 @@ class PlanWizardController extends Controller
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentHistoryAnalyzer $historyAnalyzer,
         private readonly EditorialPlanBuilder $editorialPlanBuilder,
-        private readonly ContentGenerator $contentGenerator
+        private readonly ContentGenerator $contentGenerator,
+        private readonly TenantQuotaService $tenantQuotaService
     ) {
     }
 
@@ -210,6 +212,8 @@ class PlanWizardController extends Controller
 
         if ($this->useFixedHostupPosts()) {
             try {
+                $this->tenantQuotaService->assertCanCreateContentItems((int) $user->tenant_id, 6);
+
                 $plan = ContentPlan::create([
                     'tenant_id' => $user->tenant_id,
                     'created_by' => $user->id,
@@ -392,6 +396,8 @@ class PlanWizardController extends Controller
                 }
 
                 if (!empty($itemsToGenerate)) {
+                    $this->tenantQuotaService->assertCanCreateContentItems((int) $user->tenant_id, count($itemsToGenerate));
+
                     $this->contentGenerator->generateForPlan($plan, $itemsToGenerate, [
                         'user_id' => (int) $user->id,
                         'profile_data' => $profileData,
@@ -432,6 +438,8 @@ class PlanWizardController extends Controller
                     options: ['platforms' => $platforms, 'formats' => $formats, 'memory' => $memory]
                 );
 
+                $this->tenantQuotaService->assertCanCreateContentItems((int) $user->tenant_id, count($itemsToGenerate));
+
                 $this->contentGenerator->generateForPlan($newPlan, $itemsToGenerate, [
                     'user_id' => (int) $user->id,
                     'profile_data' => $profileData,
@@ -442,6 +450,16 @@ class PlanWizardController extends Controller
                 ]);
             }
         } catch (\Throwable $e) {
+            if ($newPlan && $newPlan->exists) {
+                $hasItems = ContentItem::query()
+                    ->where('content_plan_id', $newPlan->id)
+                    ->exists();
+
+                if (!$hasItems) {
+                    $newPlan->delete();
+                }
+            }
+
             return redirect()->route('wizard.done')->with('status', 'Errore creazione piano: ' . $e->getMessage());
         }
 

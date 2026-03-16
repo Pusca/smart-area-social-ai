@@ -12,6 +12,7 @@ use App\Services\ContentMediaPreviewService;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
 use App\Services\Social\SocialPublishingService;
+use App\Services\TenantQuotaService;
 use App\Support\GenerationExecution;
 use App\Support\ImageProviderResolver;
 use App\Support\UiStatus;
@@ -29,7 +30,8 @@ class ContentItemController extends Controller
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentMediaPreviewService $mediaPreviewService,
         private readonly AssetVariableService $assetVariableService,
-        private readonly SocialPublishingService $socialPublishingService
+        private readonly SocialPublishingService $socialPublishingService,
+        private readonly TenantQuotaService $tenantQuotaService
     ) {
     }
 
@@ -225,6 +227,14 @@ class ContentItemController extends Controller
         if ($brief === '') {
             return back()
                 ->withErrors(['generation_brief' => 'Inserisci una descrizione di cosa vuoi che l AI generi.'])
+                ->withInput();
+        }
+
+        try {
+            $this->tenantQuotaService->assertCanCreateContentItems($tenantId, 1);
+        } catch (\RuntimeException $e) {
+            return back()
+                ->withErrors(['generation_brief' => $e->getMessage()])
                 ->withInput();
         }
 

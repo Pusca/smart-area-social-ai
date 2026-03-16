@@ -23,12 +23,16 @@ Route::get('/', function () {
 Route::middleware(['auth', 'platformAdmin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
     Route::put('/users/{user}/tenant', [AdminDashboardController::class, 'updateUserTenant'])->name('users.tenant.update');
+    Route::put('/tenants/{tenant}', [AdminDashboardController::class, 'updateTenant'])->name('tenants.update');
+    Route::post('/users/{user}/impersonate', [AdminDashboardController::class, 'impersonateUser'])->name('users.impersonate');
+    Route::post('/tenants/{tenant}/impersonate', [AdminDashboardController::class, 'impersonateTenant'])->name('tenants.impersonate');
 });
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::post('/admin/impersonation/stop', [AdminDashboardController::class, 'stopImpersonation'])->name('admin.impersonation.stop');
 });
 
 Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {

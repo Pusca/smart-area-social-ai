@@ -85,6 +85,32 @@
             </div>
         </header>
 
+        @php
+            $impersonation = session('admin_impersonation', []);
+            $isImpersonating = !empty($impersonation['original_admin_id']);
+        @endphp
+
+        @if($isImpersonating)
+            <div class="border-b border-amber-200 bg-amber-50/95">
+                <div class="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+                    <div>
+                        <p class="font-semibold">Modalita admin attiva nel workspace</p>
+                        <p class="text-xs text-amber-800">
+                            Tenant: {{ $impersonation['target_tenant_name'] ?? 'Tenant' }}
+                            · Utente: {{ $impersonation['target_user_name'] ?? auth()->user()?->name }}
+                            · Admin origine: {{ $impersonation['original_admin_email'] ?? '' }}
+                        </p>
+                    </div>
+                    <form method="POST" action="{{ route('admin.impersonation.stop') }}">
+                        @csrf
+                        <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100">
+                            Torna alla dashboard admin
+                        </button>
+                    </form>
+                </div>
+            </div>
+        @endif
+
         @isset($header)
             <div class="border-b border-app bg-white/70">
                 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
