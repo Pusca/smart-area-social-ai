@@ -26,21 +26,19 @@ Route::middleware(['auth', 'platformAdmin'])->prefix('admin')->name('admin.')->g
 });
 
 Route::middleware(['auth'])->group(function () {
-    // Profile (Breeze)
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
 Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
-
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
     Route::post('/calendar/content/{contentItem}/approve', [CalendarController::class, 'approve'])->name('calendar.content.approve');
     Route::redirect('/brand', '/profile/brand', 302)->name('brand.legacy');
 
-    // Profilo attività (wizard unico tenant)
+    // Profilo attivita e asset del tenant.
     Route::get('/profile/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
     Route::post('/profile/brand/quickstart', [TenantProfileController::class, 'storeQuickstart'])->name('profile.brand.quickstart.store');
     Route::post('/profile/brand/quickstart/save', [TenantProfileController::class, 'saveQuickstartDemo'])->name('profile.brand.quickstart.save');
@@ -55,7 +53,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::delete('/profile/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
         ->name('profile.brand.asset.destroy');
 
-    // Piano editoriale (separato)
+    // Piano editoriale separato dal Brand Center.
     Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');
     Route::post('/wizard', [PlanWizardController::class, 'store'])->name('wizard.store');
     Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
@@ -64,11 +62,9 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/plans/{contentPlan}/generating', [PlanWizardController::class, 'generating'])->name('plans.generating');
     Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
-    // AI Lab
     Route::get('/ai', [AiController::class, 'index'])->name('ai');
     Route::post('/ai/generate', [AiController::class, 'generate'])->name('ai.generate');
 
-    // AI generate
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
     Route::post('/ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])->name('ai.content.generateImage');
@@ -78,7 +74,6 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/settings/social/meta/callback', [SocialAccountController::class, 'handleMetaCallback'])->name('settings.social.meta.callback');
     Route::post('/settings/social/accounts/{socialAccount}/disconnect', [SocialAccountController::class, 'disconnect'])->name('settings.social.accounts.disconnect');
 
-    // Posts
     Route::prefix('posts')->name('posts.')->group(function () {
         Route::get('/', [ContentItemController::class, 'index'])->name('index');
 
@@ -94,13 +89,11 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
         Route::delete('/{contentItem}', [ContentItemController::class, 'destroy'])->name('destroy');
     });
 
-    // Galleria content items (immagini)
     Route::prefix('content-items')->name('content-items.')->group(function () {
         Route::get('/', [ContentItemController::class, 'gallery'])->name('index');
         Route::get('/{contentItem}', [ContentItemController::class, 'show'])->name('show');
     });
 
-    // Push (PWA)
     Route::get('/push/public-key', [PushController::class, 'publicKey'])->name('push.publicKey');
     Route::post('/push/subscribe', [PushController::class, 'subscribe'])->name('push.subscribe');
     Route::post('/push/test', [PushController::class, 'test'])->name('push.test');

@@ -274,7 +274,7 @@ class TenantProfileController extends Controller
                 $status .= ' (auto-rigenerazione bloccata da lock)';
             }
 
-            return redirect()->route('profile.brand')->with('status', $status . ' ✅');
+            return redirect()->route('profile.brand')->with('status', $status);
         } catch (\Throwable $e) {
             DB::rollBack();
             return redirect()->route('profile.brand')->with('status', 'Errore salvataggio: ' . $e->getMessage());
@@ -352,7 +352,7 @@ class TenantProfileController extends Controller
             $asset->delete();
         }
 
-        return redirect()->route('profile.brand')->with('status', 'Assets selezionati eliminati ✅');
+        return redirect()->route('profile.brand')->with('status', 'Assets selezionati eliminati');
     }
 
     /**
@@ -372,7 +372,7 @@ class TenantProfileController extends Controller
 
         $asset->delete();
 
-        return redirect()->route('profile.brand')->with('status', 'Asset eliminato ✅');
+        return redirect()->route('profile.brand')->with('status', 'Asset eliminato');
     }
 
     public function storeVariable(Request $request)
