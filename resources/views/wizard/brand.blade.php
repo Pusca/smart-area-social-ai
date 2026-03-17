@@ -115,6 +115,133 @@
     $brandReadinessRate = (int) round(($brandReadinessDone / max(1, $brandReadinessItems->count())) * 100);
     $brandReadinessMissing = $brandReadinessItems->filter(fn ($item) => !($item['ready'] ?? false))->values();
 
+    $hasErrorFor = function (array $fields) use ($errors): bool {
+        foreach ($fields as $field) {
+            if ($errors->has($field)) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    $defaultsFieldNames = [
+        'default_goal',
+        'default_tone',
+        'default_posts_per_week',
+        'default_platforms',
+        'default_platforms.*',
+        'default_formats',
+        'default_formats.*',
+    ];
+    $strategyFieldNames = [
+        'strategy_locked',
+        'strategy_goal_primary',
+        'strategy_goal_secondary',
+        'strategy_kpi_primary',
+        'strategy_kpi_secondary',
+        'strategy_audience_focus',
+        'strategy_offer_focus',
+        'strategy_visual_style',
+        'strategy_visual_mood',
+        'strategy_visual_palette',
+        'strategy_palette_mode',
+        'strategy_logo_rule',
+        'strategy_visual_do',
+        'strategy_visual_dont',
+        'strategy_posts_per_week',
+        'strategy_best_days',
+        'strategy_best_times',
+        'strategy_channel_priority',
+        'strategy_format_priority',
+        'strategy_cadence_rule',
+        'strategy_notes',
+    ];
+    $companyFieldNames = [
+        'business_name',
+        'industry',
+        'website',
+        'services',
+        'target',
+        'cta',
+        'notes',
+        'vision',
+        'values',
+        'business_hours',
+        'brand_palette',
+        'seasonal_offers',
+    ];
+    $guidedPersonaFieldNames = [
+        'persona_role',
+        'immutable_traits',
+        'look_notes',
+        'styling_notes',
+        'shot_front',
+        'shot_three_quarter_left',
+        'shot_three_quarter_right',
+        'shot_profile',
+        'shot_half_body',
+        'reference_video',
+    ];
+    $manualVariableFieldNames = [
+        'kind',
+        'asset_role',
+        'asset_ids',
+        'asset_ids.*',
+        'canonical_asset_id',
+        'identity_mode',
+        'consistency_threshold',
+        'descriptor_summary',
+        'immutable_elements',
+        'allowed_transforms',
+    ];
+    $assetUploadFieldNames = ['logo', 'images', 'images.*'];
+
+    $uploadSectionOpen = $assets->isEmpty() || $hasErrorFor($assetUploadFieldNames);
+    $defaultsSectionOpen = $hasErrorFor($defaultsFieldNames) || !filled($profile?->default_goal);
+    $strategySectionOpen = $hasErrorFor($strategyFieldNames) || !$strategy;
+    $companySectionOpen = $hasErrorFor($companyFieldNames) || !$profile;
+    $guidedPersonaSectionOpen = $hasErrorFor($guidedPersonaFieldNames);
+    $manualVariableSectionOpen = $hasErrorFor($manualVariableFieldNames) || !empty($selectedVariableAssetIds);
+
+    $platformLabels = collect([
+        'instagram' => 'Instagram',
+        'facebook' => 'Facebook',
+        'tiktok' => 'TikTok',
+        'linkedin' => 'LinkedIn',
+        'youtube' => 'YouTube',
+        'threads' => 'Threads',
+    ]);
+    $formatLabels = collect([
+        'reel' => 'Reel',
+        'post' => 'Post',
+        'story' => 'Stories',
+        'live' => 'Live',
+        'blog' => 'Blog',
+        'newsletter' => 'Newsletter',
+    ]);
+    $defaultPlatformSummary = collect($defaultPlatforms)
+        ->map(fn ($item) => $platformLabels->get($item, ucfirst((string) $item)))
+        ->take(3)
+        ->implode(' / ');
+    $defaultFormatSummary = collect($defaultFormats)
+        ->map(fn ($item) => $formatLabels->get($item, ucfirst((string) $item)))
+        ->take(3)
+        ->implode(' / ');
+    $companySummary = collect([
+        old('business_name', $profile?->business_name),
+        old('industry', $profile?->industry),
+        old('website', $profile?->website),
+    ])->filter(fn ($item) => filled($item))->take(3)->values();
+    $latestLogoLabel = $logos->first()
+        ? \Illuminate\Support\Str::limit((string) ($logos->first()->original_name ?? basename((string) $logos->first()->path)), 26, '...')
+        : 'nessuno';
+    $latestImageLabel = $images->first()
+        ? \Illuminate\Support\Str::limit((string) ($images->first()->original_name ?? basename((string) $images->first()->path)), 26, '...')
+        : 'nessuna';
+    $activeVariableKinds = collect($assetVariableCatalog)
+        ->countBy(fn ($row) => (string) ($row['kind'] ?? 'custom'));
+
     $inputClass = 'block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200';
     $labelClass = 'mb-1 block text-sm font-semibold text-gray-700';
 @endphp
@@ -448,17 +575,67 @@
         </div>
     @endif
 
-    <div class="grid gap-6 xl:grid-cols-3">
+    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div class="space-y-6 xl:col-span-2">
-            <form method="POST" action="{{ route('profile.brand.store') }}" enctype="multipart/form-data" class="space-y-6">
+            <form id="brandProfileForm" method="POST" action="{{ route('profile.brand.store') }}" enctype="multipart/form-data" class="flex flex-col gap-6">
                 @csrf
                 <input type="hidden" name="strategy_action" id="strategy_action" value="save">
 
-                <div id="brand-profile-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h2 class="text-lg font-semibold text-gray-900">Profilo completo azienda</h2>
-                    <p class="mt-1 text-sm text-gray-600">Qui completi e rifinisci i dati del brand usati dalla strategia editoriale.</p>
+                <div class="order-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+                    <div class="border-b border-gray-100 p-6">
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Brand workflow</div>
+                                <h2 class="mt-2 text-xl font-semibold text-gray-900">Prima le impostazioni operative, poi i dati aziendali stabili</h2>
+                                <p class="mt-2 max-w-2xl text-sm text-gray-600">
+                                    Le sezioni piu usate restano in alto. I dati che cambiano raramente stanno piu in basso,
+                                    cosi il Brand Center si gestisce piu velocemente.
+                                </p>
+                            </div>
+                            <div class="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-900">
+                                <p class="font-semibold">Salvataggio unico</p>
+                                <p class="mt-1 text-xs text-indigo-800">Asset base, default, strategia e anagrafica restano nello stesso form.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-4">
+                        <a href="#brand-assets-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Materiali visual</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} logo, {{ $images->count() }} immagini</p>
+                            <p class="mt-1 text-xs text-gray-600">La base piu usata per guidare output e stile.</p>
+                        </a>
+                        <a href="#brand-defaults-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Default contenuti</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ ucfirst($tone) }} / {{ old('default_posts_per_week', $profile?->default_posts_per_week ?? 5) }} post/settimana</p>
+                            <p class="mt-1 text-xs text-gray-600">{{ $defaultPlatformSummary !== '' ? $defaultPlatformSummary : 'Da completare' }}</p>
+                        </a>
+                        <a href="#brand-strategy-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Strategy Studio</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $strategyStatus }}</p>
+                            <p class="mt-1 text-xs text-gray-600">Ultimo update {{ $strategyUpdatedAt }}</p>
+                        </a>
+                        <a href="#brand-profile-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Dati aziendali</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $companySummary->isNotEmpty() ? $companySummary->implode(' - ') : 'Da completare' }}</p>
+                            <p class="mt-1 text-xs text-gray-600">Sono in basso perche in genere cambiano meno spesso.</p>
+                        </a>
+                    </div>
+                </div>
 
-                    <div class="mt-4 space-y-4">
+                <details id="brand-profile-section" class="order-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($companySectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Dati aziendali di base</h2>
+                            <p class="mt-1 text-sm text-gray-600">Anagrafica, posizionamento e contesto del brand. In genere li tocchi molto meno spesso.</p>
+                        </div>
+                        <div class="max-w-xs text-right text-xs text-gray-600">
+                            <p class="font-semibold text-gray-900">{{ $companySummary->isNotEmpty() ? $companySummary->implode(' - ') : 'Da completare' }}</p>
+                            <p class="mt-1">Tenuti in basso per alleggerire il flusso operativo di tutti i giorni.</p>
+                        </div>
+                    </summary>
+
+                    <div class="border-t border-gray-100 p-6">
+                    <div class="space-y-4">
                         <div>
                             <label for="business_name" class="{{ $labelClass }}">Nome attivita</label>
                             <input id="business_name" type="text" name="business_name" value="{{ old('business_name', $profile?->business_name ?? '') }}" class="{{ $inputClass }}" required />
@@ -509,13 +686,23 @@
                             <textarea id="seasonal_offers" name="seasonal_offers" rows="3" class="{{ $inputClass }}" placeholder="Es. promo mese, bundle, sconto primo mese">{{ old('seasonal_offers', $profile?->seasonal_offers ?? '') }}</textarea>
                         </div>
                     </div>
-                </div>
+                    </div>
+                </details>
 
-                <div id="brand-defaults-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h2 class="text-lg font-semibold text-gray-900">Default contenuti</h2>
-                    <p class="mt-1 text-sm text-gray-600">Precompilazione automatica quando apri un nuovo piano editoriale.</p>
+                <details id="brand-defaults-section" class="order-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($defaultsSectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Default contenuti</h2>
+                            <p class="mt-1 text-sm text-gray-600">Valori usati per precompilare nuovi piani editoriali e contenuti.</p>
+                        </div>
+                        <div class="max-w-xs text-right text-xs text-gray-600">
+                            <p class="font-semibold text-gray-900">{{ ucfirst($tone) }} / {{ old('default_posts_per_week', $profile?->default_posts_per_week ?? 5) }} post/settimana</p>
+                            <p class="mt-1">{{ $defaultFormatSummary !== '' ? $defaultFormatSummary : 'Formati da impostare' }}</p>
+                        </div>
+                    </summary>
 
-                    <div class="mt-4 space-y-4">
+                    <div class="border-t border-gray-100 p-6">
+                        <div class="space-y-4">
                         <div>
                             <label for="default_goal" class="{{ $labelClass }}">Obiettivo default</label>
                             <textarea id="default_goal" name="default_goal" rows="2" class="{{ $inputClass }}" placeholder="Es. Lead + Awareness + Autorita">{{ old('default_goal', $profile?->default_goal ?? '') }}</textarea>
@@ -573,20 +760,25 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                    </div>
+                </details>
 
-                <div id="brand-strategy-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
+                <details id="brand-strategy-section" class="order-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($strategySectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
                         <div>
                             <h2 class="text-lg font-semibold text-gray-900">Strategy Studio</h2>
-                            <p class="mt-1 text-sm text-gray-600">Strategia base usata in ogni prompt (singolo e piano). Aggiornata: {{ $strategyUpdatedAt }}</p>
+                            <p class="mt-1 text-sm text-gray-600">Strategia base usata in ogni prompt singolo e nei piani completi.</p>
                         </div>
-                        <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
-                            {{ $strategyStatus }}
-                        </span>
-                    </div>
+                        <div class="flex flex-col items-end gap-2 text-right">
+                            <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
+                                {{ $strategyStatus }}
+                            </span>
+                            <span class="text-xs text-gray-500">Aggiornata {{ $strategyUpdatedAt }}</span>
+                        </div>
+                    </summary>
 
-                    <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div class="border-t border-gray-100 p-6">
+                    <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
                         <label class="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
                             <input type="hidden" name="strategy_locked" value="0">
                             <input type="checkbox" name="strategy_locked" value="1" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @checked($strategyLocked)>
@@ -690,13 +882,23 @@
                         </button>
                         <p class="text-xs text-gray-500">La rigenerazione mantiene i campi manuali inviati in questo form.</p>
                     </div>
-                </div>
+                    </div>
+                </details>
 
-                <div id="brand-assets-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <h2 class="text-lg font-semibold text-gray-900">Upload assets</h2>
-                    <p class="mt-1 text-sm text-gray-600">Carica logo e immagini di riferimento per guidare output e stile.</p>
+                <details id="brand-assets-section" class="order-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($uploadSectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Materiali visual</h2>
+                            <p class="mt-1 text-sm text-gray-600">Logo e immagini base per guidare output, stile e riconoscibilita del brand.</p>
+                        </div>
+                        <div class="text-right text-xs text-gray-600">
+                            <p class="font-semibold text-gray-900">{{ $logos->count() }} logo / {{ $images->count() }} immagini</p>
+                            <p class="mt-1">Apri solo quando devi caricare o aggiornare.</p>
+                        </div>
+                    </summary>
 
-                    <div class="mt-4 space-y-4">
+                    <div class="border-t border-gray-100 p-6">
+                        <div class="space-y-4">
                         <div>
                             <label for="logo" class="{{ $labelClass }}">Logo (opzionale)</label>
                             <input id="logo" type="file" name="logo" accept="image/*" class="{{ $inputClass }}" />
@@ -708,23 +910,24 @@
                             <p class="mt-1 text-xs text-gray-500">Esempi: prodotti, progetti, mood, palette.</p>
                         </div>
                     </div>
-                </div>
+                    </div>
+                </details>
 
-                <div class="flex flex-wrap items-center justify-end gap-2">
+                <div class="order-5 flex flex-wrap items-center justify-end gap-2">
                     <a href="{{ route('wizard.start') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Nuovo piano editoriale
                     </a>
                     <button type="submit" class="ui-btn-primary justify-center">
-                        Salva profilo completo
+                        Salva Brand Center
                     </button>
                 </div>
             </form>
 
-            <div id="brand-variables-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div id="brand-assets-library-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Assets caricati</h2>
-                        <p class="mt-1 text-sm text-gray-600">Seleziona asset e usa elimina multipla o elimina singolo.</p>
+                        <h2 class="text-lg font-semibold text-gray-900">Libreria asset</h2>
+                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file gia caricati. Selezione multipla per logo e immagini, elimina singolo per i video.</p>
                     </div>
 
                     @if($assets->count() > 0)
@@ -736,18 +939,37 @@
                     @endif
                 </div>
 
+                <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Logo</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} file</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Immagini</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $images->count() }} file</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Video</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $videos->count() }} file</p>
+                    </div>
+                </div>
+
                 @if($assets->count() === 0)
                     <div class="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center text-sm text-gray-600">
                         Nessun asset caricato.
                     </div>
                 @else
                     <div class="mt-6 space-y-8">
-                        <div>
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-sm font-semibold text-gray-900">Logo</h3>
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($logos->count() > 0 && $logos->count() <= 2) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Logo</h3>
+                                    <p class="mt-1 text-xs text-gray-600">Apri il blocco solo quando devi controllare o eliminare i file.</p>
+                                </div>
                                 <span class="text-xs text-gray-500">{{ $logos->count() }} file</span>
-                            </div>
-                            <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                                 @forelse($logos as $a)
                                     <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
                                         <div class="border-b border-gray-200 bg-gray-50 p-2">
@@ -777,14 +999,19 @@
                                     </div>
                                 @endforelse
                             </div>
-                        </div>
-
-                        <div>
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-sm font-semibold text-gray-900">Immagini</h3>
-                                <span class="text-xs text-gray-500">{{ $images->count() }} file</span>
                             </div>
-                            <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                        </details>
+
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($images->count() > 0 && $images->count() <= 8) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Immagini</h3>
+                                    <p class="mt-1 text-xs text-gray-600">Il blocco resta compatto quando la libreria cresce.</p>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ $images->count() }} file</span>
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                                 @forelse($images as $a)
                                     <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
                                         <div class="border-b border-gray-200 bg-gray-50 p-2">
@@ -814,14 +1041,19 @@
                                     </div>
                                 @endforelse
                             </div>
-                        </div>
-
-                        <div>
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-sm font-semibold text-gray-900">Video</h3>
-                                <span class="text-xs text-gray-500">{{ $videos->count() }} file</span>
                             </div>
-                            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        </details>
+
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($videos->count() > 0 && $videos->count() <= 2) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Video</h3>
+                                    <p class="mt-1 text-xs text-gray-600">Restano separati per evitare cancellazioni accidentali.</p>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ $videos->count() }} file</span>
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="mt-0 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 @forelse($videos as $a)
                                     <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
                                         <div class="border-b border-gray-200 bg-gray-50 p-2">
@@ -845,17 +1077,18 @@
                                     </div>
                                 @endforelse
                             </div>
-                        </div>
+                            </div>
+                        </details>
                     </div>
                 @endif
             </div>
 
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div id="brand-variables-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Variabili asset (Object Library)</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">Variabili asset</h2>
                         <p class="mt-1 text-sm text-gray-600">
-                            Raggruppa immagini/logo in variabili riutilizzabili (es. persona: Manuel, location: Ufficio, prodotto: Jaguar).
+                            Raggruppa immagini e logo in riferimenti riutilizzabili. I blocchi di creazione stanno sotto e i dettagli delle card saranno piu leggibili.
                         </p>
                     </div>
                     <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
@@ -863,8 +1096,8 @@
                     </span>
                 </div>
 
-                <div class="mt-4 rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-indigo-50 p-5">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
+                <details class="mt-4 overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-indigo-50" @if($guidedPersonaSectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-5">
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Nuovo flusso guidato</p>
                             <h3 class="mt-1 text-base font-semibold text-gray-900">Crea un persona pack per immagini e video</h3>
@@ -874,11 +1107,12 @@
                             </p>
                         </div>
                         <span class="inline-flex items-center rounded-full border border-cyan-200 bg-white px-2.5 py-1 text-xs font-semibold text-cyan-700">
-                            V1 persona pack
+                            Guidato
                         </span>
-                    </div>
+                    </summary>
 
-                    <div class="mt-4 grid gap-3 md:grid-cols-3">
+                    <div class="border-t border-cyan-100 p-5">
+                    <div class="grid gap-3 md:grid-cols-3">
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Scatti richiesti</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">4 angoli chiave + mezzo busto opzionale</p>
@@ -978,9 +1212,22 @@
                             </button>
                         </div>
                     </form>
-                </div>
+                    </div>
+                </details>
 
-                <form method="POST" action="{{ route('profile.brand.variables.store') }}" class="mt-4 space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <details class="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50" @if($manualVariableSectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-start justify-between gap-3 px-4 py-4">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Flusso manuale</p>
+                            <h3 class="mt-1 text-base font-semibold text-gray-900">Crea una variabile custom</h3>
+                            <p class="mt-1 text-sm text-gray-600">Per persone, prodotti, luoghi o elementi da riusare nei prompt.</p>
+                        </div>
+                        <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
+                            Flessibile
+                        </span>
+                    </summary>
+
+                    <form method="POST" action="{{ route('profile.brand.variables.store') }}" class="space-y-4 border-t border-gray-200 p-4">
                     @csrf
                     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
                         <div>
@@ -1058,11 +1305,12 @@
 
                     @if($variableCandidateAssets->isEmpty())
                         <div class="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-4 text-sm text-gray-600">
-                            Nessun asset disponibile: carica prima immagini/logo dal blocco Upload assets.
+                            Nessun asset disponibile: carica prima immagini o logo dal blocco Materiali visual.
                         </div>
                     @else
-                        <div>
-                            <p class="mb-2 text-sm font-semibold text-gray-700">Seleziona asset da associare</p>
+                        <details class="overflow-hidden rounded-xl border border-gray-200 bg-white" @if($manualVariableSectionOpen) open @endif>
+                            <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-gray-700">Seleziona asset da associare</summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
                             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                                 @foreach($variableCandidateAssets as $asset)
                                     @php
@@ -1088,7 +1336,8 @@
                                     </label>
                                 @endforeach
                             </div>
-                        </div>
+                            </div>
+                        </details>
                     @endif
 
                     <div class="flex justify-end">
@@ -1096,7 +1345,8 @@
                             Crea variabile
                         </button>
                     </div>
-                </form>
+                    </form>
+                </details>
 
                 @if($assetVariables->isEmpty())
                     <div class="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-600">
@@ -1141,42 +1391,49 @@
                                     </form>
                                 </div>
                                 @if($varDesc !== '')
-                                    <p class="mt-2 text-xs text-gray-600">{{ $varDesc }}</p>
+                                    <p class="mt-2 text-xs text-gray-600">{{ \Illuminate\Support\Str::limit($varDesc, 110, '...') }}</p>
                                 @endif
-                                @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '')
-                                    <div class="mt-3 space-y-2 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
-                                        @if($varRole !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Ruolo:</span> {{ $varRole }}</p>
-                                        @endif
-                                        @if($varImmutableTraits !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Da non cambiare:</span> {{ $varImmutableTraits }}</p>
-                                        @endif
-                                        @if($varPromptNotes !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Indicazioni AI:</span> {{ $varPromptNotes }}</p>
-                                        @endif
-                                    </div>
-                                @endif
-                                @if($varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '')
-                                    <div class="mt-3 space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
-                                        @if($varAssetRole !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Asset role:</span> {{ $varAssetRole }}</p>
-                                        @endif
-                                        @if($varIdentityMode !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Mode:</span> {{ $varIdentityMode }}@if($varThreshold > 0) / soglia {{ $varThreshold }}@endif</p>
-                                        @endif
-                                        @if($varDescriptor !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Descrittore:</span> {{ $varDescriptor }}</p>
-                                        @endif
-                                        @if($varLocked !== '')
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Da non cambiare:</span> {{ $varLocked }}</p>
-                                        @endif
-                                        @if(!empty($varAllowedTransforms))
-                                            <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Trasformazioni ammesse:</span> {{ implode(', ', array_slice(array_values(array_filter(array_map('strval', $varAllowedTransforms))), 0, 6)) }}</p>
-                                        @endif
-                                    </div>
-                                @endif
-                                @if($varVideoCount > 0)
-                                    <p class="mt-3 text-xs font-semibold text-indigo-700">Include anche {{ $varVideoCount }} video di riferimento</p>
+                                @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '' || $varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '' || $varVideoCount > 0)
+                                    <details class="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                                        <summary class="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-gray-700">Dettagli variabile</summary>
+                                        <div class="border-t border-gray-200 p-3 space-y-3">
+                                            @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '')
+                                                <div class="space-y-2 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                                                    @if($varRole !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Ruolo:</span> {{ $varRole }}</p>
+                                                    @endif
+                                                    @if($varImmutableTraits !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Da non cambiare:</span> {{ $varImmutableTraits }}</p>
+                                                    @endif
+                                                    @if($varPromptNotes !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Indicazioni AI:</span> {{ $varPromptNotes }}</p>
+                                                    @endif
+                                                </div>
+                                            @endif
+                                            @if($varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '')
+                                                <div class="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+                                                    @if($varAssetRole !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Asset role:</span> {{ $varAssetRole }}</p>
+                                                    @endif
+                                                    @if($varIdentityMode !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Mode:</span> {{ $varIdentityMode }}@if($varThreshold > 0) / soglia {{ $varThreshold }}@endif</p>
+                                                    @endif
+                                                    @if($varDescriptor !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Descrittore:</span> {{ $varDescriptor }}</p>
+                                                    @endif
+                                                    @if($varLocked !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Da non cambiare:</span> {{ $varLocked }}</p>
+                                                    @endif
+                                                    @if(!empty($varAllowedTransforms))
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Trasformazioni ammesse:</span> {{ implode(', ', array_slice(array_values(array_filter(array_map('strval', $varAllowedTransforms))), 0, 6)) }}</p>
+                                                    @endif
+                                                </div>
+                                            @endif
+                                            @if($varVideoCount > 0)
+                                                <p class="text-xs font-semibold text-indigo-700">Include anche {{ $varVideoCount }} video di riferimento</p>
+                                            @endif
+                                        </div>
+                                    </details>
                                 @endif
                                 <div class="mt-3 grid grid-cols-4 gap-2">
                                     @foreach(array_slice($varAssets, 0, 4) as $assetPreview)
@@ -1207,9 +1464,9 @@
             </div>
         </div>
 
-        <div class="space-y-6">
+        <div class="self-start space-y-6 xl:sticky xl:top-6">
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Stato profilo</h2>
+                <h2 class="text-lg font-semibold text-gray-900">Panoramica</h2>
                 <div class="mt-4 space-y-3">
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">Setup iniziale</p>
@@ -1247,9 +1504,12 @@
             </div>
 
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Collegamenti utili</h2>
-                <p class="mt-1 text-sm text-gray-600">Aree principali collegate al profilo brand.</p>
+                <h2 class="text-lg font-semibold text-gray-900">Azioni rapide</h2>
+                <p class="mt-1 text-sm text-gray-600">Salva il Brand Center o vai alle aree collegate.</p>
                 <div class="mt-4 space-y-2">
+                    <button type="submit" form="brandProfileForm" class="ui-btn-primary w-full justify-center">
+                        Salva Brand Center
+                    </button>
                     <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
                         <p class="mt-1 text-xs text-gray-600">Imposta strategia, volume e periodo dei contenuti.</p>
