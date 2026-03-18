@@ -2586,6 +2586,16 @@ SVG;
      */
     private function buildKlingReferenceInput(string $storagePath, string $absolutePath): ?array
     {
+        if ($this->shouldPreferInlineKlingReference()) {
+            $dataUri = $this->buildKlingDataUri($absolutePath);
+            if ($dataUri !== null) {
+                return [
+                    'mode' => 'data_uri',
+                    'value' => $dataUri,
+                ];
+            }
+        }
+
         try {
             return [
                 'mode' => 'public_url',
@@ -2602,6 +2612,13 @@ SVG;
                 'value' => $dataUri,
             ];
         }
+    }
+
+    private function shouldPreferInlineKlingReference(): bool
+    {
+        $baseUrl = strtolower(trim((string) (config('kling.base_url') ?: '')));
+
+        return str_contains($baseUrl, 'klingai.com');
     }
 
     private function buildKlingDataUri(string $absolutePath): ?string
