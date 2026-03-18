@@ -725,37 +725,47 @@ class GenerateAiForContentItem implements ShouldQueue
             }
         } catch (Throwable $e) {
             $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
-            $meta['image_error'] = $e->getMessage();
-            $meta['image_error_at'] = now()->toDateTimeString();
-            $meta['image_provider'] = $this->resolveImageProvider($meta);
-            $isNet = $this->isTransientNetworkError($e);
-            $isBilling = $this->isImageBillingLimitError($e);
+            $isVideoFailure = $this->isVideoFormat($item);
+            $errorKey = $isVideoFailure ? 'video_error' : 'image_error';
+            $errorAtKey = $errorKey . '_at';
+            $meta[$errorKey] = $e->getMessage();
+            $meta[$errorAtKey] = now()->toDateTimeString();
 
-            if ($isNet || $isBilling) {
-                $placeholderPath = $this->createLocalImagePlaceholder($item, $tenantProfile);
-                if ($placeholderPath) {
-                    $item->ai_image_path = $placeholderPath;
-                    $meta['image_fallback'] = 'local_placeholder';
-                    $meta['image_fallback_reason'] = $isNet ? 'network_dns_timeout' : 'billing_limit';
-                    $meta['image_fallback_at'] = now()->toDateTimeString();
+            if ($isVideoFailure) {
+                $meta['video_provider_requested'] = $this->resolveVideoProvider($meta);
+                $item->ai_image_path = null;
+            } else {
+                $meta['image_provider'] = $this->resolveImageProvider($meta);
+                $isNet = $this->isTransientNetworkError($e);
+                $isBilling = $this->isImageBillingLimitError($e);
+
+                if ($isNet || $isBilling) {
+                    $placeholderPath = $this->createLocalImagePlaceholder($item, $tenantProfile);
+                    if ($placeholderPath) {
+                        $item->ai_image_path = $placeholderPath;
+                        $meta['image_fallback'] = 'local_placeholder';
+                        $meta['image_fallback_reason'] = $isNet ? 'network_dns_timeout' : 'billing_limit';
+                        $meta['image_fallback_at'] = now()->toDateTimeString();
+                    } else {
+                        $item->ai_image_path = null;
+                        $meta['image_fallback'] = null;
+                        $meta['image_fallback_reason'] = null;
+                        $meta['image_fallback_at'] = null;
+                    }
                 } else {
                     $item->ai_image_path = null;
                     $meta['image_fallback'] = null;
                     $meta['image_fallback_reason'] = null;
                     $meta['image_fallback_at'] = null;
                 }
-            } else {
-                $item->ai_image_path = null;
-                $meta['image_fallback'] = null;
-                $meta['image_fallback_reason'] = null;
-                $meta['image_fallback_at'] = null;
             }
 
             $item->ai_meta = $meta;
             $item->save();
 
-            Log::warning('GenerateAiForContentItem image failed', [
+            Log::warning('GenerateAiForContentItem visual generation failed', [
                 'content_item_id' => $item->id,
+                'mode' => $isVideoFailure ? 'video' : 'image',
                 'error' => $e->getMessage(),
             ]);
         }
@@ -764,9 +774,10 @@ class GenerateAiForContentItem implements ShouldQueue
 
         if ($strictAssetMode && !$this->hasGeneratedVisualOutput($item)) {
             $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
+            $errorMetaKey = $this->isVideoFormat($item) ? 'video_error' : 'image_error';
             $baseError = trim((string) ($item->ai_error ?? ''));
             if ($baseError === '') {
-                $baseError = trim((string) data_get($metaNow, 'image_error', ''));
+                $baseError = trim((string) data_get($metaNow, $errorMetaKey, ''));
             }
 
             $item->ai_status = 'error';
@@ -1487,6 +1498,84 @@ SVG;
                 assetVariables: $assetVariables,
                 providerFallback: null
             );
+        } catch (Throwable $openAiError) {
+            if (!$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiError)) {
+                throw $openAiError;
+            }
+
+            $fallbackProviders = $this->secondaryVideoProvidersForOpenAiFailure(!empty($generationReferenceAbsPool));
+            $fallbackFailures = [];
+
+            foreach ($fallbackProviders as $fallbackProvider) {
+                try {
+                    if ($fallbackProvider === 'runway') {
+                        $result = $this->generateVideoWithRunway(
+                            runway: $runway,
+                            openAi: $openAi,
+                            item: $item,
+                            briefRaw: $briefRaw,
+                            fallbackPrompt: $prompt,
+                            videoPrompt: $runwayExecutionPrompt,
+                            referenceAbs: $referenceAbs,
+                            referencePath: $referencePath,
+                            referencePaths: $referencePaths,
+                            referenceReason: $referenceReason . '_runway_fallback_after_openai_failure',
+                            generationReferenceAbsPool: $generationReferenceAbsPool,
+                            imageReferencePathPool: $imageReferencePathPool,
+                            validationReferenceAbsPool: $validationReferenceAbsPool,
+                            mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                            compositionMeta: $compositionMeta,
+                            brandDecision: $brandDecision,
+                            videoOptions: $videoOptions
+                        );
+                    } else {
+                        $result = $this->generateVideoWithKling(
+                            kling: $kling,
+                            item: $item,
+                            briefRaw: $briefRaw,
+                            fallbackPrompt: $prompt,
+                            videoPrompt: $klingExecutionPrompt,
+                            referenceAbsPool: $generationReferenceAbsPool,
+                            referencePaths: $imageReferencePathPool,
+                            referenceReason: $referenceReason . '_kling_fallback_after_openai_failure',
+                            compositionMeta: $compositionMeta,
+                            brandDecision: $brandDecision,
+                            videoOptions: $videoOptions,
+                            assetVariables: $assetVariables,
+                            activeFeedbackRequest: $activeFeedbackRequest,
+                            locationSequenceMode: $locationSequenceMode
+                        );
+                    }
+
+                    $result['provider_fallback'] = [
+                        'from' => 'openai',
+                        'to' => $fallbackProvider,
+                        'reason' => Str::limit($openAiError->getMessage(), 220, ''),
+                        'at' => now()->toDateTimeString(),
+                    ];
+
+                    return $result;
+                } catch (Throwable $fallbackError) {
+                    $fallbackFailures[] = $fallbackProvider . ': ' . Str::limit($fallbackError->getMessage(), 220, '');
+
+                    Log::warning('GenerateAiForContentItem video fallback failed', [
+                        'content_item_id' => $item->id,
+                        'from_provider' => 'openai',
+                        'to_provider' => $fallbackProvider,
+                        'error' => $fallbackError->getMessage(),
+                    ]);
+                }
+            }
+
+            if (!empty($fallbackFailures)) {
+                throw new \RuntimeException(
+                    $openAiError->getMessage() . ' | VIDEO_PROVIDER_FALLBACKS_FAILED=' . implode(' || ', $fallbackFailures),
+                    0,
+                    $openAiError
+                );
+            }
+
+            throw $openAiError;
         } finally {
             if (is_string($preparedRefPath) && $preparedRefPath !== '' && is_file($preparedRefPath)) {
                 @unlink($preparedRefPath);
@@ -2986,6 +3075,67 @@ SVG;
             || str_contains($message, 'runway video generation timeout')
             || str_contains($message, 'curl error')
             || str_contains($message, 'failed to connect');
+    }
+
+    private function shouldFallbackFromOpenAiToSecondaryProvider(Throwable $error): bool
+    {
+        if ($this->isOpenAiVideoModerationBlock($error)) {
+            return false;
+        }
+
+        $message = strtolower(trim($error->getMessage()));
+        if ($message === '') {
+            return false;
+        }
+
+        if (str_contains($message, 'inpaint image must match')
+            || str_contains($message, 'inpaint')
+            || str_contains($message, 'input_reference')) {
+            return false;
+        }
+
+        return str_contains($message, 'openai video create error (500)')
+            || str_contains($message, 'openai video retrieve error (500)')
+            || str_contains($message, 'openai video create error (502)')
+            || str_contains($message, 'openai video retrieve error (502)')
+            || str_contains($message, 'openai video create error (503)')
+            || str_contains($message, 'openai video retrieve error (503)')
+            || str_contains($message, 'openai video create error (504)')
+            || str_contains($message, 'openai video retrieve error (504)')
+            || str_contains($message, 'server_error')
+            || str_contains($message, 'server error')
+            || str_contains($message, 'temporarily unavailable')
+            || str_contains($message, 'gateway timeout')
+            || $this->isTransientNetworkError($error);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function secondaryVideoProvidersForOpenAiFailure(bool $hasReferencePool): array
+    {
+        $providers = [];
+
+        if ($hasReferencePool && $this->isVideoProviderConfigured('runway')) {
+            $providers[] = 'runway';
+        }
+
+        if ($this->isVideoProviderConfigured('kling')) {
+            $providers[] = 'kling';
+        }
+
+        return $providers;
+    }
+
+    private function isVideoProviderConfigured(string $provider): bool
+    {
+        return match (strtolower(trim($provider))) {
+            'openai' => trim((string) (config('openai.api_key') ?: env('OPENAI_API_KEY') ?: '')) !== '',
+            'runway' => trim((string) (config('runway.api_key') ?: env('RUNWAY_API_KEY') ?: '')) !== '',
+            'kling' => trim((string) (config('kling.access_key') ?: env('KLING_ACCESS_KEY') ?: '')) !== ''
+                && trim((string) (config('kling.secret_key') ?: env('KLING_SECRET_KEY') ?: '')) !== '',
+            default => false,
+        };
     }
 
     /**
