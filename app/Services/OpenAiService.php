@@ -475,7 +475,17 @@ class OpenAiService
         $last = [];
 
         do {
-            $last = $this->retrieveVideoJob($videoId);
+            try {
+                $last = $this->retrieveVideoJob($videoId);
+            } catch (Throwable $e) {
+                if ($this->isTransientVideoPollingError($e) && microtime(true) < $deadline) {
+                    sleep($pollEvery);
+
+                    continue;
+                }
+
+                throw $e;
+            }
             $status = strtolower(trim((string) ($last['status'] ?? '')));
 
             if (in_array($status, ['completed', 'succeeded', 'done'], true)) {
@@ -493,6 +503,26 @@ class OpenAiService
 
             sleep($pollEvery);
         } while (true);
+    }
+
+    private function isTransientVideoPollingError(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+
+        if ($message === '') {
+            return false;
+        }
+
+        return str_contains($message, 'openai video retrieve error (500)')
+            || str_contains($message, 'openai video retrieve error (502)')
+            || str_contains($message, 'openai video retrieve error (503)')
+            || str_contains($message, 'openai video retrieve error (504)')
+            || str_contains($message, 'server_error')
+            || str_contains($message, 'server error')
+            || str_contains($message, 'temporarily unavailable')
+            || str_contains($message, 'gateway timeout')
+            || str_contains($message, 'curl error')
+            || str_contains($message, 'failed to connect');
     }
 
     /**

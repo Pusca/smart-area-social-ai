@@ -1451,30 +1451,87 @@ SVG;
                     throw $runwayError;
                 }
 
-                return $this->generateVideoWithOpenAi(
-                    openAi: $openAi,
-                    briefRaw: $briefRaw,
-                    fallbackPrompt: $prompt,
-                    videoPrompt: $this->buildOpenAiVideoFallbackPrompt($openAiExecutionPrompt, $briefRaw, $referencePaths),
-                    referenceAbs: $referenceAbs,
-                    referencePath: $referencePath,
-                    referencePaths: $referencePaths,
-                    referenceReason: $referenceReason . '_openai_fallback_after_runway_failure',
-                    generationReferenceAbsPool: $generationReferenceAbsPool,
-                    imageReferencePathPool: $imageReferencePathPool,
-                    validationReferenceAbsPool: $validationReferenceAbsPool,
-                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
-                    compositionMeta: $compositionMeta,
-                    brandDecision: $brandDecision,
-                    videoOptions: $videoOptions,
-                    assetVariables: $assetVariables,
-                    providerFallback: [
-                        'from' => 'runway',
-                        'to' => 'openai',
-                        'reason' => Str::limit($runwayError->getMessage(), 220, ''),
-                        'at' => now()->toDateTimeString(),
-                    ]
-                );
+                try {
+                    return $this->generateVideoWithOpenAi(
+                        openAi: $openAi,
+                        briefRaw: $briefRaw,
+                        fallbackPrompt: $prompt,
+                        videoPrompt: $this->buildOpenAiVideoFallbackPrompt($openAiExecutionPrompt, $briefRaw, $referencePaths),
+                        referenceAbs: $referenceAbs,
+                        referencePath: $referencePath,
+                        referencePaths: $referencePaths,
+                        referenceReason: $referenceReason . '_openai_fallback_after_runway_failure',
+                        generationReferenceAbsPool: $generationReferenceAbsPool,
+                        imageReferencePathPool: $imageReferencePathPool,
+                        validationReferenceAbsPool: $validationReferenceAbsPool,
+                        mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                        compositionMeta: $compositionMeta,
+                        brandDecision: $brandDecision,
+                        videoOptions: $videoOptions,
+                        assetVariables: $assetVariables,
+                        providerFallback: [
+                            'from' => 'runway',
+                            'to' => 'openai',
+                            'reason' => Str::limit($runwayError->getMessage(), 220, ''),
+                            'at' => now()->toDateTimeString(),
+                        ]
+                    );
+                } catch (Throwable $openAiFallbackError) {
+                    if (!$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiFallbackError)) {
+                        throw $openAiFallbackError;
+                    }
+
+                    $secondaryProviders = array_values(array_filter(
+                        $this->secondaryVideoProvidersForOpenAiFailure(!empty($generationReferenceAbsPool)),
+                        fn ($provider) => $provider !== 'runway'
+                    ));
+                    $secondaryFailures = [];
+
+                    foreach ($secondaryProviders as $secondaryProvider) {
+                        try {
+                            if ($secondaryProvider !== 'kling') {
+                                continue;
+                            }
+
+                            $result = $this->generateVideoWithKling(
+                                kling: $kling,
+                                item: $item,
+                                briefRaw: $briefRaw,
+                                fallbackPrompt: $prompt,
+                                videoPrompt: $klingExecutionPrompt,
+                                referenceAbsPool: $generationReferenceAbsPool,
+                                referencePaths: $imageReferencePathPool,
+                                referenceReason: $referenceReason . '_kling_fallback_after_runway_openai_failure',
+                                compositionMeta: $compositionMeta,
+                                brandDecision: $brandDecision,
+                                videoOptions: $videoOptions,
+                                assetVariables: $assetVariables,
+                                activeFeedbackRequest: $activeFeedbackRequest,
+                                locationSequenceMode: $locationSequenceMode
+                            );
+                            $result['provider_fallback'] = [
+                                'from' => 'runway',
+                                'via' => 'openai',
+                                'to' => 'kling',
+                                'reason' => Str::limit($openAiFallbackError->getMessage(), 220, ''),
+                                'at' => now()->toDateTimeString(),
+                            ];
+
+                            return $result;
+                        } catch (Throwable $secondaryError) {
+                            $secondaryFailures[] = $secondaryProvider . ': ' . Str::limit($secondaryError->getMessage(), 220, '');
+                        }
+                    }
+
+                    if (!empty($secondaryFailures)) {
+                        throw new RuntimeException(
+                            $openAiFallbackError->getMessage() . ' | Secondary fallback failures: ' . implode(' | ', $secondaryFailures),
+                            previous: $openAiFallbackError
+                        );
+                    }
+
+                    throw $openAiFallbackError;
+                }
             }
         }
 
@@ -3252,7 +3309,7 @@ SVG;
     {
         $providers = [];
 
-        if ($hasReferencePool && $this->isVideoProviderConfigured('runway')) {
+        if ($this->isVideoProviderConfigured('runway')) {
             $providers[] = 'runway';
         }
 
