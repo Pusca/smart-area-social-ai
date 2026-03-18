@@ -102,7 +102,13 @@ class TenantContentIntelligenceService
         $keywords = $this->extractKeywords($brief);
         $rows = ContentItem::query()
             ->with([
-                'latestFeedbackEntry:id,content_item_id,sentiment,reason,category',
+                'latestFeedbackEntry' => fn ($query) => $query->select([
+                    'content_feedback_entries.id',
+                    'content_feedback_entries.content_item_id',
+                    'content_feedback_entries.sentiment',
+                    'content_feedback_entries.reason',
+                    'content_feedback_entries.category',
+                ]),
             ])
             ->where('tenant_id', $tenantId)
             ->where(function ($query) {

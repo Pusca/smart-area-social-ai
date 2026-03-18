@@ -44,7 +44,7 @@ class ContentItem extends Model
 
     public function latestFeedbackEntry(): HasOne
     {
-        return $this->hasOne(ContentFeedbackEntry::class)->latestOfMany();
+        return $this->hasOne(ContentFeedbackEntry::class, 'content_item_id')->latestOfMany('id');
     }
 
     /**
