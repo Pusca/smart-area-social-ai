@@ -1369,8 +1369,8 @@ SVG;
 
         $videoOptions = [
             'model' => match ($videoProvider) {
-                'runway' => (string) (config('runway.model') ?: 'gen4_turbo'),
-                'kling' => (string) (config('kling.model') ?: 'kling-v2-6'),
+                'runway' => $this->resolveRunwayVideoModel($item, $meta, $assetVariables, $imageReferencePathPool),
+                'kling' => (string) (config('kling.model') ?: ''),
                 default => (string) (config('openai.video_model') ?: 'sora-2'),
             },
             'seconds' => $this->targetVideoSecondsForFormat($item),
@@ -1987,7 +1987,49 @@ SVG;
 
     private function resolveVideoProvider(array $meta): string
     {
-        return VideoProviderResolver::normalize((string) data_get($meta, 'video_provider', ''));
+        $preferred = trim((string) data_get($meta, 'video_provider', ''));
+        if ($preferred !== '') {
+            return VideoProviderResolver::normalize($preferred);
+        }
+
+        $default = VideoProviderResolver::default();
+        if ($this->isVideoProviderConfigured($default)) {
+            return $default;
+        }
+
+        if ($default !== 'runway' && $this->isVideoProviderConfigured('runway')) {
+            return 'runway';
+        }
+
+        return VideoProviderResolver::default();
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<int, string>  $referencePaths
+     */
+    private function resolveRunwayVideoModel(ContentItem $item, array $meta, array $assetVariables, array $referencePaths): string
+    {
+        $explicit = trim((string) data_get($meta, 'video_model', ''));
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
+        $configured = strtolower(trim((string) (config('runway.model') ?: '')));
+        if ($configured === '' || in_array($configured, ['gen4_turbo', 'gen4-turbo'], true)) {
+            $configured = 'gen4.5';
+        }
+
+        $format = strtolower(trim((string) ($item->format ?? 'post')));
+        $hasReferences = !empty(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''));
+        $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+
+        if ($hasPersonVariable || $hasReferences || $format === 'reel') {
+            return $configured;
+        }
+
+        return $configured;
     }
 
     private function resolveImageProvider(array $meta): string
@@ -2722,7 +2764,7 @@ SVG;
         array $videoOptions
     ): array {
         $runwayOptions = [
-            'model' => (string) (config('runway.model') ?: 'gen4_turbo'),
+            'model' => (string) ($videoOptions['model'] ?? config('runway.model') ?: 'gen4.5'),
             'seconds' => (string) ($videoOptions['seconds'] ?? (string) (config('runway.video_seconds') ?: 8)),
             'size' => (string) ($videoOptions['size'] ?? config('openai.video_size') ?: '720x1280'),
         ];

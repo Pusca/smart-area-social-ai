@@ -68,7 +68,7 @@ class RunwayService
      */
     public function createVideoJob(string $prompt, ?string $inputReferenceAbsolutePath = null, array $options = []): array
     {
-        $model = trim((string) ($options['model'] ?? config('runway.model') ?: 'gen4_turbo'));
+        $model = trim((string) ($options['model'] ?? config('runway.model') ?: 'gen4.5'));
         $seconds = (int) ($options['seconds'] ?? config('runway.video_seconds') ?: 8);
         $seconds = max(3, min(15, $seconds));
         $size = trim((string) ($options['size'] ?? ''));
