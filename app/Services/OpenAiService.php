@@ -368,7 +368,13 @@ class OpenAiService
      */
     public function createVideoJob(string $prompt, ?string $inputReferenceAbsolutePath = null, array $options = []): array
     {
-        $model = (string) ($options['model'] ?? config('openai.video_model') ?: 'sora-2');
+        $model = strtolower(trim((string) ($options['model'] ?? config('openai.video_model') ?: 'sora-2')));
+        if (!str_starts_with($model, 'sora-2')) {
+            $model = strtolower(trim((string) (config('openai.video_model') ?: 'sora-2')));
+            if (!str_starts_with($model, 'sora-2')) {
+                $model = 'sora-2';
+            }
+        }
         $seconds = (string) ($options['seconds'] ?? config('openai.video_seconds') ?: '8');
         $size = (string) ($options['size'] ?? config('openai.video_size') ?: '720x1280');
         $timeout = (int) (config('openai.timeout_video_create') ?: config('openai.timeout') ?: 60);

@@ -2013,7 +2013,7 @@ SVG;
     {
         $explicit = trim((string) data_get($meta, 'video_model', ''));
         if ($explicit !== '') {
-            return $explicit;
+            return $this->normalizeRunwayVideoModel($explicit);
         }
 
         $configured = strtolower(trim((string) (config('runway.model') ?: '')));
@@ -2030,6 +2030,80 @@ SVG;
         }
 
         return $configured;
+    }
+
+    /**
+     * @param  array<string, mixed>  $videoOptions
+     * @return array<string, mixed>
+     */
+    private function normalizeVideoOptionsForProvider(string $provider, array $videoOptions): array
+    {
+        $provider = strtolower(trim($provider));
+        $seconds = (int) ($videoOptions['seconds'] ?? 0);
+        if ($seconds <= 0) {
+            $seconds = match ($provider) {
+                'runway' => (int) (config('runway.video_seconds') ?: 8),
+                'kling' => (int) (config('kling.video_seconds') ?: 5),
+                default => (int) (config('openai.video_seconds') ?: 8),
+            };
+        }
+
+        $size = trim((string) ($videoOptions['size'] ?? ''));
+        if ($size === '') {
+            $size = (string) (config('openai.video_size') ?: '720x1280');
+        }
+
+        $model = trim((string) ($videoOptions['model'] ?? ''));
+        $model = match ($provider) {
+            'runway' => $this->normalizeRunwayVideoModel($model),
+            'kling' => $this->normalizeKlingVideoModel($model),
+            default => $this->normalizeOpenAiVideoModel($model),
+        };
+
+        $videoOptions['model'] = $model;
+        $videoOptions['seconds'] = $seconds;
+        $videoOptions['size'] = $size;
+
+        return $videoOptions;
+    }
+
+    private function normalizeOpenAiVideoModel(string $model): string
+    {
+        $model = strtolower(trim($model));
+        if ($model !== '' && str_starts_with($model, 'sora-2')) {
+            return $model;
+        }
+
+        $configured = strtolower(trim((string) (config('openai.video_model') ?: 'sora-2')));
+
+        return str_starts_with($configured, 'sora-2') ? $configured : 'sora-2';
+    }
+
+    private function normalizeRunwayVideoModel(string $model): string
+    {
+        $model = strtolower(trim($model));
+        if ($model !== '' && !str_starts_with($model, 'sora-') && !str_starts_with($model, 'kling-')) {
+            return in_array($model, ['gen4_turbo', 'gen4-turbo'], true) ? 'gen4.5' : $model;
+        }
+
+        $configured = strtolower(trim((string) (config('runway.model') ?: 'gen4.5')));
+        if ($configured === '' || str_starts_with($configured, 'sora-') || str_starts_with($configured, 'kling-')) {
+            return 'gen4.5';
+        }
+
+        return in_array($configured, ['gen4_turbo', 'gen4-turbo'], true) ? 'gen4.5' : $configured;
+    }
+
+    private function normalizeKlingVideoModel(string $model): string
+    {
+        $model = strtolower(trim($model));
+        if ($model !== '' && str_starts_with($model, 'kling-')) {
+            return $model;
+        }
+
+        $configured = strtolower(trim((string) (config('kling.model') ?: '')));
+
+        return str_starts_with($configured, 'kling-') ? $configured : '';
     }
 
     private function resolveImageProvider(array $meta): string
@@ -2513,9 +2587,10 @@ SVG;
         $requestSummary['reference_count'] = count($referenceInputs);
         $requestSummary['reference_paths'] = array_values(array_slice($referencePaths, 0, 4));
 
+        $videoOptions = $this->normalizeVideoOptionsForProvider('kling', $videoOptions);
         $klingOptions = [
             'request_mode' => $requestMode,
-            'model' => (string) (config('kling.model') ?: 'kling-v2-6'),
+            'model' => (string) ($videoOptions['model'] ?? ''),
             'mode' => (string) (config('kling.mode') ?: 'pro'),
             'seconds' => (int) ($videoOptions['seconds'] ?? (int) (config('kling.video_seconds') ?: 5)),
             'size' => (string) ($videoOptions['size'] ?? '720x1280'),
@@ -2763,6 +2838,7 @@ SVG;
         array $brandDecision,
         array $videoOptions
     ): array {
+        $videoOptions = $this->normalizeVideoOptionsForProvider('runway', $videoOptions);
         $runwayOptions = [
             'model' => (string) ($videoOptions['model'] ?? config('runway.model') ?: 'gen4.5'),
             'seconds' => (string) ($videoOptions['seconds'] ?? (string) (config('runway.video_seconds') ?: 8)),
@@ -2948,6 +3024,7 @@ SVG;
         array $assetVariables,
         ?array $providerFallback = null
     ): array {
+        $videoOptions = $this->normalizeVideoOptionsForProvider('openai', $videoOptions);
         $validationAttempts = $mustEnforceExplicitReferences ? 2 : 1;
         $lastValidation = null;
         $lastError = null;
