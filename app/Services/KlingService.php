@@ -284,8 +284,8 @@ class KlingService
             return $this->defaultModelForRequestMode($requestMode);
         }
 
-        if ($requestMode === 'multi-image' && in_array($model, ['kling-v2-1', 'kling-v2-1-master'], true)) {
-            return 'kling-v2';
+        if ($requestMode === 'multi-image' && in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master'], true)) {
+            return 'kling-v1-6';
         }
 
         return $model;
@@ -298,7 +298,7 @@ class KlingService
         }
 
         return match ($requestMode) {
-            'multi-image' => 'kling-v2',
+            'multi-image' => 'kling-v1-6',
             'image' => 'kling-v2-1',
             default => 'kling-v2-1-master',
         };
