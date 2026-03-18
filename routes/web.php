@@ -73,6 +73,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
     Route::post('/ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])->name('ai.content.generateImage');
 
+    Route::get('/setup', [SettingsController::class, 'index'])->name('setup.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::get('/settings/social/meta/redirect', [SocialAccountController::class, 'redirectToMeta'])->name('settings.social.meta.redirect');
     Route::get('/settings/social/meta/callback', [SocialAccountController::class, 'handleMetaCallback'])->name('settings.social.meta.callback');
@@ -104,3 +105,4 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
 });
 
 require __DIR__ . '/auth.php';
+

@@ -328,25 +328,25 @@
                 <h2 class="text-lg font-semibold text-gray-900">Dove andare dopo</h2>
                 <p class="mt-1 text-sm text-gray-600">I collegamenti piu utili quando hai finito di rivedere la libreria.</p>
                 <div class="mt-4 space-y-2">
+                    <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
+                        <p class="mt-1 text-xs text-gray-600">Sistema brand, asset e connessioni che guideranno le prossime generazioni.</p>
+                    </a>
                     <a href="{{ route('posts.create') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Area crea</p>
                         <p class="mt-1 text-xs text-gray-600">Apri il punto di partenza per contenuti singoli, reel o piani.</p>
-                    </a>
-                    <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla la distribuzione dei contenuti e le prossime uscite.</p>
-                    </a>
-                    <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
-                        <p class="mt-1 text-xs text-gray-600">Migliora materiali e riferimenti che guidano le prossime generazioni.</p>
                     </a>
                     <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
                         <p class="mt-1 text-xs text-gray-600">Costruisci un insieme di contenuti con logica di periodo.</p>
                     </a>
-                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
-                        <p class="mt-1 text-xs text-gray-600">Rivedi Meta, notifiche e preferenze operative.</p>
+                    <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
+                        <p class="mt-1 text-xs text-gray-600">Controlla la distribuzione dei contenuti e le prossime uscite.</p>
+                    </a>
+                    <a href="{{ route('ai') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">AI Lab</p>
+                        <p class="mt-1 text-xs text-gray-600">Apri il flusso rapido separato se ti serve un test o un output piu leggero.</p>
                     </a>
                 </div>
             </div>
@@ -354,3 +354,4 @@
     </div>
 </section>
 @endsection
+

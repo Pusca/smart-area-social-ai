@@ -135,8 +135,8 @@
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Vai alla pianificazione
                     </a>
-                    <a href="{{ route('profile.brand') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Brand e asset
+                    <a href="{{ route('setup.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Apri setup
                     </a>
                 </div>
             </div>
@@ -332,7 +332,7 @@
 
                     @if(empty($referenceImages))
                         <div class="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-600">
-                            Nessuna immagine brand disponibile. Caricale in <a href="{{ route('profile.brand') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">Profilo brand</a>.
+                            Nessuna immagine brand disponibile. Caricale in <a href="{{ route('profile.brand') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">Brand Center</a>.
                         </div>
                     @else
                         <div class="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
@@ -437,7 +437,7 @@
 
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h2 class="text-lg font-semibold text-gray-900">Variabili asset (objects)</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">Variabili salvate</h2>
                         <span class="text-xs font-semibold text-gray-500">{{ count($assetVariables) }} disponibili</span>
                     </div>
                     <p class="mt-1 text-sm text-gray-600">
@@ -446,7 +446,7 @@
 
                     @if(empty($assetVariables))
                         <div class="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-600">
-                            Nessuna variabile configurata. Creale in <a href="{{ route('profile.brand') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">Profilo brand</a>.
+                            Nessuna variabile configurata. Creale in <a href="{{ route('profile.brand') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">Brand Center</a>.
                         </div>
                     @else
                         <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -744,3 +744,6 @@
     })();
 </script>
 @endsection
+
+
+

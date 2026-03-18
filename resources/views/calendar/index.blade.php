@@ -277,6 +277,10 @@
                     <p class="mt-1 text-sm text-gray-600">Le funzioni che usi di piu quando stai pianificando o sistemando una settimana.</p>
 
                     <div class="mt-4 space-y-2">
+                        <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                            <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
+                            <p class="mt-1 text-xs text-gray-600">Sistema brand, asset e connessioni prima di produrre altri contenuti.</p>
+                        </a>
                         <a href="{{ route('posts.create') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                             <p class="text-sm font-semibold text-gray-900">Area crea</p>
                             <p class="mt-1 text-xs text-gray-600">Apri contenuti singoli, reel o nuovi piani da un solo punto.</p>
@@ -285,17 +289,9 @@
                             <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
                             <p class="mt-1 text-xs text-gray-600">Definisci strategia, volume e orizzonte dei contenuti.</p>
                         </a>
-                        <a href="{{ route('profile.brand') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                            <p class="text-sm font-semibold text-gray-900">Brand e asset</p>
-                            <p class="mt-1 text-xs text-gray-600">Aggiorna i riferimenti che aiutano caption, visual e reel.</p>
-                        </a>
                         <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                             <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                             <p class="mt-1 text-xs text-gray-600">Modifica post, stati e dettagli AI.</p>
-                        </a>
-                        <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                            <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
-                            <p class="mt-1 text-xs text-gray-600">Rivedi Meta, notifiche e configurazione operativa.</p>
                         </a>
                     </div>
                 </div>
@@ -303,3 +299,5 @@
         </div>
     </section>
 @endsection
+
+

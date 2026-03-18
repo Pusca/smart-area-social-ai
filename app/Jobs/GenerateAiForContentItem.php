@@ -4,6 +4,9 @@ namespace App\Jobs;
 
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
+use App\Services\AI\AiProviderMatrixService;
+use App\Services\AI\ContentAlignmentService;
+use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\MemoryBuilderService;
 use App\Support\ImagePromptRealismGuard;
 use App\Services\KlingService;
@@ -42,6 +45,9 @@ class GenerateAiForContentItem implements ShouldQueue
         KlingService $kling,
         NanoBananaService $nanoBanana,
         MemoryBuilderService $memoryBuilder,
+        TenantContentIntelligenceService $tenantContentIntelligence,
+        AiProviderMatrixService $aiProviderMatrixService,
+        ContentAlignmentService $contentAlignment,
         WorkspaceNotificationService $workspaceNotifications
     ): void
     {
@@ -62,11 +68,24 @@ class GenerateAiForContentItem implements ShouldQueue
         $activeFeedbackRequest = $this->normalizeFeedbackRequest((array) data_get($meta, 'feedback_loop.active_request', []));
         $assetVariables = $this->resolveAssetVariableContext($meta, $strategy);
         $assetIdentity = $this->resolveAssetIdentityContext($meta, $assetVariables);
+        $briefSeed = trim((string) ($item->caption ?: data_get($meta, 'manual_brief', $item->title ?: '')));
+        $tenantIntelligence = $tenantContentIntelligence->buildForGeneration(
+            (int) $item->tenant_id,
+            $briefSeed,
+            (string) $item->format,
+            $item->platforms()
+        );
+        $providerMatrix = $aiProviderMatrixService->resolve($meta);
         $meta['memory_summary'] = $memorySummary;
         $meta['image_provider'] = $this->resolveImageProvider($meta);
         $meta['asset_variables'] = $assetVariables;
         $meta['asset_variables_catalog'] = (array) ($assetVariables['catalog'] ?? []);
         $meta['asset_identity'] = $assetIdentity;
+        $meta['knowledge_pack'] = (array) ($tenantIntelligence['knowledge_pack'] ?? []);
+        $meta['examples'] = (array) ($tenantIntelligence['examples'] ?? []);
+        $meta['negative_examples'] = (array) ($tenantIntelligence['negative_examples'] ?? []);
+        $meta['feedback_signals'] = (array) ($tenantIntelligence['feedback_signals'] ?? []);
+        $meta['provider_matrix'] = $providerMatrix;
         $meta['strategy_snapshot'] = [
             'strategy_id' => data_get($strategy, 'strategy_id'),
             'strategy_updated_at' => data_get($strategy, 'strategy_updated_at'),
@@ -133,7 +152,13 @@ class GenerateAiForContentItem implements ShouldQueue
                     'notes' => (string) data_get($strategy, 'strategy_notes', ''),
                 ],
                 'item_brain' => $itemBrain,
+                'manual_brief' => $briefSeed,
                 'memory_summary' => $memorySummary,
+                'knowledge_pack' => (array) data_get($meta, 'knowledge_pack', []),
+                'examples' => (array) data_get($meta, 'examples', []),
+                'negative_examples' => (array) data_get($meta, 'negative_examples', []),
+                'feedback_signals' => (array) data_get($meta, 'feedback_signals', []),
+                'provider_matrix' => $providerMatrix,
                 'feedback_loop' => [
                     'active_request' => $activeFeedbackRequest,
                     'latest_feedback' => (array) data_get($meta, 'feedback_loop.latest_feedback', []),
@@ -173,12 +198,18 @@ class GenerateAiForContentItem implements ShouldQueue
 
             $bestGen = null;
             $bestScore = 1.0;
+            $bestAlignmentScore = 0.0;
+            $bestCombinedScore = -1.0;
+            $bestAlignmentReview = null;
             $similarityFeedback = null;
+            $alignmentFeedback = null;
 
             for ($attempt = 0; $attempt < 3; $attempt++) {
                 $iterContext = $context;
+                $generationGuard = [];
+
                 if ($similarityFeedback !== null) {
-                    $iterContext['generation_guard'] = [
+                    $generationGuard['similarity'] = [
                         'retry' => $attempt + 1,
                         'reason' => 'La caption precedente era troppo simile a contenuti esistenti.',
                         'most_similar_caption' => $similarityFeedback['text'],
@@ -187,27 +218,55 @@ class GenerateAiForContentItem implements ShouldQueue
                     ];
                 }
 
+                if ($alignmentFeedback !== null) {
+                    $generationGuard['alignment'] = array_merge($alignmentFeedback, [
+                        'retry' => $attempt + 1,
+                    ]);
+                }
+
+                if (!empty($generationGuard)) {
+                    $iterContext['generation_guard'] = $generationGuard;
+                }
+
                 $gen = $openAi->generateContent($iterContext);
                 $caption = trim((string) ($gen['caption'] ?? ''));
                 $score = $this->maxTextSimilarity($caption, $comparisonTexts);
+                $alignmentReview = null;
+                $alignmentScore = 1.0;
 
-                if ($score < $bestScore) {
-                    $bestScore = $score;
-                    $bestGen = $gen;
+                if ((bool) config('generation.alignment_enabled', true)) {
+                    $alignmentReview = $contentAlignment->gradeTextDraft($iterContext, $gen, $providerMatrix);
+                    $alignmentScore = max(0.0, min(1.0, (float) ($alignmentReview['overall_score'] ?? 0.0)));
                 }
 
-                if ($score < 0.72) {
+                $combinedScore = round(((1 - min(1.0, $score)) * 0.38) + ($alignmentScore * 0.62), 4);
+                if ($combinedScore > $bestCombinedScore) {
+                    $bestCombinedScore = $combinedScore;
+                    $bestScore = $score;
+                    $bestAlignmentScore = $alignmentScore;
                     $bestGen = $gen;
+                    $bestAlignmentReview = $alignmentReview;
+                }
+
+                if ($score < 0.72 && !((bool) ($alignmentReview['should_retry'] ?? false))) {
+                    $bestGen = $gen;
+                    $bestScore = $score;
+                    $bestAlignmentScore = $alignmentScore;
+                    $bestAlignmentReview = $alignmentReview;
                     break;
                 }
 
-                $similarityFeedback = [
+                $similarityFeedback = $score >= 0.72 ? [
                     'score' => $score,
                     'text' => $this->closestText($caption, $comparisonTexts),
-                ];
+                ] : null;
+                $alignmentFeedback = is_array($alignmentReview) && !empty($alignmentReview['feedback'])
+                    ? (array) $alignmentReview['feedback']
+                    : null;
             }
 
             $gen = $bestGen ?? [];
+            $textAlignmentReview = is_array($bestAlignmentReview) ? $bestAlignmentReview : null;
 
             $item->ai_caption = $gen['caption'] ?? $item->ai_caption;
             $item->ai_hashtags = $gen['hashtags'] ?? [];
@@ -215,7 +274,12 @@ class GenerateAiForContentItem implements ShouldQueue
             $item->ai_image_prompt = $gen['image_prompt'] ?? $item->ai_image_prompt;
             $nextMeta = array_merge($meta, [
                 'text_similarity_score' => round($bestScore, 4),
+                'text_alignment_score' => round($bestAlignmentScore, 4),
+                'text_alignment_review' => $textAlignmentReview,
                 'text_uniqueness_checked_at' => now()->toDateTimeString(),
+                'text_provider_last_used' => (string) data_get($providerMatrix, 'text.provider', 'openai'),
+                'grader_provider_last_used' => (string) data_get($providerMatrix, 'grader.provider', 'openai'),
+                'provider_matrix' => $providerMatrix,
             ]);
             $generatedVideoPrompt = trim((string) ($gen['video_prompt'] ?? ''));
             if ($generatedVideoPrompt !== '') {
@@ -364,6 +428,7 @@ class GenerateAiForContentItem implements ShouldQueue
             $imageSourceFallback = null;
             $publicDisk = Storage::disk('public');
             $selectedBrandImageAbsList = [];
+            $lastImageAlignmentReview = null;
             foreach ($selectedBrandImagePaths as $brandPath) {
                 if (!is_string($brandPath) || $brandPath === '' || !$publicDisk->exists($brandPath)) {
                     continue;
@@ -437,6 +502,7 @@ class GenerateAiForContentItem implements ShouldQueue
                         'logo_selection_reason' => (string) ($logoRuntime['reason'] ?? ''),
                         'brand_selection' => $brandDecision,
                         'reference_validation' => $videoResult['reference_validation'] ?? null,
+                        'alignment_review' => $videoResult['reference_validation'] ?? null,
                         'composition_reference' => $videoResult['composition_reference'] ?? null,
                         'generation_attempts' => (int) ($videoResult['generation_attempts'] ?? 1),
                         'request_summary' => $videoResult['request_summary'] ?? null,
@@ -567,10 +633,33 @@ class GenerateAiForContentItem implements ShouldQueue
                         continue;
                     }
 
+                    $currentImageAlignmentReview = null;
+                    if ((bool) config('generation.alignment_image_reference_validation', true) && !empty($selectedBrandImageAbsList)) {
+                        $tmpImagePath = tempnam(sys_get_temp_dir(), 'align-img-');
+                        if (is_string($tmpImagePath) && $tmpImagePath !== '') {
+                            @file_put_contents($tmpImagePath, $candidateBytes);
+                            $currentImageAlignmentReview = $contentAlignment->validateGeneratedImageCandidate(
+                                $briefSeed,
+                                $tmpImagePath,
+                                array_slice($selectedBrandImageAbsList, 0, 4),
+                                $providerMatrix
+                            );
+                            @unlink($tmpImagePath);
+                        }
+                    }
+
+                    $alignmentRejected = is_array($currentImageAlignmentReview)
+                        && !((bool) ($currentImageAlignmentReview['all_present'] ?? true))
+                        && (float) ($currentImageAlignmentReview['confidence'] ?? 0.0) >= (float) (config('generation.alignment_image_reference_min_confidence') ?: 0.55);
+                    if ($alignmentRejected && $imgAttempt < 1) {
+                        continue;
+                    }
+
                     $candidateHash = $this->computeImageHashFromBytes($candidateBytes);
                     if ($candidateHash === null) {
                         $bytes = $candidateBytes;
                         $finalHash = null;
+                        $lastImageAlignmentReview = $currentImageAlignmentReview;
                         break;
                     }
 
@@ -578,6 +667,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     if ($similarity < 0.9 || $imgAttempt === 1) {
                         $bytes = $candidateBytes;
                         $finalHash = $candidateHash;
+                        $lastImageAlignmentReview = $currentImageAlignmentReview;
                         break;
                     }
                 }
@@ -602,6 +692,7 @@ class GenerateAiForContentItem implements ShouldQueue
                         'logo_selection_reason' => (string) ($logoRuntime['reason'] ?? ''),
                         'brand_selection' => $brandDecision,
                         'fallback' => $imageSourceFallback,
+                        'alignment_review' => $lastImageAlignmentReview,
                         'image_hash' => $finalHash,
                         'generated_at' => now()->toDateTimeString(),
                     ];
@@ -5915,4 +6006,12 @@ SVG;
         return false;
     }
 }
+
+
+
+
+
+
+
+
 

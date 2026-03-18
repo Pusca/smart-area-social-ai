@@ -13,17 +13,18 @@
 <body class="overflow-x-hidden font-sans antialiased bg-app text-text">
     @php
         $desktopNavItems = [
-            ['route' => 'dashboard', 'label' => 'Panoramica', 'active' => ['dashboard']],
-            ['route' => 'calendar', 'label' => 'Pianifica', 'active' => ['calendar', 'wizard*', 'plans.generating']],
+            ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
+            ['route' => 'setup.index', 'label' => 'Setup', 'active' => ['setup.index', 'settings', 'profile.brand*']],
             ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create', 'posts.reels.create']],
+            ['route' => 'calendar', 'label' => 'Pianifica', 'active' => ['calendar', 'wizard*', 'plans.generating']],
             ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
-            ['route' => 'profile.brand', 'label' => 'Brand', 'active' => ['profile.brand*']],
         ];
         $mobileNavItems = [
             ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
-            ['route' => 'calendar', 'label' => 'Piano', 'active' => ['calendar', 'wizard*', 'plans.generating']],
+            ['route' => 'setup.index', 'label' => 'Setup', 'active' => ['setup.index', 'settings', 'profile.brand*']],
             ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create', 'posts.reels.create']],
-            ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
+            ['route' => 'calendar', 'label' => 'Piano', 'active' => ['calendar', 'wizard*', 'plans.generating']],
+            ['route' => 'posts.index', 'label' => 'Lib', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
         ];
     @endphp
 
@@ -55,7 +56,7 @@
                 </nav>
 
                 <div class="flex items-center gap-3">
-                    <a href="{{ route('settings') }}" class="inline-flex items-center gap-3 rounded-2xl border border-app bg-surface-2 px-3 py-2 transition hover:bg-white">
+                    <a href="{{ route('setup.index') }}" class="inline-flex items-center gap-3 rounded-2xl border border-app bg-surface-2 px-3 py-2 transition hover:bg-white">
                         <x-application-logo variant="icon" class="h-10 w-10" />
                         <div class="hidden text-left lg:block">
                             <p class="text-[11px] uppercase tracking-[0.18em] text-muted">Account</p>
@@ -73,7 +74,7 @@
                 </a>
 
                 <a
-                    href="{{ route('settings') }}"
+                    href="{{ route('setup.index') }}"
                     class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-app bg-surface-2 text-gray-700 transition hover:bg-white"
                     aria-label="Account"
                     title="Account"
@@ -130,7 +131,7 @@
 
     <nav class="fixed inset-x-0 bottom-0 z-50 border-t border-app bg-white/95 backdrop-blur sm:hidden">
         <div class="mx-auto max-w-7xl px-3 pb-[env(safe-area-inset-bottom)]">
-            <div class="grid grid-cols-4 gap-2 py-2 text-center text-[11px]">
+            <div class="grid grid-cols-5 gap-2 py-2 text-center text-[11px]">
                 @foreach($mobileNavItems as $item)
                     @php
                         $patterns = \Illuminate\Support\Arr::wrap($item['active']);
@@ -148,3 +149,4 @@
     </nav>
 </body>
 </html>
+

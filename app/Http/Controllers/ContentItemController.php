@@ -7,6 +7,8 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\AI\AiProviderMatrixService;
+use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\ContentMediaPreviewService;
@@ -28,6 +30,8 @@ class ContentItemController extends Controller
 {
     public function __construct(
         private readonly MemoryBuilderService $memoryBuilder,
+        private readonly TenantContentIntelligenceService $tenantContentIntelligence,
+        private readonly AiProviderMatrixService $aiProviderMatrixService,
         private readonly AssetIdentityService $assetIdentityService,
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentMediaPreviewService $mediaPreviewService,
@@ -328,6 +332,13 @@ class ContentItemController extends Controller
 
         $goalHint = trim((string) ($data['goal_hint'] ?? ''));
         $format = (string) $data['format'];
+        $tenantIntelligence = $this->tenantContentIntelligence->buildForGeneration($tenantId, $brief, $format, $platforms);
+        $providerMatrix = $this->aiProviderMatrixService->resolve([
+            'text_provider' => data_get($data, 'text_provider', ''),
+            'grader_provider' => data_get($data, 'grader_provider', ''),
+            'image_provider' => $imageProvider,
+            'video_provider' => $videoProvider,
+        ]);
         $internalTitle = Str::limit($brief, 110, '');
         $imagePreference = $explicitImageReferences['primary_preference'] ?? $this->selectPreferredBrandImage($brief, $assets);
         $uniquenessSeed = implode('|', [
@@ -381,6 +392,11 @@ class ContentItemController extends Controller
                 'date_range' => [$scheduledAt->toDateString(), $scheduledAt->toDateString()],
             ],
             'memory_summary' => $memory,
+            'knowledge_pack' => (array) ($tenantIntelligence['knowledge_pack'] ?? []),
+            'examples' => (array) ($tenantIntelligence['examples'] ?? []),
+            'negative_examples' => (array) ($tenantIntelligence['negative_examples'] ?? []),
+            'feedback_signals' => (array) ($tenantIntelligence['feedback_signals'] ?? []),
+            'provider_matrix' => $providerMatrix,
             'strategy' => $strategy,
             'item_brain' => [
                 'rubric' => 'On Demand',
@@ -479,6 +495,7 @@ class ContentItemController extends Controller
         $meta['image_provider'] = $this->allowsCustomImageProvider($contentItem)
             ? ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), $existingImageProvider)
             : ImageProviderResolver::default();
+        $meta['provider_matrix'] = $this->aiProviderMatrixService->resolve($meta);
         $contentItem->ai_meta = $meta;
 
         $contentItem->save();
@@ -1346,3 +1363,6 @@ class ContentItemController extends Controller
     }
 
 }
+
+
+

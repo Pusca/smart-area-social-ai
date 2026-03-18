@@ -259,7 +259,7 @@
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
                     {{ $isOnboardingPending
                         ? 'Ti chiediamo poche informazioni utili e almeno un immagine reale: poi l app prepara una settimana demo con 2 post immagine e 1 reel, pronta da esplorare o rigenerare.'
-                        : 'Gestisci profilo brand, setup rapido iniziale, asset visual e strategia che alimentano i contenuti dell app.' }}
+                        : 'Gestisci Brand Center, asset visual e strategia di base che alimentano crea, piano editoriale e libreria.' }}
                 </p>
 
                 <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -288,16 +288,16 @@
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri calendario
+                        Apri pianificazione
                     </a>
                     <a href="{{ route('wizard.start') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri wizard piano
+                        Apri piano editoriale
                     </a>
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri contenuti
+                        Apri libreria
                     </a>
                     <a href="{{ route('dashboard') }}" class="ui-btn-primary justify-center">
-                        Torna alla dashboard
+                        Torna alla home
                     </a>
                 </div>
             </div>
@@ -494,10 +494,10 @@
                             </button>
                         </form>
                         <a href="{{ route('calendar') }}" class="ui-btn-primary w-full justify-center">
-                            Apri calendario demo
+                            Apri pianificazione demo
                         </a>
                         <a href="{{ route('posts.index') }}" class="inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            Apri contenuti generati
+                            Apri libreria generati
                         </a>
                         <form
                             method="POST"
@@ -1522,9 +1522,9 @@
                         <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                         <p class="mt-1 text-xs text-gray-600">Gestisci post e output AI.</p>
                     </a>
-                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">App e connessioni</p>
-                        <p class="mt-1 text-xs text-gray-600">Configura Meta, notifiche e opzioni del workspace.</p>
+                    <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                        <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
+                        <p class="mt-1 text-xs text-gray-600">Torna alla panoramica setup per connessioni, stato e prossimi passi.</p>
                     </a>
                 </div>
             </div>
@@ -1642,3 +1642,9 @@
     })();
 </script>
 @endsection
+
+
+
+
+
+

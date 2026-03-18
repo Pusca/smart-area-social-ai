@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\ContentItem;
+use App\Services\AI\AiProviderMatrixService;
+use App\Services\AI\ContentAlignmentService;
+use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\OpenAiService;
 use App\Support\GenerationExecution;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +29,13 @@ class AiController extends Controller
      * - coda per content_item_ids (retrocompatibilita)
      * - generazione "AI Lab" diretta (topic/tone/platform/goal/lang)
      */
-    public function generate(Request $request, OpenAiService $openAiService): RedirectResponse|JsonResponse
+    public function generate(
+        Request $request,
+        OpenAiService $openAiService,
+        TenantContentIntelligenceService $tenantContentIntelligence,
+        AiProviderMatrixService $aiProviderMatrixService,
+        ContentAlignmentService $contentAlignment
+    ): RedirectResponse|JsonResponse
     {
         if ($request->filled('content_item_ids')) {
             return $this->queueContentItems($request);
@@ -49,14 +58,23 @@ class AiController extends Controller
         }
 
         $payload = $validator->validated();
+        $tenantIntelligence = $tenantContentIntelligence->buildForGeneration(
+            (int) $request->user()->tenant_id,
+            (string) $payload['topic'],
+            'post',
+            [(string) $payload['platform']]
+        );
+        $providerMatrix = $aiProviderMatrixService->resolve([]);
+        $context = $this->buildContext($payload, $tenantIntelligence, $providerMatrix);
 
         try {
-            $generated = $openAiService->generateContent($this->buildContext($payload));
+            $generated = $openAiService->generateContent($context);
+            $alignmentReview = $contentAlignment->gradeTextDraft($context, $generated, $providerMatrix);
 
             return response()->json([
                 'ok' => true,
                 'fallback' => false,
-                'data' => $this->normalizeOutput($payload, $generated, false),
+                'data' => $this->normalizeOutput($payload, $generated, false, $alignmentReview),
             ]);
         } catch (Throwable $e) {
             report($e);
@@ -64,7 +82,7 @@ class AiController extends Controller
             return response()->json([
                 'ok' => true,
                 'fallback' => true,
-                'data' => $this->normalizeOutput($payload, [], true),
+                'data' => $this->normalizeOutput($payload, [], true, null),
             ]);
         }
     }
@@ -122,7 +140,7 @@ class AiController extends Controller
             : 'Generazione AI messa in coda.');
     }
 
-    private function buildContext(array $payload): array
+    private function buildContext(array $payload, array $tenantIntelligence = [], array $providerMatrix = []): array
     {
         return [
             'platform' => $payload['platform'],
@@ -138,11 +156,16 @@ class AiController extends Controller
             'tenant_profile' => [
                 'business_name' => optional(auth()->user())->name,
             ],
+            'knowledge_pack' => (array) ($tenantIntelligence['knowledge_pack'] ?? []),
+            'examples' => (array) ($tenantIntelligence['examples'] ?? []),
+            'negative_examples' => (array) ($tenantIntelligence['negative_examples'] ?? []),
+            'feedback_signals' => (array) ($tenantIntelligence['feedback_signals'] ?? []),
+            'provider_matrix' => $providerMatrix,
             'lab_mode' => true,
         ];
     }
 
-    private function normalizeOutput(array $payload, array $generated, bool $fallback): array
+    private function normalizeOutput(array $payload, array $generated, bool $fallback, ?array $alignmentReview = null): array
     {
         $topic = trim((string) ($payload['topic'] ?? ''));
         $caption = trim((string) ($generated['caption'] ?? ''));
@@ -165,6 +188,10 @@ class AiController extends Controller
         $notes = $fallback
             ? 'Output in fallback locale: il servizio AI non era raggiungibile in questo momento.'
             : 'Bozza pronta: verifica tono e dettagli prima della pubblicazione.';
+
+        if (is_array($alignmentReview) && isset($alignmentReview['overall_score'])) {
+            $notes .= ' Allineamento brand stimato: ' . round((float) $alignmentReview['overall_score'] * 100) . '%.';
+        }
 
         return [
             'hook' => $hook,
@@ -258,3 +285,4 @@ class AiController extends Controller
         };
     }
 }
+

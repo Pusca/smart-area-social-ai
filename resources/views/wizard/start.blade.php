@@ -41,7 +41,7 @@
             <div>
                 <div class="inline-flex items-center gap-2 rounded-full border border-brand bg-brand-soft px-3 py-1 text-xs font-semibold text-brand">
                     <x-application-logo variant="icon" class="h-5 w-5" />
-                    Piano editoriale guidato
+                    Piano editoriale
                 </div>
                 <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">Imposta il prossimo piano con chiarezza</h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
@@ -64,14 +64,14 @@
             <div class="rounded-[1.75rem] border border-brand bg-[var(--gradient-soft)] p-5 shadow-card">
                 <div class="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
-                    <a href="{{ route('profile.brand') }}" class="ui-btn-secondary justify-center">
-                        Apri profilo brand
+                    <a href="{{ route('setup.index') }}" class="ui-btn-secondary justify-center">
+                        Apri setup
                     </a>
                     <a href="{{ route('wizard.done') }}" class="ui-btn-secondary justify-center">
-                        Vai a riepilogo
+                        Vai al riepilogo piano
                     </a>
                     <a href="{{ route('dashboard') }}" class="ui-btn-primary justify-center">
-                        Torna alla panoramica
+                        Torna alla home
                     </a>
                 </div>
             </div>
@@ -86,7 +86,7 @@
 
     @if($errors->any())
         <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <p class="font-semibold">Controlla i campi del wizard:</p>
+            <p class="font-semibold">Controlla i campi del piano:</p>
             <ul class="mt-2 list-disc space-y-1 pl-5">
                 @foreach($errors->all() as $error)
                     <li>{{ $error }}</li>
@@ -198,7 +198,7 @@
 
         <div class="space-y-6">
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Progressione wizard</h2>
+                <h2 class="text-lg font-semibold text-gray-900">Progressione piano</h2>
                 <div class="mt-4 space-y-3">
                     <div class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
                         <p class="text-xs text-indigo-700">Step 1</p>
@@ -234,3 +234,4 @@
     </div>
 </section>
 @endsection
+

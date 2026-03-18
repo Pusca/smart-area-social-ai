@@ -88,6 +88,9 @@ class OpenAiService
             "Sei una social media manager senior.\n"
             . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
             . "Usa memory_summary.feedback_summary come memoria del gusto del tenant: cio che piace va riutilizzato con intelligenza, cio che non piace va evitato.\n"
+            . "Usa knowledge_pack come dossier operativo del cliente: identita, segnali positivi, divieti, temi, offerte e preferenze hanno priorita reale.\n"
+            . "Usa examples come esempi approvati del tenant: assorbi struttura, tono e concretezza, ma non copiare frasi, hook o CTA.\n"
+            . "Usa negative_examples per capire cosa NON ripetere: evita gli errori gia segnalati dal cliente.\n"
             . "Tratta memory_summary.hard_avoid_rules e feedback_loop.tenant_feedback.recent_objections come vincoli forti.\n"
             . "Se feedback_loop.active_request e presente, e una correzione prioritaria da applicare subito nella rigenerazione corrente.\n"
             . "Se asset_variables contiene una persona guidata o un persona pack, trattala come identita reale da preservare: stesso volto, stessi lineamenti, stessa eta apparente e tratti distintivi coerenti tra contenuti diversi.\n"
@@ -845,6 +848,272 @@ class OpenAiService
         }
     }
 
+    /**
+     * Valuta quanto una bozza testuale e visuale e allineata al brand e al brief.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    public function gradeGeneratedDraft(array $payload): ?array
+    {
+        $context = is_array($payload['context'] ?? null) ? $payload['context'] : [];
+        $generated = is_array($payload['generated'] ?? null) ? $payload['generated'] : [];
+        $heuristic = is_array($payload['heuristic'] ?? null) ? $payload['heuristic'] : [];
+
+        $model = (string) (config('openai.text_model') ?: env('OPENAI_TEXT_MODEL') ?: 'gpt-4.1-mini');
+        $timeout = (int) (config('openai.timeout') ?: 60);
+        $url = $this->url('/v1/responses');
+
+        $reviewPacket = [
+            'brand' => [
+                'business_name' => (string) data_get($context, 'brand.business_name', ''),
+                'industry' => (string) data_get($context, 'brand.industry', ''),
+                'tone' => (string) data_get($context, 'brand.default_tone', data_get($context, 'brand.tone', '')),
+                'cta' => (string) data_get($context, 'brand.cta', ''),
+            ],
+            'item' => [
+                'platform' => (string) data_get($context, 'item.platform', ''),
+                'format' => (string) data_get($context, 'item.format', ''),
+                'objective' => (string) data_get($context, 'item_brain.objective', ''),
+                'angle' => (string) data_get($context, 'item_brain.angle', ''),
+                'image_direction' => (string) data_get($context, 'item_brain.image_direction', ''),
+            ],
+            'knowledge_pack' => [
+                'positive_signals' => array_slice((array) data_get($context, 'knowledge_pack.feedback.positive_signals', []), 0, 6),
+                'hard_avoid_rules' => array_slice((array) data_get($context, 'knowledge_pack.feedback.hard_avoid_rules', []), 0, 6),
+                'preferred_formats' => array_slice((array) data_get($context, 'knowledge_pack.feedback.preferred_formats', []), 0, 4),
+                'preferred_platforms' => array_slice((array) data_get($context, 'knowledge_pack.feedback.preferred_platforms', []), 0, 4),
+                'themes' => array_slice((array) data_get($context, 'knowledge_pack.memory.themes', []), 0, 6),
+                'offers' => array_slice((array) data_get($context, 'knowledge_pack.memory.offers', []), 0, 4),
+            ],
+            'examples' => array_slice((array) data_get($context, 'examples', []), 0, 4),
+            'negative_examples' => array_slice((array) data_get($context, 'negative_examples', []), 0, 3),
+            'generated' => [
+                'caption' => (string) ($generated['caption'] ?? ''),
+                'cta' => (string) ($generated['cta'] ?? ''),
+                'image_prompt' => (string) ($generated['image_prompt'] ?? ''),
+                'video_prompt' => (string) ($generated['video_prompt'] ?? ''),
+            ],
+            'heuristic' => $heuristic,
+        ];
+
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'overall_score' => ['type' => 'number'],
+                'brand_alignment_score' => ['type' => 'number'],
+                'brief_alignment_score' => ['type' => 'number'],
+                'retry_recommended' => ['type' => 'boolean'],
+                'summary' => ['type' => 'string'],
+                'issues' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+                'strengths' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+            ],
+            'required' => ['overall_score', 'brand_alignment_score', 'brief_alignment_score', 'retry_recommended', 'summary', 'issues', 'strengths'],
+            'additionalProperties' => false,
+        ];
+
+        try {
+            $res = $this->request($timeout, true)
+                ->retry(1, 250)
+                ->post($url, [
+                    'model' => $model,
+                    'input' => [
+                        [
+                            'role' => 'system',
+                            'content' => 'Sei un revisore rigoroso di contenuti social branded. Valuta aderenza al brand, al brief e alle preferenze del cliente. Rispondi solo con JSON conforme allo schema.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => 'Valuta questa bozza di contenuto e prompt: ' . json_encode($reviewPacket, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        ],
+                    ],
+                    'text' => [
+                        'format' => [
+                            'type' => 'json_schema',
+                            'name' => 'content_alignment_review',
+                            'strict' => true,
+                            'schema' => $schema,
+                        ],
+                    ],
+                ]);
+
+            if (!$res->successful()) {
+                throw new RuntimeException("OpenAI content grading error ({$res->status()}) URL={$url} BODY=" . $res->body());
+            }
+
+            $data = $res->json();
+            $text = $this->extractResponsesText($data);
+            $parsed = $this->safeJsonParse($text);
+            if (!is_array($parsed)) {
+                return null;
+            }
+
+            return [
+                'overall_score' => max(0.0, min(1.0, (float) ($parsed['overall_score'] ?? 0.0))),
+                'brand_alignment_score' => max(0.0, min(1.0, (float) ($parsed['brand_alignment_score'] ?? 0.0))),
+                'brief_alignment_score' => max(0.0, min(1.0, (float) ($parsed['brief_alignment_score'] ?? 0.0))),
+                'retry_recommended' => (bool) ($parsed['retry_recommended'] ?? false),
+                'summary' => trim((string) ($parsed['summary'] ?? '')),
+                'issues' => array_values(array_filter(array_map(fn ($value) => trim((string) $value), (array) ($parsed['issues'] ?? [])))),
+                'strengths' => array_values(array_filter(array_map(fn ($value) => trim((string) $value), (array) ($parsed['strengths'] ?? [])))),
+            ];
+        } catch (Throwable $e) {
+            Log::info('OpenAiService gradeGeneratedDraft skipped', [
+                'error' => $e->getMessage(),
+                'model' => $model,
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Valida se un immagine generata mantiene i soggetti principali dei riferimenti.
+     *
+     * @param  array<int, string>  $referenceAbsolutePaths
+     * @return array{all_present:bool,confidence:float,missing_indexes:array<int,int>,summary:string}|null
+     */
+    public function validateGeneratedImageWithReferences(
+        string $brief,
+        string $generatedAbsolutePath,
+        array $referenceAbsolutePaths
+    ): ?array {
+        $generatedUri = $this->toVisionDataUri($generatedAbsolutePath);
+        if (!is_string($generatedUri) || $generatedUri === '') {
+            return null;
+        }
+
+        $refs = [];
+        foreach (array_slice($referenceAbsolutePaths, 0, 4) as $idx => $abs) {
+            if (!is_string($abs) || $abs === '' || !is_file($abs)) {
+                continue;
+            }
+            $uri = $this->toVisionDataUri($abs);
+            if (!is_string($uri) || $uri === '') {
+                continue;
+            }
+            $refs[] = [
+                'index' => $idx + 1,
+                'data_uri' => $uri,
+            ];
+        }
+
+        if (empty($refs)) {
+            return null;
+        }
+
+        $model = (string) (config('openai.vision_model') ?: env('OPENAI_VISION_MODEL') ?: config('openai.text_model') ?: 'gpt-4.1-mini');
+        $timeout = (int) (config('openai.timeout') ?: 60);
+        $url = $this->url('/v1/responses');
+
+        $brief = trim($brief);
+        $content = [
+            [
+                'type' => 'input_text',
+                'text' => "Task: verifica se l'immagine generata mantiene i soggetti chiave dei riferimenti ed e coerente con il brief.\n"
+                    . 'Brief utente: ' . ($brief !== '' ? $brief : '-')
+                    . "\nRegole: sii severo. Se manca un soggetto principale, all_present=false.",
+            ],
+            [
+                'type' => 'input_text',
+                'text' => 'IMMAGINE GENERATA da validare:',
+            ],
+            [
+                'type' => 'input_image',
+                'image_url' => $generatedUri,
+            ],
+        ];
+
+        foreach ($refs as $ref) {
+            $content[] = [
+                'type' => 'input_text',
+                'text' => 'RIFERIMENTO #' . (int) $ref['index'],
+            ];
+            $content[] = [
+                'type' => 'input_image',
+                'image_url' => $ref['data_uri'],
+            ];
+        }
+
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'all_present' => ['type' => 'boolean'],
+                'confidence' => ['type' => 'number'],
+                'missing_indexes' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'integer'],
+                ],
+                'summary' => ['type' => 'string'],
+            ],
+            'required' => ['all_present', 'confidence', 'missing_indexes', 'summary'],
+            'additionalProperties' => false,
+        ];
+
+        try {
+            $res = $this->request($timeout, true)
+                ->retry(1, 250)
+                ->post($url, [
+                    'model' => $model,
+                    'input' => [
+                        [
+                            'role' => 'system',
+                            'content' => 'Sei un validatore visivo rigoroso. Rispondi solo con JSON conforme allo schema.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $content,
+                        ],
+                    ],
+                    'text' => [
+                        'format' => [
+                            'type' => 'json_schema',
+                            'name' => 'image_reference_validation',
+                            'strict' => true,
+                            'schema' => $schema,
+                        ],
+                    ],
+                ]);
+
+            if (!$res->successful()) {
+                throw new RuntimeException("OpenAI image reference validation error ({$res->status()}) URL={$url} BODY=" . $res->body());
+            }
+
+            $data = $res->json();
+            $text = $this->extractResponsesText($data);
+            $parsed = $this->safeJsonParse($text);
+            if (!is_array($parsed)) {
+                return null;
+            }
+
+            $missing = [];
+            foreach ((array) ($parsed['missing_indexes'] ?? []) as $idx) {
+                $n = (int) $idx;
+                if ($n >= 1) {
+                    $missing[] = $n;
+                }
+            }
+
+            return [
+                'all_present' => (bool) ($parsed['all_present'] ?? false),
+                'confidence' => max(0.0, min(1.0, (float) ($parsed['confidence'] ?? 0.0))),
+                'missing_indexes' => array_values(array_unique($missing)),
+                'summary' => trim((string) ($parsed['summary'] ?? '')),
+            ];
+        } catch (Throwable $e) {
+            Log::info('OpenAiService validateGeneratedImageWithReferences skipped', [
+                'error' => $e->getMessage(),
+                'model' => $model,
+            ]);
+            return null;
+        }
+    }
+
     protected function extractResponsesText(array $response): string
     {
         $out = $response['output'] ?? [];
@@ -957,3 +1226,6 @@ class OpenAiService
         };
     }
 }
+
+
+
