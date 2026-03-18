@@ -90,13 +90,13 @@
         [
             'label' => 'Target e obiettivo',
             'ready' => filled($profile?->target) && filled($profile?->default_goal) && filled($profile?->cta),
-            'hint' => 'PiÃ¹ l AI capisce chi vuoi raggiungere, piÃ¹ i contenuti risultano centrati.',
+            'hint' => 'PiÃƒÆ’Ã‚Â¹ l AI capisce chi vuoi raggiungere, piÃƒÆ’Ã‚Â¹ i contenuti risultano centrati.',
             'href' => '#brand-defaults-section',
         ],
         [
             'label' => 'Direzione strategica',
             'ready' => filled($profile?->vision) && filled($profile?->values) && filled(data_get($analysis, 'primary_goal')),
-            'hint' => 'Dai alla strategia piÃ¹ contesto su posizionamento e tono del brand.',
+            'hint' => 'Dai alla strategia piÃƒÆ’Ã‚Â¹ contesto su posizionamento e tono del brand.',
             'href' => '#brand-strategy-section',
         ],
         [
@@ -509,7 +509,7 @@
                             action="{{ route('profile.brand.quickstart.regenerate') }}"
                             class="js-quickstart-generation-submit"
                             data-loader-title="Sto rigenerando la tua demo iniziale"
-                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand piÃ¹ recenti."
+                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand piÃƒÆ’Ã‚Â¹ recenti."
                             data-loader-estimate="150"
                         >
                             @csrf
@@ -536,9 +536,9 @@
             <div class="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Prossimo passo</div>
-                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai piÃ¹ contesto alla macchina</h2>
+                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai piÃƒÆ’Ã‚Â¹ contesto alla macchina</h2>
                     <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                        PiÃ¹ dettagli aggiungi qui, piÃ¹ Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attivitÃ .
+                        PiÃƒÆ’Ã‚Â¹ dettagli aggiungi qui, piÃƒÆ’Ã‚Â¹ Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attivitÃƒÆ’Ã‚Â .
                         Non serve fare tutto subito: basta completare un blocco alla volta e salvare.
                     </p>
 
@@ -551,7 +551,7 @@
                             Brand readiness {{ $brandReadinessRate }}%
                         </span>
                         <span class="inline-flex items-center rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
-                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree giÃ  coperte
+                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree giÃƒÆ’Ã‚Â  coperte
                         </span>
                         @if($brandReadinessMissing->count() > 0)
                             <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
@@ -571,8 +571,8 @@
                     @empty
                         <div class="sm:col-span-2 rounded-2xl border border-emerald-200 bg-white/90 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Profilo ben compilato</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai giÃ  dato alla macchina una base solida.</p>
-                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno giÃ  un contesto utile da cui partire.</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai giÃƒÆ’Ã‚Â  dato alla macchina una base solida.</p>
+                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno giÃƒÆ’Ã‚Â  un contesto utile da cui partire.</p>
                         </div>
                     @endforelse
                 </div>
@@ -1152,7 +1152,7 @@
                             <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Nuovo flusso guidato</p>
                             <h3 class="mt-1 text-base font-semibold text-gray-900">Crea un persona pack per immagini e video</h3>
                             <p class="mt-2 max-w-2xl text-sm text-gray-600">
-                                Carica i riferimenti reali della persona da preservare. L AI userÃ  questo pack come ancora identitaria:
+                                Carica i riferimenti reali della persona da preservare. L AI userÃƒÆ’Ã‚Â  questo pack come ancora identitaria:
                                 stesso volto, stessi tratti e presenza coerente tra contenuti diversi.
                             </p>
                         </div>
@@ -1166,7 +1166,7 @@
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Scatti richiesti</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">4 angoli chiave + mezzo busto opzionale</p>
-                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base piÃ¹ utile.</p>
+                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base piÃƒÆ’Ã‚Â¹ utile.</p>
                         </div>
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Video reale</p>
@@ -1176,7 +1176,7 @@
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Istruzioni dirette</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">Cosa non deve cambiare</p>
-                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertÃ  creative sono ammesse.</p>
+                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertÃƒÆ’Ã‚Â  creative sono ammesse.</p>
                         </div>
                     </div>
 
@@ -1196,11 +1196,11 @@
                         <div class="grid gap-4 lg:grid-cols-2">
                             <div>
                                 <label for="guided_persona_description" class="{{ $labelClass }}">Descrizione base</label>
-                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi Ã¨ questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
+                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi ÃƒÆ’Ã‚Â¨ questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
                             </div>
                             <div>
                                 <label for="guided_persona_immutable_traits" class="{{ $labelClass }}">Tratti da non cambiare mai</label>
-                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, etÃ  percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
+                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, etÃƒÆ’Ã‚Â  percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
                             </div>
                         </div>
 
@@ -1226,7 +1226,7 @@
 
                         <div class="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/70 p-4">
                             <p class="text-sm font-semibold text-gray-900">Carica il pack fotografico</p>
-                            <p class="mt-1 text-xs text-gray-600">Per vedere subito lâ€™effetto in azione, qui chiediamo i riferimenti piÃ¹ utili e leggibili per l AI.</p>
+                            <p class="mt-1 text-xs text-gray-600">Per vedere subito lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢effetto in azione, qui chiediamo i riferimenti piÃƒÆ’Ã‚Â¹ utili e leggibili per l AI.</p>
 
                             <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                 <div>
@@ -1255,8 +1255,38 @@
                                 </div>
                                 <div>
                                     <label for="voice_sample" class="{{ $labelClass }}">Campione voce (opzionale)</label>
-                                    <input id="voice_sample" type="file" name="voice_sample" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm" class="{{ $inputClass }}">
+                                    <input id="voice_sample" type="file" name="voice_sample" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm" class="{{ $inputClass }}" data-voice-file-input>
                                     <p class="mt-1 text-xs text-gray-500">Usato per voiceover reel quando questa persona viene scelta e c e un provider voce configurato.</p>
+
+                                    <div class="mt-3 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/70 p-3" data-voice-recorder>
+                                        <div class="flex flex-wrap items-center justify-between gap-3">
+                                            <div>
+                                                <p class="text-sm font-semibold text-gray-900">Registra dal microfono</p>
+                                                <p class="mt-1 text-xs text-gray-600">Puoi registrare direttamente una breve voce guida senza caricare un file esterno.</p>
+                                            </div>
+                                            <span class="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700" data-voice-status>
+                                                In attesa
+                                            </span>
+                                        </div>
+
+                                        <div class="mt-3 flex flex-wrap gap-2">
+                                            <button type="button" class="inline-flex items-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100" data-voice-start>
+                                                Avvia registrazione
+                                            </button>
+                                            <button type="button" class="inline-flex items-center rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50" data-voice-stop disabled>
+                                                Ferma
+                                            </button>
+                                            <button type="button" class="inline-flex items-center rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50" data-voice-clear disabled>
+                                                Pulisci
+                                            </button>
+                                        </div>
+
+                                        <p class="mt-3 text-xs text-gray-600" data-voice-help>
+                                            Consiglio: 20-60 secondi, una sola voce, ambiente silenzioso.
+                                        </p>
+
+                                        <audio controls preload="none" class="mt-3 hidden w-full" data-voice-preview></audio>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1715,6 +1745,218 @@
                     btnBulkDelete.textContent = 'Elimina selezionati';
                 }
             });
+        }
+
+        const voiceRecorderRoot = document.querySelector('[data-voice-recorder]');
+        const voiceFileInput = document.querySelector('[data-voice-file-input]');
+
+        if (voiceRecorderRoot && voiceFileInput) {
+            const statusEl = voiceRecorderRoot.querySelector('[data-voice-status]');
+            const helpEl = voiceRecorderRoot.querySelector('[data-voice-help]');
+            const previewEl = voiceRecorderRoot.querySelector('[data-voice-preview]');
+            const startBtn = voiceRecorderRoot.querySelector('[data-voice-start]');
+            const stopBtn = voiceRecorderRoot.querySelector('[data-voice-stop]');
+            const clearBtn = voiceRecorderRoot.querySelector('[data-voice-clear]');
+
+            let mediaRecorder = null;
+            let mediaStream = null;
+            let audioChunks = [];
+            let previewUrl = null;
+
+            const setStatus = (label, tone = 'idle') => {
+                if (!statusEl) {
+                    return;
+                }
+
+                const tones = {
+                    idle: 'rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700',
+                    recording: 'rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700',
+                    ready: 'rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-700',
+                    error: 'rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700',
+                };
+
+                statusEl.className = tones[tone] || tones.idle;
+                statusEl.textContent = label;
+            };
+
+            const setHelp = (text) => {
+                if (helpEl) {
+                    helpEl.textContent = text;
+                }
+            };
+
+            const stopTracks = () => {
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach((track) => track.stop());
+                    mediaStream = null;
+                }
+            };
+
+            const resetPreview = () => {
+                if (previewUrl) {
+                    URL.revokeObjectURL(previewUrl);
+                    previewUrl = null;
+                }
+
+                if (previewEl) {
+                    previewEl.pause();
+                    previewEl.removeAttribute('src');
+                    previewEl.load();
+                    previewEl.classList.add('hidden');
+                }
+            };
+
+            const applyFileToInput = (file) => {
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                voiceFileInput.files = transfer.files;
+                voiceFileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            };
+
+            const updateButtons = ({ recording = false, hasAudio = false, blocked = false } = {}) => {
+                if (startBtn) {
+                    startBtn.disabled = blocked || recording;
+                }
+                if (stopBtn) {
+                    stopBtn.disabled = blocked || !recording;
+                }
+                if (clearBtn) {
+                    clearBtn.disabled = blocked || (!hasAudio && !voiceFileInput.files?.length);
+                }
+            };
+
+            const pickMimeType = () => {
+                if (!window.MediaRecorder || typeof window.MediaRecorder.isTypeSupported !== 'function') {
+                    return '';
+                }
+
+                const candidates = [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/mp4',
+                    'audio/ogg;codecs=opus',
+                    'audio/ogg',
+                ];
+
+                return candidates.find((type) => window.MediaRecorder.isTypeSupported(type)) || '';
+            };
+
+            const showPreview = (file) => {
+                resetPreview();
+                previewUrl = URL.createObjectURL(file);
+                if (previewEl) {
+                    previewEl.src = previewUrl;
+                    previewEl.classList.remove('hidden');
+                }
+                setStatus('File pronto', 'ready');
+                setHelp(`Campione pronto: ${file.name}`);
+                updateButtons({ recording: false, hasAudio: true });
+            };
+
+            voiceFileInput.addEventListener('change', () => {
+                const file = voiceFileInput.files && voiceFileInput.files[0] ? voiceFileInput.files[0] : null;
+                if (!file) {
+                    resetPreview();
+                    setStatus('In attesa', 'idle');
+                    setHelp('Consiglio: 20-60 secondi, una sola voce, ambiente silenzioso.');
+                    updateButtons({ recording: false, hasAudio: false });
+                    return;
+                }
+
+                showPreview(file);
+            });
+
+            if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+                setStatus('Microfono non disponibile', 'error');
+                setHelp('Il browser non supporta la registrazione diretta qui. Puoi comunque caricare un file audio.');
+                updateButtons({ blocked: true, hasAudio: !!voiceFileInput.files?.length });
+                return;
+            }
+
+            startBtn?.addEventListener('click', async () => {
+                try {
+                    resetPreview();
+                    audioChunks = [];
+                    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const mimeType = pickMimeType();
+                    mediaRecorder = mimeType !== ''
+                        ? new MediaRecorder(mediaStream, { mimeType })
+                        : new MediaRecorder(mediaStream);
+
+                    mediaRecorder.addEventListener('dataavailable', (event) => {
+                        if (event.data && event.data.size > 0) {
+                            audioChunks.push(event.data);
+                        }
+                    });
+
+                    mediaRecorder.addEventListener('stop', () => {
+                        try {
+                            const blobType = mediaRecorder?.mimeType || mimeType || 'audio/webm';
+                            const extension = blobType.includes('mp4') ? 'm4a' : (blobType.includes('ogg') ? 'ogg' : 'webm');
+                            const blob = new Blob(audioChunks, { type: blobType });
+                            if (!blob.size) {
+                                setStatus('Registrazione vuota', 'error');
+                                setHelp('Nessun audio rilevato. Riprova avvicinando il microfono.');
+                                updateButtons({ recording: false, hasAudio: false });
+                                stopTracks();
+                                return;
+                            }
+
+                            const file = new File([blob], `voice-sample-${Date.now()}.${extension}`, { type: blobType });
+                            applyFileToInput(file);
+                            showPreview(file);
+                        } catch (error) {
+                            console.error(error);
+                            setStatus('Errore salvataggio', 'error');
+                            setHelp('La registrazione e terminata ma non sono riuscito a preparare il file.');
+                            updateButtons({ recording: false, hasAudio: false });
+                        } finally {
+                            stopTracks();
+                            mediaRecorder = null;
+                            audioChunks = [];
+                        }
+                    }, { once: true });
+
+                    mediaRecorder.start();
+                    setStatus('Registrazione in corso', 'recording');
+                    setHelp('Parla ora. Quando hai finito, premi Ferma.');
+                    updateButtons({ recording: true, hasAudio: false });
+                } catch (error) {
+                    console.error(error);
+                    stopTracks();
+                    mediaRecorder = null;
+                    audioChunks = [];
+                    setStatus('Permesso negato', 'error');
+                    setHelp('Non riesco ad accedere al microfono. Controlla i permessi del browser o carica un file audio.');
+                    updateButtons({ recording: false, hasAudio: !!voiceFileInput.files?.length });
+                }
+            });
+
+            stopBtn?.addEventListener('click', () => {
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                    setStatus('Elaborazione...', 'idle');
+                    setHelp('Sto preparando il file registrato.');
+                    updateButtons({ recording: false, hasAudio: false });
+                }
+            });
+
+            clearBtn?.addEventListener('click', () => {
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                }
+
+                stopTracks();
+                mediaRecorder = null;
+                audioChunks = [];
+                voiceFileInput.value = '';
+                resetPreview();
+                setStatus('In attesa', 'idle');
+                setHelp('Consiglio: 20-60 secondi, una sola voce, ambiente silenzioso.');
+                updateButtons({ recording: false, hasAudio: false });
+            });
+
+            updateButtons({ recording: false, hasAudio: !!voiceFileInput.files?.length });
         }
     })();
 </script>
