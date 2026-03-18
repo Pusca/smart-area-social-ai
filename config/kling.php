@@ -5,7 +5,7 @@ return [
     'access_key' => env('KLING_ACCESS_KEY'),
     'secret_key' => env('KLING_SECRET_KEY'),
 
-    'model' => env('KLING_VIDEO_MODEL', 'kling-v2-6'),
+    'model' => env('KLING_VIDEO_MODEL', ''),
     'mode' => env('KLING_VIDEO_MODE', 'pro'),
     'video_seconds' => (int) env('KLING_VIDEO_SECONDS', 5),
     'video_ratio' => env('KLING_VIDEO_RATIO', '9:16'),

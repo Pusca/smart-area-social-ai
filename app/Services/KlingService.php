@@ -208,9 +208,9 @@ class KlingService
      */
     private function buildCreatePayload(string $prompt, array $referenceInputs, array $options, string $requestMode): array
     {
+        $modelName = $this->resolveModelName((string) ($options['model'] ?? config('kling.model') ?: ''), $requestMode);
         $payload = [
-            'model_name' => trim((string) ($options['model'] ?? config('kling.model') ?: 'kling-v2-6')),
-            'mode' => $this->normalizeMode((string) ($options['mode'] ?? config('kling.mode') ?: 'pro')),
+            'model_name' => $modelName,
             'prompt' => $this->normalizePrompt($prompt),
             'duration' => $this->normalizeDuration((int) ($options['seconds'] ?? config('kling.video_seconds') ?: 5)),
             'aspect_ratio' => $this->normalizeAspectRatio(
@@ -219,6 +219,10 @@ class KlingService
             ),
             'cfg_scale' => $this->normalizeCfgScale((float) ($options['cfg_scale'] ?? config('kling.cfg_scale') ?: 0.5)),
         ];
+
+        if ($this->shouldSendModeForModel($modelName)) {
+            $payload['mode'] = $this->normalizeMode((string) ($options['mode'] ?? config('kling.mode') ?: 'pro'));
+        }
 
         $negativePrompt = trim((string) ($options['negative_prompt'] ?? config('kling.negative_prompt') ?: ''));
         if ($negativePrompt !== '') {
@@ -256,6 +260,58 @@ class KlingService
         }
 
         return $payload;
+    }
+
+    private function resolveModelName(string $configuredModel, string $requestMode): string
+    {
+        $model = strtolower(trim($configuredModel));
+        if ($model === '') {
+            return $this->defaultModelForRequestMode($requestMode);
+        }
+
+        if (!$this->isOfficialKlingEndpoint()) {
+            return $model;
+        }
+
+        $model = str_replace(['_', '.'], '-', $model);
+        $aliasesToRemap = [
+            'kling-v2-6',
+            'kling-v2-6-pro',
+            'kling-v2-6-std',
+        ];
+
+        if (in_array($model, $aliasesToRemap, true)) {
+            return $this->defaultModelForRequestMode($requestMode);
+        }
+
+        if ($requestMode === 'multi-image' && in_array($model, ['kling-v2-1', 'kling-v2-1-master'], true)) {
+            return 'kling-v2';
+        }
+
+        return $model;
+    }
+
+    private function defaultModelForRequestMode(string $requestMode): string
+    {
+        if (!$this->isOfficialKlingEndpoint()) {
+            return 'kling-v2-6';
+        }
+
+        return match ($requestMode) {
+            'multi-image' => 'kling-v2',
+            'image' => 'kling-v2-1',
+            default => 'kling-v2-1-master',
+        };
+    }
+
+    private function shouldSendModeForModel(string $modelName): bool
+    {
+        return !in_array(strtolower(trim($modelName)), ['kling-v2'], true);
+    }
+
+    private function isOfficialKlingEndpoint(): bool
+    {
+        return str_contains(strtolower($this->baseUrl()), 'klingai.com');
     }
 
     /**
