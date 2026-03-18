@@ -2638,7 +2638,7 @@ SVG;
             return null;
         }
 
-        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+        return base64_encode($bytes);
     }
 
     /**
