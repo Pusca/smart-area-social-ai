@@ -9,6 +9,10 @@ return [
     'grader_provider_default' => env('GRADER_PROVIDER_DEFAULT', env('TEXT_PROVIDER_DEFAULT', 'openai')),
     'grader_providers' => ['openai'],
 
+    'speech_provider_default' => env('SPEECH_PROVIDER_DEFAULT', 'openai'),
+    'speech_providers' => ['openai', 'elevenlabs'],
+    'voice_clone_provider_default' => env('VOICE_CLONE_PROVIDER_DEFAULT', 'elevenlabs'),
+
     'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'openai'),
     'video_providers' => ['openai', 'runway', 'kling'],
 

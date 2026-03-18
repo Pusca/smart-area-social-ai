@@ -270,8 +270,8 @@ class TenantContentIntelligenceService
      */
     private function extractKeywords(string $text): array
     {
-        $text = Str::lower($text);
-        $text = preg_replace('/[^a-z0-9אטילעש\s]/u', ' ', $text) ?? '';
+        $text = Str::lower($this->normalizeUtf8($text));
+        $text = preg_replace('/[^\\p{L}\\p{N}\\s]/u', ' ', $text) ?? '';
         $tokens = preg_split('/\s+/', trim($text)) ?: [];
         $stopWords = [
             'questo', 'quella', 'quello', 'della', 'delle', 'degli', 'dello', 'nelle', 'nella', 'nello',
@@ -294,4 +294,26 @@ class TenantContentIntelligenceService
 
         return array_values(array_unique(array_slice($out, 0, 12)));
     }
+
+    private function normalizeUtf8(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        if (!mb_check_encoding($text, 'UTF-8')) {
+            $converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+            if (is_string($converted) && $converted !== '') {
+                $text = $converted;
+            }
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+        if (is_string($sanitized)) {
+            $text = $sanitized;
+        }
+
+        return $text;
+    }
 }
+

@@ -357,12 +357,23 @@ class TenantProfileController extends Controller
             ->whereIn('id', $data['asset_ids'])
             ->get();
 
-        foreach ($assets as $asset) {
-            if ($asset->path) {
-                Storage::disk('public')->delete($asset->path);
+        $assetIds = $assets
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values()
+            ->all();
+
+        DB::transaction(function () use ($assets, $user, $assetIds): void {
+            $this->detachAssetsFromVariables((int) $user->tenant_id, $assetIds);
+
+            foreach ($assets as $asset) {
+                if ($asset->path) {
+                    Storage::disk('public')->delete($asset->path);
+                }
+                $asset->delete();
             }
-            $asset->delete();
-        }
+        });
 
         return redirect()->route('profile.brand')->with('status', 'Assets selezionati eliminati');
     }
@@ -378,15 +389,18 @@ class TenantProfileController extends Controller
             abort(403);
         }
 
-        if ($asset->path) {
-            Storage::disk('public')->delete($asset->path);
-        }
+        DB::transaction(function () use ($asset, $user): void {
+            $this->detachAssetsFromVariables((int) $user->tenant_id, [(int) $asset->id]);
 
-        $asset->delete();
+            if ($asset->path) {
+                Storage::disk('public')->delete($asset->path);
+            }
+
+            $asset->delete();
+        });
 
         return redirect()->route('profile.brand')->with('status', 'Asset eliminato');
     }
-
     public function storeVariable(Request $request)
     {
         $user = $request->user();
@@ -479,6 +493,7 @@ class TenantProfileController extends Controller
             'shot_profile' => 'required|file|mimes:png,jpg,jpeg,webp|max:6144',
             'shot_half_body' => 'nullable|file|mimes:png,jpg,jpeg,webp|max:6144',
             'reference_video' => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/webm|max:51200',
+            'voice_sample' => 'nullable|file|mimes:mp3,wav,m4a,ogg,webm|max:15360',
         ]);
 
         try {
@@ -491,12 +506,15 @@ class TenantProfileController extends Controller
         }
 
         $assetCount = count($result['assets'] ?? []);
+        $hasVoiceSample = !empty($data['voice_sample']);
+        $statusDetail = $hasVoiceSample
+            ? 'riferimenti pronti per immagini, video e voce.'
+            : 'riferimenti pronti per immagini e video.';
 
         return redirect()
             ->route('profile.brand')
-            ->with('status', "Persona pack creato: {$result['variable']->name} con {$assetCount} riferimenti pronti per immagini e video.");
+            ->with('status', "Persona pack creato: {$result['variable']->name} con {$assetCount} {$statusDetail}");
     }
-
     public function destroyVariable(Request $request, AssetVariable $assetVariable)
     {
         $user = $request->user();
@@ -508,6 +526,111 @@ class TenantProfileController extends Controller
         $assetVariable->delete();
 
         return redirect()->route('profile.brand')->with('status', 'Variabile asset eliminata.');
+    }
+
+    /**
+     * Remove deleted brand assets from variable references so runtime selection stays valid.
+     *
+     * @param  array<int, int|string>  $assetIds
+     */
+    private function detachAssetsFromVariables(int $tenantId, array $assetIds): void
+    {
+        $deletedIds = collect($assetIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($deletedIds->isEmpty()) {
+            return;
+        }
+
+        $deletedLookup = $deletedIds->flip()->all();
+
+        AssetVariable::query()
+            ->where('tenant_id', $tenantId)
+            ->get()
+            ->each(function (AssetVariable $variable) use ($deletedLookup): void {
+                $assetIds = collect((array) ($variable->asset_ids ?? []))
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => $id > 0)
+                    ->unique()
+                    ->values();
+
+                $remainingAssetIds = $assetIds
+                    ->reject(fn (int $id) => array_key_exists($id, $deletedLookup))
+                    ->values()
+                    ->all();
+
+                $canonicalAssetId = $variable->canonical_asset_id !== null ? (int) $variable->canonical_asset_id : null;
+                if ($canonicalAssetId !== null && array_key_exists($canonicalAssetId, $deletedLookup)) {
+                    $canonicalAssetId = null;
+                }
+                if ($canonicalAssetId !== null && !in_array($canonicalAssetId, $remainingAssetIds, true)) {
+                    $canonicalAssetId = null;
+                }
+                if ($canonicalAssetId === null) {
+                    $canonicalAssetId = !empty($remainingAssetIds) ? (int) $remainingAssetIds[0] : null;
+                }
+
+                $profile = is_array($variable->profile) ? $variable->profile : [];
+                $updated = $remainingAssetIds !== $assetIds->all() || $canonicalAssetId !== ($variable->canonical_asset_id !== null ? (int) $variable->canonical_asset_id : null);
+
+                if (is_array(data_get($profile, 'shot_summary', null))) {
+                    $shotSummary = collect((array) data_get($profile, 'shot_summary', []))
+                        ->filter(function ($shot) use ($deletedLookup): bool {
+                            if (!is_array($shot)) {
+                                return false;
+                            }
+
+                            $assetId = (int) ($shot['asset_id'] ?? 0);
+
+                            return $assetId < 1 || !array_key_exists($assetId, $deletedLookup);
+                        })
+                        ->values()
+                        ->all();
+                    data_set($profile, 'shot_summary', $shotSummary);
+                }
+
+                if ($canonicalAssetId !== null) {
+                    data_set($profile, 'canonical_asset_id', $canonicalAssetId);
+                    data_set($profile, 'preferred_still_asset_id', $canonicalAssetId);
+                } else {
+                    data_set($profile, 'canonical_asset_id', null);
+                    data_set($profile, 'preferred_still_asset_id', null);
+                }
+
+                $referenceVideoAssetId = (int) data_get($profile, 'reference_video_asset_id', 0);
+                if ($referenceVideoAssetId > 0 && array_key_exists($referenceVideoAssetId, $deletedLookup)) {
+                    data_set($profile, 'reference_video_asset_id', null);
+                    data_set($profile, 'reference_video_path', null);
+                    $updated = true;
+                }
+
+                $voiceAssetId = (int) ($variable->voice_asset_id ?? 0);
+                if ($voiceAssetId > 0 && array_key_exists($voiceAssetId, $deletedLookup)) {
+                    $variable->voice_asset_id = null;
+                    $variable->voice_provider_voice_id = null;
+                    $variable->voice_status = 'sample_missing';
+                    data_set($profile, 'reference_voice_asset_id', null);
+                    data_set($profile, 'reference_voice_path', null);
+                    data_set($profile, 'voice_reference.sample_asset_id', null);
+                    data_set($profile, 'voice_reference.sample_path', null);
+                    data_set($profile, 'voice_reference.sample_name', null);
+                    data_set($profile, 'voice_reference.provider_voice_id', null);
+                    data_set($profile, 'voice_reference.status', 'sample_missing');
+                    $updated = true;
+                }
+
+                if (!$updated && $profile === $variable->profile) {
+                    return;
+                }
+
+                $variable->asset_ids = $remainingAssetIds;
+                $variable->canonical_asset_id = $canonicalAssetId;
+                $variable->profile = $profile;
+                $variable->save();
+            });
     }
 
     private function resolveQuickstartDemoPlan(int $tenantId, ?TenantProfile $profile): ?ContentPlan

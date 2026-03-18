@@ -16,6 +16,10 @@ class AssetVariable extends Model
         'description',
         'asset_ids',
         'canonical_asset_id',
+        'voice_asset_id',
+        'voice_provider',
+        'voice_provider_voice_id',
+        'voice_status',
         'identity_mode',
         'consistency_threshold',
         'profile',
@@ -26,6 +30,7 @@ class AssetVariable extends Model
         'asset_ids' => 'array',
         'profile' => 'array',
         'canonical_asset_id' => 'integer',
+        'voice_asset_id' => 'integer',
         'consistency_threshold' => 'integer',
         'is_active' => 'boolean',
     ];
@@ -33,5 +38,10 @@ class AssetVariable extends Model
     public function canonicalAsset(): BelongsTo
     {
         return $this->belongsTo(BrandAsset::class, 'canonical_asset_id');
+    }
+
+    public function voiceAsset(): BelongsTo
+    {
+        return $this->belongsTo(BrandAsset::class, 'voice_asset_id');
     }
 }

@@ -931,6 +931,12 @@ class ContentItemController extends Controller
                 }
             }
 
+            $voiceAssetPath = trim((string) ($row['voice_asset_path'] ?? data_get($profile, 'voice_reference.sample_path', '')));
+            $voiceAssetName = trim((string) ($row['voice_asset_name'] ?? data_get($profile, 'voice_reference.sample_name', '')));
+            $voiceProvider = trim((string) ($row['voice_provider'] ?? data_get($profile, 'voice_reference.provider', '')));
+            $voiceProviderVoiceId = trim((string) ($row['voice_provider_voice_id'] ?? data_get($profile, 'voice_reference.provider_voice_id', '')));
+            $voiceStatus = trim((string) ($row['voice_status'] ?? data_get($profile, 'voice_reference.status', '')));
+
             $slots[$slot] = [
                 'id' => (int) ($row['id'] ?? 0),
                 'name' => (string) ($row['name'] ?? ''),
@@ -940,6 +946,13 @@ class ContentItemController extends Controller
                 'canonical_asset_path' => (string) ($row['canonical_asset_path'] ?? ''),
                 'identity_mode' => (string) ($row['identity_mode'] ?? 'balanced'),
                 'consistency_threshold' => isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : null,
+                'voice_asset_id' => isset($row['voice_asset_id']) ? (int) $row['voice_asset_id'] : null,
+                'voice_asset_path' => $voiceAssetPath,
+                'voice_asset_name' => $voiceAssetName,
+                'voice_provider' => $voiceProvider,
+                'voice_provider_voice_id' => $voiceProviderVoiceId,
+                'voice_status' => $voiceStatus,
+                'voice_label' => (string) data_get($profile, 'voice_reference.label', ''),
                 'locked_elements' => $locked !== '' ? [$locked] : [],
                 'allowed_transforms' => array_values(array_filter(array_map('strval', (array) data_get($profile, 'allowed_transforms', [])))),
                 'descriptor' => [
@@ -962,13 +975,6 @@ class ContentItemController extends Controller
             'allowed_changes' => array_values(array_unique(array_filter($allowedChanges))),
         ];
     }
-
-    /**
-     * Salviamo anche source refs espliciti per capire da quali slot nasce il contenuto.
-     *
-     * @param  array<string, mixed>  $assetIdentity
-     * @return array<int, array<string, mixed>>
-     */
     private function buildSourceRefsFromAssetIdentity(array $assetIdentity): array
     {
         $slots = is_array($assetIdentity['slots'] ?? null) ? $assetIdentity['slots'] : [];

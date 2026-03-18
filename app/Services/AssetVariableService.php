@@ -24,7 +24,20 @@ class AssetVariableService
         }
 
         $allAssetIds = $variables
-            ->flatMap(fn (AssetVariable $row) => (array) ($row->asset_ids ?? []))
+            ->flatMap(function (AssetVariable $row): array {
+                $ids = collect((array) ($row->asset_ids ?? []))
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => $id > 0)
+                    ->values()
+                    ->all();
+
+                $voiceAssetId = (int) ($row->voice_asset_id ?? 0);
+                if ($voiceAssetId > 0) {
+                    $ids[] = $voiceAssetId;
+                }
+
+                return $ids;
+            })
             ->map(fn ($id) => (int) $id)
             ->filter(fn (int $id) => $id > 0)
             ->unique()
@@ -60,6 +73,8 @@ class AssetVariableService
 
             $canonicalAssetId = (int) ($variable->canonical_asset_id ?? 0);
             $canonicalAsset = $canonicalAssetId > 0 ? $assets->get($canonicalAssetId) : null;
+            $voiceAssetId = (int) ($variable->voice_asset_id ?? 0);
+            $voiceAsset = $voiceAssetId > 0 ? $assets->get($voiceAssetId) : null;
 
             $out[] = [
                 'id' => (int) $variable->id,
@@ -70,6 +85,13 @@ class AssetVariableService
                 'description' => (string) ($variable->description ?? ''),
                 'canonical_asset_id' => $canonicalAssetId > 0 ? $canonicalAssetId : null,
                 'canonical_asset_path' => $canonicalAsset ? (string) ($canonicalAsset->path ?? '') : '',
+                'voice_asset_id' => $voiceAssetId > 0 ? $voiceAssetId : null,
+                'voice_asset_path' => $voiceAsset ? (string) ($voiceAsset->path ?? '') : '',
+                'voice_asset_name' => $voiceAsset ? (string) ($voiceAsset->original_name ?? '') : '',
+                'voice_asset_mime' => $voiceAsset ? (string) ($voiceAsset->mime ?? '') : '',
+                'voice_provider' => (string) ($variable->voice_provider ?? data_get($variable->profile, 'voice_reference.provider', '')),
+                'voice_provider_voice_id' => (string) ($variable->voice_provider_voice_id ?? data_get($variable->profile, 'voice_reference.provider_voice_id', '')),
+                'voice_status' => (string) ($variable->voice_status ?? data_get($variable->profile, 'voice_reference.status', '')),
                 'identity_mode' => (string) ($variable->identity_mode ?? 'balanced'),
                 'consistency_threshold' => $variable->consistency_threshold !== null
                     ? (int) $variable->consistency_threshold
@@ -85,6 +107,14 @@ class AssetVariableService
                     'mime' => (string) ($asset->mime ?? ''),
                     'meta' => is_array($asset->meta) ? $asset->meta : [],
                 ])->all(),
+                'voice_asset' => $voiceAsset ? [
+                    'id' => (int) ($voiceAsset->id ?? 0),
+                    'kind' => (string) ($voiceAsset->kind ?? ''),
+                    'path' => (string) ($voiceAsset->path ?? ''),
+                    'original_name' => (string) ($voiceAsset->original_name ?? ''),
+                    'mime' => (string) ($voiceAsset->mime ?? ''),
+                    'meta' => is_array($voiceAsset->meta) ? $voiceAsset->meta : [],
+                ] : null,
             ];
         }
 
@@ -317,9 +347,31 @@ class AssetVariableService
 
     private function normalize(string $value): string
     {
+        $value = $this->normalizeUtf8($value);
         $value = Str::of($value)->lower()->ascii()->toString();
-        $value = preg_replace('/[^a-z0-9\s@_-]+/u', ' ', $value) ?? '';
+        $value = preg_replace('/[^\\p{L}\\p{N}\\s@_-]+/u', ' ', $value) ?? '';
         $value = preg_replace('/\s+/u', ' ', trim($value)) ?? '';
         return trim($value);
+    }
+
+    private function normalizeUtf8(string $value): string
+    {
+        if ($value === '') {
+            return '';
+        }
+
+        if (!mb_check_encoding($value, 'UTF-8')) {
+            $converted = @mb_convert_encoding($value, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+            if (is_string($converted) && $converted !== '') {
+                $value = $converted;
+            }
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+        if (is_string($sanitized)) {
+            $value = $sanitized;
+        }
+
+        return $value;
     }
 }

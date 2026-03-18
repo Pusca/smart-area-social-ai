@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Services\AI\AiProviderMatrixService;
@@ -14,6 +15,7 @@ use App\Services\NanoBananaService;
 use App\Services\Notification\WorkspaceNotificationService;
 use App\Services\OpenAiService;
 use App\Services\RunwayService;
+use App\Services\SpeechSynthesisService;
 use App\Support\ImageProviderResolver;
 use App\Support\PublicMediaUrl;
 use App\Support\VideoProviderResolver;
@@ -48,7 +50,8 @@ class GenerateAiForContentItem implements ShouldQueue
         TenantContentIntelligenceService $tenantContentIntelligence,
         AiProviderMatrixService $aiProviderMatrixService,
         ContentAlignmentService $contentAlignment,
-        WorkspaceNotificationService $workspaceNotifications
+        WorkspaceNotificationService $workspaceNotifications,
+        SpeechSynthesisService $speechSynthesis
     ): void
     {
         $item = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
@@ -400,7 +403,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
                     . ($selectedBrandImage ? "Parti dai riferimenti brand forniti e trasformali in un visual editoriale strategico, non in una semplice copia della foto originale. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                     . "Non generare loghi finti, nome brand scritto, watermark o testo sovraimpresso nell'immagine. "
-                    . "Se è necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
+                    . "Se ÃƒÂ¨ necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
                     . "Stile professionale, coerente con il brand e totalmente in italiano.";
 
                 $item->ai_image_prompt = $prompt;
@@ -470,7 +473,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     $audioAttach = $this->maybeAttachAudioTrackToVideo(
                         item: $item,
                         videoPath: $videoPath,
-                        openAi: $openAi
+                        speechSynthesis: $speechSynthesis
                     );
                     if ((bool) ($audioAttach['applied'] ?? false) && !empty($audioAttach['video_path'])) {
                         $videoPath = (string) $audioAttach['video_path'];
@@ -935,21 +938,21 @@ class GenerateAiForContentItem implements ShouldQueue
         $presets = [
             [
                 'title' => 'Prezzi dinamici senza stress',
-                'caption' => "Uno degli errori più comuni negli affitti brevi è aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilità in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: più margine e meno camere ferme.",
+                'caption' => "Uno degli errori piÃƒÂ¹ comuni negli affitti brevi ÃƒÂ¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÂ  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÂ¹ margine e meno camere ferme.",
                 'hashtags' => ['#Hostup', '#AffittiBrevi', '#RevenueManagement', '#PropertyManagement', '#Automazione'],
                 'cta' => "Vuoi vedere il flusso completo in azione? {$ctaDefault}",
                 'image_prompt' => "Dashboard moderna di revenue management per affitti brevi, stile pulito tech, palette brand, scena realistica senza testo.",
             ],
             [
                 'title' => 'Canali OTA allineati in tempo reale',
-                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilità, restrizioni e regole vengono aggiornate automaticamente.",
+                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÂ , restrizioni e regole vengono aggiornate automaticamente.",
                 'hashtags' => ['#Hostup', '#ChannelManager', '#AirbnbHost', '#BookingCom', '#ShortTermRental'],
                 'cta' => "Se vuoi, ti mostriamo in 10 minuti come configurarlo sul tuo portfolio.",
                 'image_prompt' => "Interfaccia channel manager multi-canale con card OTA, look future-tech, senza watermark e senza testo.",
             ],
             [
-                'title' => 'Meno operatività, più controllo',
-                'caption' => "La gestione efficace non è fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attività ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualità del servizio.",
+                'title' => 'Meno operativitÃƒÂ , piÃƒÂ¹ controllo',
+                'caption' => "La gestione efficace non ÃƒÂ¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÂ  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÂ  del servizio.",
                 'hashtags' => ['#Hostup', '#HospitalityTech', '#AffittiBreviItalia', '#Automation', '#SmartOperations'],
                 'cta' => "Scrivici e prepariamo un setup pilota sui tuoi annunci.",
                 'image_prompt' => "Team operativo hospitality che monitora KPI su schermo, stile professionale, luci soft, no testo sovraimpresso.",
@@ -963,14 +966,14 @@ class GenerateAiForContentItem implements ShouldQueue
             ],
             [
                 'title' => 'Template operativi pronti',
-                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualità costante.",
-                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#Scalabilità', '#DigitalHospitality'],
+                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÂ  costante.",
+                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÂ ', '#DigitalHospitality'],
                 'cta' => "Vuoi una checklist pronta per partire? Te la condividiamo.",
                 'image_prompt' => "Vista workflow operativo per property management, cards ordinate e look minimal futuristico.",
             ],
             [
                 'title' => 'Setup rapido per team piccoli',
-                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, più controllo centralizzato. {$brand} organizza attività, priorità e pubblicazione contenuti in un unico flusso chiaro.",
+                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÂ¹ controllo centralizzato. {$brand} organizza attivitÃƒÂ , prioritÃƒÂ  e pubblicazione contenuti in un unico flusso chiaro.",
                 'hashtags' => ['#Hostup', '#TeamProduttivo', '#Workflow', '#SmartTools', '#BusinessGrowth'],
                 'cta' => "Prenota una prova: impostiamo insieme il primo piano operativo.",
                 'image_prompt' => "Scrivania moderna con laptop e pannello operativo, mood tech pulito, nessun testo visibile.",
@@ -2183,7 +2186,7 @@ SVG;
         foreach ([
             'non sembra lei',
             'non e lei',
-            'non è lei',
+            'non ÃƒÂ¨ lei',
             'volto diverso',
             'viso diverso',
             'faccia diversa',
@@ -4806,6 +4809,14 @@ SVG;
                     ->all();
             }
 
+            $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+            $voiceAssetId = isset($row['voice_asset_id']) ? (int) $row['voice_asset_id'] : (int) data_get($profile, 'voice_reference.sample_asset_id', 0);
+            $voiceAssetPath = trim((string) ($row['voice_asset_path'] ?? data_get($profile, 'voice_reference.sample_path', '')));
+            $voiceAssetName = trim((string) ($row['voice_asset_name'] ?? data_get($profile, 'voice_reference.sample_name', '')));
+            $voiceProvider = trim((string) ($row['voice_provider'] ?? data_get($profile, 'voice_reference.provider', '')));
+            $voiceProviderVoiceId = trim((string) ($row['voice_provider_voice_id'] ?? data_get($profile, 'voice_reference.provider_voice_id', '')));
+            $voiceStatus = trim((string) ($row['voice_status'] ?? data_get($profile, 'voice_reference.status', '')));
+
             $out[] = [
                 'id' => $id && $id > 0 ? $id : null,
                 'name' => $name,
@@ -4815,18 +4826,24 @@ SVG;
                 'description' => trim((string) ($row['description'] ?? '')),
                 'canonical_asset_id' => isset($row['canonical_asset_id']) ? (int) $row['canonical_asset_id'] : null,
                 'canonical_asset_path' => trim((string) ($row['canonical_asset_path'] ?? '')),
+                'voice_asset_id' => $voiceAssetId > 0 ? $voiceAssetId : null,
+                'voice_asset_path' => $voiceAssetPath,
+                'voice_asset_name' => $voiceAssetName,
+                'voice_provider' => $voiceProvider,
+                'voice_provider_voice_id' => $voiceProviderVoiceId,
+                'voice_status' => $voiceStatus,
                 'identity_mode' => trim((string) ($row['identity_mode'] ?? 'balanced')),
                 'consistency_threshold' => isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : null,
-                'profile' => is_array($row['profile'] ?? null) ? $row['profile'] : [],
+                'profile' => $profile,
                 'asset_ids' => $assetIds,
                 'asset_paths' => $assetPaths,
                 'assets' => is_array($row['assets'] ?? null) ? $row['assets'] : [],
+                'voice_asset' => is_array($row['voice_asset'] ?? null) ? $row['voice_asset'] : null,
             ];
         }
 
         return array_values($out);
     }
-
     /**
      * @param  array<string, mixed>  $row
      */
@@ -5501,13 +5518,16 @@ SVG;
      *   error:string|null
      * }
      */
-    private function maybeAttachAudioTrackToVideo(ContentItem $item, string $videoPath, OpenAiService $openAi): array
+    private function maybeAttachAudioTrackToVideo(ContentItem $item, string $videoPath, SpeechSynthesisService $speechSynthesis): array
     {
         if (!(bool) config('generation.video_auto_audio', true)) {
             return [
                 'applied' => false,
                 'reason' => 'video_auto_audio_disabled',
                 'source' => null,
+                'provider' => null,
+                'voice_id' => null,
+                'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
                 'error' => null,
@@ -5520,6 +5540,9 @@ SVG;
                 'applied' => false,
                 'reason' => 'missing_video_path',
                 'source' => null,
+                'provider' => null,
+                'voice_id' => null,
+                'voice_label' => null,
                 'video_path' => null,
                 'audio_path' => null,
                 'error' => null,
@@ -5532,6 +5555,9 @@ SVG;
                 'applied' => false,
                 'reason' => 'video_file_not_found',
                 'source' => null,
+                'provider' => null,
+                'voice_id' => null,
+                'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
                 'error' => null,
@@ -5545,6 +5571,9 @@ SVG;
                 'applied' => false,
                 'reason' => 'ffmpeg_unavailable',
                 'source' => null,
+                'provider' => null,
+                'voice_id' => null,
+                'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
                 'error' => null,
@@ -5558,6 +5587,9 @@ SVG;
                 'applied' => false,
                 'reason' => 'ffprobe_unavailable_skip_non_runway',
                 'source' => null,
+                'provider' => null,
+                'voice_id' => null,
+                'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
                 'error' => null,
@@ -5570,6 +5602,9 @@ SVG;
                 'applied' => false,
                 'reason' => 'video_already_has_audio',
                 'source' => null,
+                'provider' => null,
+                'voice_id' => null,
+                'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
                 'error' => null,
@@ -5585,32 +5620,34 @@ SVG;
         $tempMuxedAbs = null;
         $storedAudioPath = null;
         $source = null;
+        $provider = null;
+        $voiceId = null;
+        $voiceLabel = null;
         $error = null;
+        $narration = $this->resolveNarrationTextForVideo($item);
 
         try {
-            $brandVideoRefPath = $this->resolveBrandVideoReferencePath($item);
-            if ($brandVideoRefPath !== '' && $publicDisk->exists($brandVideoRefPath)) {
-                $brandVideoAbs = $publicDisk->path($brandVideoRefPath);
-                if (!$ffprobeAvailable || $this->videoHasAudioStream($brandVideoAbs, $ffprobe)) {
-                    $extractedAbs = $tmpDir . DIRECTORY_SEPARATOR . 'brand-audio-' . Str::uuid()->toString() . '.m4a';
-                    if ($this->extractAudioTrackFromVideo($brandVideoAbs, $extractedAbs, $ffmpeg)) {
-                        $tempAudioAbs = $extractedAbs;
-                        $source = 'brand_video_audio';
-                    }
-                }
-            }
-
-            if ($tempAudioAbs === null) {
-                $narration = $this->resolveNarrationTextForVideo($item);
-                if ($narration !== '') {
+            if ($narration !== '') {
+                $voiceContext = $this->resolvePersonaVoiceContext($item);
+                if (!empty($voiceContext)) {
                     try {
-                        $speechBytes = $openAi->generateSpeechMp3($narration);
-                        if (is_string($speechBytes) && $speechBytes !== '') {
-                            $storedAudioPath = 'ai/audio/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.mp3';
-                            $publicDisk->put($storedAudioPath, $speechBytes);
-                            if ($publicDisk->exists($storedAudioPath)) {
-                                $tempAudioAbs = $publicDisk->path($storedAudioPath);
-                                $source = 'openai_tts';
+                        $voiceVariable = $this->resolvePersonaVoiceVariable($item);
+                        $speechPayload = $speechSynthesis->synthesizeWithVoiceContext(
+                            text: $narration,
+                            variable: $voiceVariable,
+                            voiceContext: $voiceContext,
+                            providerMatrix: (array) data_get($item->ai_meta, 'provider_matrix', [])
+                        );
+
+                        if (is_array($speechPayload)) {
+                            $stored = $this->storeGeneratedAudioPayload($publicDisk, $speechPayload);
+                            if (!empty($stored['absolute_path'])) {
+                                $tempAudioAbs = (string) $stored['absolute_path'];
+                                $storedAudioPath = (string) ($stored['path'] ?? null);
+                                $source = (string) ($speechPayload['source'] ?? 'persona_voice_clone');
+                                $provider = (string) ($speechPayload['provider'] ?? '');
+                                $voiceId = isset($speechPayload['voice_id']) ? (string) $speechPayload['voice_id'] : null;
+                                $voiceLabel = isset($speechPayload['label']) ? (string) $speechPayload['label'] : null;
                             }
                         }
                     } catch (Throwable $ttsError) {
@@ -5619,11 +5656,50 @@ SVG;
                 }
             }
 
+            if ($tempAudioAbs === null) {
+                $brandVideoRefPath = $this->resolveBrandVideoReferencePath($item);
+                if ($brandVideoRefPath !== '' && $publicDisk->exists($brandVideoRefPath)) {
+                    $brandVideoAbs = $publicDisk->path($brandVideoRefPath);
+                    if (!$ffprobeAvailable || $this->videoHasAudioStream($brandVideoAbs, $ffprobe)) {
+                        $extractedAbs = $tmpDir . DIRECTORY_SEPARATOR . 'brand-audio-' . Str::uuid()->toString() . '.m4a';
+                        if ($this->extractAudioTrackFromVideo($brandVideoAbs, $extractedAbs, $ffmpeg)) {
+                            $tempAudioAbs = $extractedAbs;
+                            $source = 'brand_video_audio';
+                            $provider = null;
+                            $voiceId = null;
+                            $voiceLabel = 'Audio reale da video brand';
+                        }
+                    }
+                }
+            }
+
+            if ($tempAudioAbs === null && $narration !== '') {
+                try {
+                    $speechPayload = $speechSynthesis->synthesizeWithDefaultVoice($narration);
+                    if (is_array($speechPayload)) {
+                        $stored = $this->storeGeneratedAudioPayload($publicDisk, $speechPayload);
+                        if (!empty($stored['absolute_path'])) {
+                            $tempAudioAbs = (string) $stored['absolute_path'];
+                            $storedAudioPath = (string) ($stored['path'] ?? null);
+                            $source = (string) ($speechPayload['source'] ?? 'openai_tts');
+                            $provider = (string) ($speechPayload['provider'] ?? '');
+                            $voiceId = isset($speechPayload['voice_id']) ? (string) $speechPayload['voice_id'] : null;
+                            $voiceLabel = isset($speechPayload['label']) ? (string) $speechPayload['label'] : null;
+                        }
+                    }
+                } catch (Throwable $ttsError) {
+                    $error = Str::limit($ttsError->getMessage(), 240, '');
+                }
+            }
+
             if ($tempAudioAbs === null || !is_file($tempAudioAbs)) {
                 return [
                     'applied' => false,
                     'reason' => 'no_audio_source_available',
                     'source' => $source,
+                    'provider' => $provider,
+                    'voice_id' => $voiceId,
+                    'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
                     'error' => $error,
@@ -5636,6 +5712,9 @@ SVG;
                     'applied' => false,
                     'reason' => 'mux_failed',
                     'source' => $source,
+                    'provider' => $provider,
+                    'voice_id' => $voiceId,
+                    'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
                     'error' => $error,
@@ -5649,6 +5728,9 @@ SVG;
                     'applied' => false,
                     'reason' => 'mux_output_empty',
                     'source' => $source,
+                    'provider' => $provider,
+                    'voice_id' => $voiceId,
+                    'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
                     'error' => $error,
@@ -5661,6 +5743,9 @@ SVG;
                     'applied' => false,
                     'reason' => 'mux_output_store_failed',
                     'source' => $source,
+                    'provider' => $provider,
+                    'voice_id' => $voiceId,
+                    'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
                     'error' => $error,
@@ -5671,6 +5756,9 @@ SVG;
                 'applied' => true,
                 'reason' => 'audio_attached',
                 'source' => $source,
+                'provider' => $provider,
+                'voice_id' => $voiceId,
+                'voice_label' => $voiceLabel,
                 'video_path' => $newVideoPath,
                 'audio_path' => $storedAudioPath,
                 'error' => $error,
@@ -5680,6 +5768,9 @@ SVG;
                 'applied' => false,
                 'reason' => 'audio_attach_exception',
                 'source' => $source,
+                'provider' => $provider,
+                'voice_id' => $voiceId,
+                'voice_label' => $voiceLabel,
                 'video_path' => $videoPath,
                 'audio_path' => $storedAudioPath,
                 'error' => Str::limit($e->getMessage(), 240, ''),
@@ -5699,7 +5790,6 @@ SVG;
             }
         }
     }
-
     private function resolveNarrationTextForVideo(ContentItem $item): string
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
@@ -5775,6 +5865,95 @@ SVG;
         return trim(implode(' ', $clean));
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{path:?string, absolute_path:?string}
+     */
+    private function storeGeneratedAudioPayload($publicDisk, array $payload): array
+    {
+        $bytes = $payload['bytes'] ?? null;
+        if (!is_string($bytes) || $bytes === '') {
+            return ['path' => null, 'absolute_path' => null];
+        }
+
+        $extension = strtolower(trim((string) ($payload['extension'] ?? 'mp3')));
+        if ($extension === '' || preg_match('/^[a-z0-9]{2,5}$/', $extension) !== 1) {
+            $extension = 'mp3';
+        }
+
+        $path = 'ai/audio/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $extension;
+        $publicDisk->put($path, $bytes);
+        if (!$publicDisk->exists($path)) {
+            return ['path' => null, 'absolute_path' => null];
+        }
+
+        return [
+            'path' => $path,
+            'absolute_path' => $publicDisk->path($path),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolvePersonaVoiceContext(ContentItem $item): array
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $candidates = [];
+
+        $presenter = data_get($meta, 'asset_identity.slots.presenter', null);
+        if (is_array($presenter)) {
+            $candidates[] = $presenter;
+        }
+
+        foreach ($this->normalizeAssetVariableRows((array) data_get($meta, 'asset_variables.resolved', [])) as $row) {
+            if (strtolower(trim((string) ($row['kind'] ?? 'custom'))) !== 'person') {
+                continue;
+            }
+
+            $candidates[] = $row;
+        }
+
+        foreach ($candidates as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+            $assetPath = trim((string) ($row['voice_asset_path'] ?? data_get($profile, 'voice_reference.sample_path', '')));
+            $providerVoiceId = trim((string) ($row['voice_provider_voice_id'] ?? data_get($profile, 'voice_reference.provider_voice_id', '')));
+            if ($assetPath === '' && $providerVoiceId === '') {
+                continue;
+            }
+
+            return [
+                'id' => isset($row['id']) ? (int) $row['id'] : null,
+                'name' => trim((string) ($row['name'] ?? '')),
+                'description' => trim((string) (($row['description'] ?? '') ?: data_get($profile, 'identity_summary', ''))),
+                'asset_path' => $assetPath,
+                'asset_name' => trim((string) ($row['voice_asset_name'] ?? data_get($profile, 'voice_reference.sample_name', ''))),
+                'provider' => trim((string) ($row['voice_provider'] ?? data_get($profile, 'voice_reference.provider', ''))),
+                'provider_voice_id' => $providerVoiceId,
+                'status' => trim((string) ($row['voice_status'] ?? data_get($profile, 'voice_reference.status', ''))),
+                'label' => trim((string) data_get($profile, 'voice_reference.label', 'Voce persona')),
+            ];
+        }
+
+        return [];
+    }
+
+    private function resolvePersonaVoiceVariable(ContentItem $item): ?AssetVariable
+    {
+        $voiceContext = $this->resolvePersonaVoiceContext($item);
+        $variableId = (int) ($voiceContext['id'] ?? 0);
+        if ($variableId < 1) {
+            return null;
+        }
+
+        return AssetVariable::query()
+            ->where('tenant_id', $item->tenant_id)
+            ->find($variableId);
+    }
     private function resolveBrandVideoReferencePath(ContentItem $item): string
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];

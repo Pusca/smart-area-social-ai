@@ -25,6 +25,7 @@
     $logos = $byKind['logo'] ?? collect();
     $images = $byKind['image'] ?? collect();
     $videos = $byKind['video'] ?? collect();
+    $audios = $byKind['audio'] ?? collect();
     $variableCandidateAssets = $assets->whereIn('kind', ['image', 'logo'])->values();
     $selectedVariableAssetIds = old('asset_ids', []);
     if (!is_array($selectedVariableAssetIds)) {
@@ -89,13 +90,13 @@
         [
             'label' => 'Target e obiettivo',
             'ready' => filled($profile?->target) && filled($profile?->default_goal) && filled($profile?->cta),
-            'hint' => 'Più l AI capisce chi vuoi raggiungere, più i contenuti risultano centrati.',
+            'hint' => 'PiÃ¹ l AI capisce chi vuoi raggiungere, piÃ¹ i contenuti risultano centrati.',
             'href' => '#brand-defaults-section',
         ],
         [
             'label' => 'Direzione strategica',
             'ready' => filled($profile?->vision) && filled($profile?->values) && filled(data_get($analysis, 'primary_goal')),
-            'hint' => 'Dai alla strategia più contesto su posizionamento e tono del brand.',
+            'hint' => 'Dai alla strategia piÃ¹ contesto su posizionamento e tono del brand.',
             'href' => '#brand-strategy-section',
         ],
         [
@@ -182,6 +183,7 @@
         'shot_profile',
         'shot_half_body',
         'reference_video',
+        'voice_sample',
     ];
     $manualVariableFieldNames = [
         'kind',
@@ -274,6 +276,9 @@
                     </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
                         {{ $videos->count() }} video
+                    </span>
+                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
+                        {{ $audios->count() }} audio
                     </span>
                     <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
                         Strategia {{ $strategyStatus }}
@@ -504,7 +509,7 @@
                             action="{{ route('profile.brand.quickstart.regenerate') }}"
                             class="js-quickstart-generation-submit"
                             data-loader-title="Sto rigenerando la tua demo iniziale"
-                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand più recenti."
+                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand piÃ¹ recenti."
                             data-loader-estimate="150"
                         >
                             @csrf
@@ -531,9 +536,9 @@
             <div class="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Prossimo passo</div>
-                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai più contesto alla macchina</h2>
+                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai piÃ¹ contesto alla macchina</h2>
                     <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                        Più dettagli aggiungi qui, più Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attività.
+                        PiÃ¹ dettagli aggiungi qui, piÃ¹ Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attivitÃ .
                         Non serve fare tutto subito: basta completare un blocco alla volta e salvare.
                     </p>
 
@@ -546,7 +551,7 @@
                             Brand readiness {{ $brandReadinessRate }}%
                         </span>
                         <span class="inline-flex items-center rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
-                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree già coperte
+                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree giÃ  coperte
                         </span>
                         @if($brandReadinessMissing->count() > 0)
                             <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
@@ -566,8 +571,8 @@
                     @empty
                         <div class="sm:col-span-2 rounded-2xl border border-emerald-200 bg-white/90 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Profilo ben compilato</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai già dato alla macchina una base solida.</p>
-                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno già un contesto utile da cui partire.</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai giÃ  dato alla macchina una base solida.</p>
+                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno giÃ  un contesto utile da cui partire.</p>
                         </div>
                     @endforelse
                 </div>
@@ -927,7 +932,7 @@
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">Libreria asset</h2>
-                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file gia caricati. Selezione multipla per logo e immagini, elimina singolo per i video.</p>
+                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file gia caricati. Selezione multipla per logo e immagini, elimina singolo per video e audio.</p>
                     </div>
 
                     @if($assets->count() > 0)
@@ -939,7 +944,7 @@
                     @endif
                 </div>
 
-                <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Logo</p>
                         <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} file</p>
@@ -951,6 +956,10 @@
                     <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Video</p>
                         <p class="mt-2 text-sm font-semibold text-gray-900">{{ $videos->count() }} file</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Audio</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $audios->count() }} file</p>
                     </div>
                 </div>
 
@@ -1079,6 +1088,47 @@
                             </div>
                             </div>
                         </details>
+
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($audios->count() > 0 && $audios->count() <= 2) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Audio</h3>
+                                    <p class="mt-1 text-xs text-gray-600">Campioni voce e file audio restano separati dai riferimenti visuali.</p>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ $audios->count() }} file</span>
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="mt-0 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                @forelse($audios as $a)
+                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                        <div class="border-b border-gray-200 bg-gray-50 p-2">
+                                            <p class="text-xs font-semibold text-gray-600">Audio brand</p>
+                                        </div>
+                                        <div class="space-y-3 p-3">
+                                            <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-xs font-semibold text-gray-700">
+                                                {{ $a->original_name ?? 'audio' }}
+                                            </div>
+                                            <audio controls preload="none" class="w-full">
+                                                <source src="{{ asset('storage/' . ltrim($a->path, '/')) }}" @if(filled($a->mime)) type="{{ $a->mime }}" @endif>
+                                            </audio>
+                                        </div>
+                                        <div class="truncate px-2 py-1 text-[11px] text-gray-600">{{ $a->original_name ?? $a->path }}</div>
+                                        <div class="px-2 pb-2">
+                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questo audio?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
+                                            </form>
+                                        </div>
+                                    </article>
+                                @empty
+                                    <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
+                                        Nessun audio caricato.
+                                    </div>
+                                @endforelse
+                            </div>
+                            </div>
+                        </details>
                     </div>
                 @endif
             </div>
@@ -1102,7 +1152,7 @@
                             <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Nuovo flusso guidato</p>
                             <h3 class="mt-1 text-base font-semibold text-gray-900">Crea un persona pack per immagini e video</h3>
                             <p class="mt-2 max-w-2xl text-sm text-gray-600">
-                                Carica i riferimenti reali della persona da preservare. L AI userà questo pack come ancora identitaria:
+                                Carica i riferimenti reali della persona da preservare. L AI userÃ  questo pack come ancora identitaria:
                                 stesso volto, stessi tratti e presenza coerente tra contenuti diversi.
                             </p>
                         </div>
@@ -1116,7 +1166,7 @@
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Scatti richiesti</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">4 angoli chiave + mezzo busto opzionale</p>
-                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base più utile.</p>
+                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base piÃ¹ utile.</p>
                         </div>
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Video reale</p>
@@ -1126,7 +1176,7 @@
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Istruzioni dirette</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">Cosa non deve cambiare</p>
-                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertà creative sono ammesse.</p>
+                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertÃ  creative sono ammesse.</p>
                         </div>
                     </div>
 
@@ -1146,11 +1196,11 @@
                         <div class="grid gap-4 lg:grid-cols-2">
                             <div>
                                 <label for="guided_persona_description" class="{{ $labelClass }}">Descrizione base</label>
-                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi è questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
+                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi Ã¨ questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
                             </div>
                             <div>
                                 <label for="guided_persona_immutable_traits" class="{{ $labelClass }}">Tratti da non cambiare mai</label>
-                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, età percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
+                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, etÃ  percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
                             </div>
                         </div>
 
@@ -1176,7 +1226,7 @@
 
                         <div class="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/70 p-4">
                             <p class="text-sm font-semibold text-gray-900">Carica il pack fotografico</p>
-                            <p class="mt-1 text-xs text-gray-600">Per vedere subito l’effetto in azione, qui chiediamo i riferimenti più utili e leggibili per l AI.</p>
+                            <p class="mt-1 text-xs text-gray-600">Per vedere subito lâ€™effetto in azione, qui chiediamo i riferimenti piÃ¹ utili e leggibili per l AI.</p>
 
                             <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                 <div>
@@ -1202,6 +1252,11 @@
                                 <div>
                                     <label for="reference_video" class="{{ $labelClass }}">Video reale (opzionale)</label>
                                     <input id="reference_video" type="file" name="reference_video" accept="video/mp4,video/quicktime,video/webm" class="{{ $inputClass }}">
+                                </div>
+                                <div>
+                                    <label for="voice_sample" class="{{ $labelClass }}">Campione voce (opzionale)</label>
+                                    <input id="voice_sample" type="file" name="voice_sample" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm" class="{{ $inputClass }}">
+                                    <p class="mt-1 text-xs text-gray-500">Usato per voiceover reel quando questa persona viene scelta e c e un provider voce configurato.</p>
                                 </div>
                             </div>
                         </div>
@@ -1374,6 +1429,11 @@
                                 $varAssetRole = trim((string) ($variable['asset_role'] ?? ''));
                                 $varCanonicalPath = trim((string) ($variable['canonical_asset_path'] ?? ''));
                                 $varVideoCount = collect($varAssets)->where('kind', 'video')->count();
+                                $varVoicePath = trim((string) ($variable['voice_asset_path'] ?? data_get($varProfile, 'voice_reference.sample_path', '')));
+                                $varVoiceName = trim((string) ($variable['voice_asset_name'] ?? data_get($varProfile, 'voice_reference.sample_name', '')));
+                                $varVoiceMime = trim((string) ($variable['voice_asset_mime'] ?? data_get($variable, 'voice_asset.mime', 'audio/mpeg')));
+                                $varVoiceStatus = trim((string) ($variable['voice_status'] ?? data_get($varProfile, 'voice_reference.status', '')));
+                                $varVoiceProvider = trim((string) ($variable['voice_provider'] ?? data_get($varProfile, 'voice_reference.provider', '')));
                             @endphp
                             <article class="rounded-xl border border-gray-200 bg-white p-4">
                                 <div class="flex items-start justify-between gap-3">
@@ -1393,7 +1453,7 @@
                                 @if($varDesc !== '')
                                     <p class="mt-2 text-xs text-gray-600">{{ \Illuminate\Support\Str::limit($varDesc, 110, '...') }}</p>
                                 @endif
-                                @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '' || $varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '' || $varVideoCount > 0)
+                                @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '' || $varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '' || $varVideoCount > 0 || $varVoicePath !== '' || $varVoiceStatus !== '' || $varVoiceProvider !== '')
                                     <details class="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                                         <summary class="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-gray-700">Dettagli variabile</summary>
                                         <div class="border-t border-gray-200 p-3 space-y-3">
@@ -1431,6 +1491,23 @@
                                             @endif
                                             @if($varVideoCount > 0)
                                                 <p class="text-xs font-semibold text-indigo-700">Include anche {{ $varVideoCount }} video di riferimento</p>
+                                            @endif
+                                            @if($varVoicePath !== '' || $varVoiceStatus !== '' || $varVoiceProvider !== '')
+                                                <div class="space-y-2 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+                                                    <p class="text-xs font-semibold text-emerald-700">Voce persona disponibile</p>
+                                                    @if($varVoiceProvider !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Provider:</span> {{ $varVoiceProvider }}</p>
+                                                    @endif
+                                                    @if($varVoiceStatus !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Stato:</span> {{ $varVoiceStatus }}</p>
+                                                    @endif
+                                                    @if($varVoicePath !== '')
+                                                        <p class="text-xs text-gray-700"><span class="font-semibold text-gray-900">Campione:</span> {{ $varVoiceName !== '' ? $varVoiceName : 'audio caricato' }}</p>
+                                                        <audio controls preload="none" class="w-full">
+                                                            <source src="{{ asset('storage/' . ltrim($varVoicePath, '/')) }}" @if($varVoiceMime !== '') type="{{ $varVoiceMime }}" @endif>
+                                                        </audio>
+                                                    @endif
+                                                </div>
                                             @endif
                                         </div>
                                     </details>

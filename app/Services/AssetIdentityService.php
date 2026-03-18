@@ -104,9 +104,9 @@ class AssetIdentityService
     /**
      * Allinea i meta degli asset collegati per rendere chiaro quale identita usano e qual e l'anchor canonico.
      */
-    public function syncAssetMetaForVariable(AssetVariable $variable, array $assetIds): void
+    public function syncAssetMetaForVariable(AssetVariable $variable, array $assetIds, array $extraAssetIds = []): void
     {
-        $ids = collect($assetIds)
+        $ids = collect(array_merge($assetIds, $extraAssetIds))
             ->map(fn ($id) => (int) $id)
             ->filter(fn (int $id) => $id > 0)
             ->unique()

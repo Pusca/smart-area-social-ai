@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\User;
+use App\Support\SpeechProviderResolver;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -43,6 +44,9 @@ class GuidedAssetVariableService
             $primaryStillAssetId = null;
             $referenceVideoAssetId = null;
             $referenceVideoPath = null;
+            $voiceAssetId = null;
+            $voiceAssetPath = null;
+            $voiceAssetName = null;
 
             foreach ($shots as $slot => $payload) {
                 $file = $payload['file'] ?? null;
@@ -109,6 +113,35 @@ class GuidedAssetVariableService
                 $referenceVideoPath = (string) $videoAsset->path;
             }
 
+            $voiceSample = $data['voice_sample'] ?? null;
+            if ($voiceSample instanceof UploadedFile) {
+                $voicePath = $voiceSample->store($baseDir . '/voice', 'public');
+                $voiceAsset = BrandAsset::query()->create([
+                    'tenant_id' => $tenantId,
+                    'content_plan_id' => null,
+                    'kind' => 'audio',
+                    'path' => $voicePath,
+                    'original_name' => $voiceSample->getClientOriginalName(),
+                    'size' => $voiceSample->getSize(),
+                    'mime' => $voiceSample->getMimeType(),
+                    'meta' => [
+                        'source' => 'guided_persona_pack',
+                        'slot' => 'voice_sample',
+                        'slot_label' => 'Campione voce',
+                        'variable_kind' => 'person',
+                        'variable_name' => $name,
+                    ],
+                ]);
+
+                $assets[] = $voiceAsset;
+                $voiceAssetId = (int) $voiceAsset->id;
+                $voiceAssetPath = (string) $voiceAsset->path;
+                $voiceAssetName = (string) ($voiceAsset->original_name ?? '');
+            }
+
+            $voiceProvider = $voiceAssetId ? $this->defaultVoiceCloneProvider() : null;
+            $voiceStatus = $voiceAssetId ? 'sample_ready' : null;
+
             $profile = [
                 'source_mode' => 'guided_persona_pack',
                 'role' => trim((string) ($data['persona_role'] ?? '')),
@@ -135,11 +168,22 @@ class GuidedAssetVariableService
                 'usage_notes' => trim((string) ($data['usage_notes'] ?? '')),
                 'shot_count' => count($shotSummary),
                 'shot_summary' => $shotSummary,
-                'recommended_prompt' => $this->buildRecommendedPrompt($name, $data, $shotSummary, $referenceVideoPath),
+                'recommended_prompt' => $this->buildRecommendedPrompt($name, $data, $shotSummary, $referenceVideoPath, $voiceAssetPath),
                 'preferred_still_asset_id' => $primaryStillAssetId,
                 'canonical_asset_id' => $primaryStillAssetId,
                 'reference_video_asset_id' => $referenceVideoAssetId,
                 'reference_video_path' => $referenceVideoPath,
+                'reference_voice_asset_id' => $voiceAssetId,
+                'reference_voice_path' => $voiceAssetPath,
+                'voice_reference' => [
+                    'label' => 'Campione voce reale',
+                    'sample_asset_id' => $voiceAssetId,
+                    'sample_path' => $voiceAssetPath,
+                    'sample_name' => $voiceAssetName,
+                    'provider' => $voiceProvider,
+                    'provider_voice_id' => null,
+                    'status' => $voiceStatus,
+                ],
                 'created_from_brand_center' => true,
             ];
 
@@ -155,13 +199,17 @@ class GuidedAssetVariableService
                     $assetIds
                 ), fn ($id) => $id > 0))),
                 'canonical_asset_id' => $primaryStillAssetId,
+                'voice_asset_id' => $voiceAssetId,
+                'voice_provider' => $voiceProvider,
+                'voice_provider_voice_id' => null,
+                'voice_status' => $voiceStatus,
                 'identity_mode' => 'strict',
                 'consistency_threshold' => 92,
                 'profile' => $profile,
                 'is_active' => true,
             ]);
 
-            $this->assetIdentityService->syncAssetMetaForVariable($variable, $assetIds);
+            $this->assetIdentityService->syncAssetMetaForVariable($variable, $assetIds, $voiceAssetId ? [$voiceAssetId] : []);
 
             return [
                 'variable' => $variable,
@@ -174,8 +222,13 @@ class GuidedAssetVariableService
      * @param  array<string, mixed>  $data
      * @param  array<int, array<string, mixed>>  $shotSummary
      */
-    private function buildRecommendedPrompt(string $name, array $data, array $shotSummary, ?string $referenceVideoPath): string
-    {
+    private function buildRecommendedPrompt(
+        string $name,
+        array $data,
+        array $shotSummary,
+        ?string $referenceVideoPath,
+        ?string $referenceVoicePath
+    ): string {
         $parts = [];
         $parts[] = "Usa {$name} come persona di riferimento costante.";
 
@@ -218,8 +271,24 @@ class GuidedAssetVariableService
             $parts[] = 'E presente anche un video reale di riferimento per movimenti, postura e mimica.';
         }
 
-        $parts[] = 'Mantieni identita, lineamenti e presenza della persona coerenti tra immagini e video, variando solo posa, scena, luce e styling quando utile.';
+        if (is_string($referenceVoicePath) && $referenceVoicePath !== '') {
+            $parts[] = 'E disponibile anche un campione voce reale da usare come riferimento per voiceover e narrazione video.';
+        }
+
+        $parts[] = 'Mantieni identita, lineamenti, presenza e, quando disponibile, anche la voce della persona coerenti tra immagini e video, variando solo posa, scena, luce e styling quando utile.';
 
         return Str::limit(implode(' ', $parts), 1200, '');
+    }
+
+    private function defaultVoiceCloneProvider(): ?string
+    {
+        $provider = strtolower(trim((string) config('generation.voice_clone_provider_default', 'elevenlabs')));
+        if ($provider === '') {
+            return null;
+        }
+
+        $provider = SpeechProviderResolver::normalize($provider);
+
+        return $provider === 'elevenlabs' ? $provider : null;
     }
 }

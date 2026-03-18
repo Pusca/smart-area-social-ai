@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\Support\GraderProviderResolver;
 use App\Support\ImageProviderResolver;
+use App\Support\SpeechProviderResolver;
 use App\Support\TextProviderResolver;
 use App\Support\VideoProviderResolver;
 
@@ -27,6 +28,10 @@ class AiProviderMatrixService
             (string) data_get($meta, 'provider_matrix.image.provider', data_get($meta, 'image_provider', '')),
             ImageProviderResolver::default()
         );
+        $speech = SpeechProviderResolver::resolve(
+            (string) data_get($meta, 'provider_matrix.speech.provider', data_get($meta, 'speech_provider', '')),
+            SpeechProviderResolver::default()
+        );
         $video = VideoProviderResolver::resolve(
             (string) data_get($meta, 'provider_matrix.video.provider', data_get($meta, 'video_provider', '')),
             VideoProviderResolver::default()
@@ -44,6 +49,10 @@ class AiProviderMatrixService
             'image' => [
                 'provider' => $image,
                 'available' => ImageProviderResolver::allowed(),
+            ],
+            'speech' => [
+                'provider' => $speech,
+                'available' => SpeechProviderResolver::allowed(),
             ],
             'video' => [
                 'provider' => $video,

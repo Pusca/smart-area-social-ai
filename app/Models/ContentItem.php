@@ -63,12 +63,12 @@ class ContentItem extends Model
         if (is_string($value)) {
             $parts = preg_split('/[\s,]+/', trim($value));
             $parts = array_values(array_filter($parts));
-            $this->attributes['hashtags'] = json_encode($parts);
+            $this->attributes['hashtags'] = json_encode($parts, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
         if (is_array($value)) {
-            $this->attributes['hashtags'] = json_encode($value);
+            $this->attributes['hashtags'] = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
@@ -78,7 +78,7 @@ class ContentItem extends Model
     public function setAiMetaAttribute($value): void
     {
         if (is_array($value)) {
-            $this->attributes['ai_meta'] = json_encode($value);
+            $this->attributes['ai_meta'] = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
@@ -93,7 +93,7 @@ class ContentItem extends Model
     public function setAssetsAttribute($value): void
     {
         if (is_array($value)) {
-            $this->attributes['assets'] = json_encode($value);
+            $this->attributes['assets'] = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
@@ -105,3 +105,4 @@ class ContentItem extends Model
         $this->attributes['assets'] = null;
     }
 }
+

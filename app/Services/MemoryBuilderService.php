@@ -124,9 +124,9 @@ class MemoryBuilderService
 
     private function extractKeywords(string $text): array
     {
-        $text = Str::lower($text);
-        $text = preg_replace('/[#@]/', ' ', $text) ?? '';
-        $text = preg_replace('/[^a-z0-9àèéìòù\s]/u', ' ', $text) ?? '';
+        $text = Str::lower($this->normalizeUtf8($text));
+        $text = preg_replace('/[#@]/u', ' ', $text) ?? '';
+        $text = preg_replace('/[^\\p{L}\\p{N}\\s]/u', ' ', $text) ?? '';
 
         $stopWords = [
             'the', 'for', 'and', 'con', 'per', 'una', 'uno', 'della', 'delle', 'dell', 'degli', 'anche',
@@ -152,9 +152,30 @@ class MemoryBuilderService
         return $out;
     }
 
+    private function normalizeUtf8(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        if (!mb_check_encoding($text, 'UTF-8')) {
+            $converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+            if (is_string($converted) && $converted !== '') {
+                $text = $converted;
+            }
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+        if (is_string($sanitized)) {
+            $text = $sanitized;
+        }
+
+        return $text;
+    }
+
     private function extractOfferSignals(string $text): array
     {
-        $text = Str::lower($text);
+        $text = Str::lower($this->normalizeUtf8($text));
         $signals = [];
         foreach (['offerta', 'offerte', 'promo', 'promozione', 'sconto', 'coupon', 'pacchetto', 'bonus'] as $word) {
             if (Str::contains($text, $word)) {
@@ -166,7 +187,7 @@ class MemoryBuilderService
 
     private function normalizePhrase(string $value): string
     {
-        $value = Str::lower(trim($value));
+        $value = Str::lower(trim($this->normalizeUtf8($value)));
         $value = preg_replace('/\s+/', ' ', $value) ?? '';
         return Str::limit($value, 70, '');
     }
@@ -183,7 +204,7 @@ class MemoryBuilderService
 
         $out = [];
         foreach ($parts as $part) {
-            $tag = trim((string) $part);
+            $tag = trim($this->normalizeUtf8((string) $part));
             if ($tag === '') {
                 continue;
             }

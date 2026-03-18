@@ -98,8 +98,8 @@
                         <p class="font-semibold">Modalita admin attiva nel workspace</p>
                         <p class="text-xs text-amber-800">
                             Tenant: {{ $impersonation['target_tenant_name'] ?? 'Tenant' }}
-                            · Utente: {{ $impersonation['target_user_name'] ?? auth()->user()?->name }}
-                            · Admin origine: {{ $impersonation['original_admin_email'] ?? '' }}
+                            Â· Utente: {{ $impersonation['target_user_name'] ?? auth()->user()?->name }}
+                            Â· Admin origine: {{ $impersonation['original_admin_email'] ?? '' }}
                         </p>
                     </div>
                     <form method="POST" action="{{ route('admin.impersonation.stop') }}">
@@ -129,9 +129,9 @@
         </main>
     </div>
 
-    <nav class="fixed inset-x-0 bottom-0 z-50 border-t border-app bg-white/95 backdrop-blur sm:hidden">
+    <nav class="mobile-nav fixed inset-x-0 bottom-0 z-50 border-t border-app bg-white/95 backdrop-blur sm:hidden">
         <div class="mx-auto max-w-7xl px-3 pb-[env(safe-area-inset-bottom)]">
-            <div class="grid grid-cols-5 gap-2 py-2 text-center text-[11px]">
+            <div class="ui-mobile-nav" style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr));">
                 @foreach($mobileNavItems as $item)
                     @php
                         $patterns = \Illuminate\Support\Arr::wrap($item['active']);
@@ -139,9 +139,9 @@
                     @endphp
                     <a
                         href="{{ route($item['route']) }}"
-                        class="touch-manipulation select-none rounded-2xl px-2 py-3 {{ $isActive ? 'bg-brand text-white font-semibold shadow-lg shadow-blue-900/10' : 'text-gray-700 hover:bg-surface-2' }}"
+                        class="flex min-w-0 items-center justify-center whitespace-nowrap touch-manipulation select-none rounded-2xl px-2 py-3 {{ $isActive ? 'bg-brand text-white font-semibold shadow-lg shadow-blue-900/10' : 'text-gray-700 hover:bg-surface-2' }}"
                     >
-                        {{ $item['label'] }}
+                        <span class="truncate">{{ $item['label'] }}</span>
                     </a>
                 @endforeach
             </div>

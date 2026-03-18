@@ -143,7 +143,7 @@ class OpenAiService
 
         $input = [
             ['role' => 'system', 'content' => $instructions],
-            ['role' => 'user', 'content' => "Contesto:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
+            ['role' => 'user', 'content' => "Contesto:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_INVALID_UTF8_SUBSTITUTE)],
         ];
 
         $url = $this->url('/v1/responses');
@@ -930,7 +930,7 @@ class OpenAiService
                         ],
                         [
                             'role' => 'user',
-                            'content' => 'Valuta questa bozza di contenuto e prompt: ' . json_encode($reviewPacket, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                            'content' => 'Valuta questa bozza di contenuto e prompt: ' . json_encode($reviewPacket, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
                         ],
                     ],
                     'text' => [
@@ -1226,6 +1226,7 @@ class OpenAiService
         };
     }
 }
+
 
 
 

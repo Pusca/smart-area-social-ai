@@ -110,10 +110,32 @@ class ImagePromptRealismGuard
 
     private static function normalize(string $value): string
     {
+        $value = self::normalizeUtf8($value);
         $value = Str::of($value)->lower()->ascii()->toString();
-        $value = preg_replace('/[^a-z0-9\s_-]+/u', ' ', $value) ?? '';
+        $value = preg_replace('/[^\\p{L}\\p{N}\\s_-]+/u', ' ', $value) ?? '';
         $value = preg_replace('/\s+/u', ' ', trim($value)) ?? '';
 
         return trim($value);
+    }
+
+    private static function normalizeUtf8(string $value): string
+    {
+        if ($value === '') {
+            return '';
+        }
+
+        if (!mb_check_encoding($value, 'UTF-8')) {
+            $converted = @mb_convert_encoding($value, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+            if (is_string($converted) && $converted !== '') {
+                $value = $converted;
+            }
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+        if (is_string($sanitized)) {
+            $value = $sanitized;
+        }
+
+        return $value;
     }
 }
