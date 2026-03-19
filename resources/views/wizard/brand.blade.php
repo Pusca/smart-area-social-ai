@@ -361,6 +361,13 @@
                     <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                         I motori AI e i provider restano selezionabili nei singoli contenuti: qui stai solo attivando la prova iniziale.
                     </div>
+
+                    <form method="POST" action="{{ route('profile.brand.quickstart.dismiss') }}" class="mt-4">
+                        @csrf
+                        <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            Salta la prova breve e vai al Brand Center
+                        </button>
+                    </form>
                 </div>
 
                 <form
@@ -417,7 +424,7 @@
                         <div>
                             <label for="quick_images" class="{{ $labelClass }}">Immagini di riferimento {{ $quickstartNeedsImages ? '(almeno 1 richiesta)' : '(puoi aggiungerne altre)' }}</label>
                             <input id="quick_images" type="file" name="images[]" accept="image/*" multiple class="{{ $inputClass }}" {{ $quickstartNeedsImages ? 'required' : '' }}>
-                            <p class="mt-1 text-xs text-gray-500">Vanno bene foto di prodotti, locale, team, lavori svolti o ambienti reali.</p>
+                            <p class="mt-1 text-xs text-gray-500">Vanno bene foto di prodotti, locale, team, lavori svolti o ambienti reali. Puoi caricarne fino a 12, max 10 MB ciascuna.</p>
                         </div>
 
                         <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4">
@@ -451,9 +458,14 @@
 
                         <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                             <p class="text-xs text-gray-500">La demo usa Instagram e Facebook, con 2 post immagine e 1 reel.</p>
-                            <button type="submit" class="ui-btn-primary justify-center">
-                                Crea la prova guidata
-                            </button>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="submit" formaction="{{ route('profile.brand.quickstart.dismiss') }}" formnovalidate class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                    Vai al Brand Center completo
+                                </button>
+                                <button type="submit" class="ui-btn-primary justify-center">
+                                    Crea la prova guidata
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -497,6 +509,12 @@
                             @csrf
                             <button type="submit" class="ui-btn-primary w-full justify-center">
                                 Salva i contenuti nel workspace
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ route('profile.brand.quickstart.dismiss') }}">
+                            @csrf
+                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                Chiudi quick setup e continua nel Brand Center
                             </button>
                         </form>
                         <a href="{{ route('calendar') }}" class="ui-btn-primary w-full justify-center">

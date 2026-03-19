@@ -86,12 +86,22 @@ class TenantProfileController extends Controller
             'notes' => 'nullable|string|max:2000',
             'default_goal' => 'nullable|string|max:500',
             'default_tone' => 'nullable|string|max:80',
-            'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:4096',
-            'images' => 'nullable|array|max:8',
-            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:4096',
+            'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:8192',
+            'images' => 'nullable|array|max:12',
+            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:10240',
             'quickstart_variable_name' => 'nullable|string|max:120',
             'quickstart_variable_kind' => 'nullable|string|in:person,location,product,custom',
             'quickstart_variable_description' => 'nullable|string|max:255',
+        ], [
+            'logo.max' => 'Il logo non puo superare 8 MB.',
+            'logo.mimes' => 'Il logo deve essere PNG, JPG, JPEG, WebP o SVG.',
+            'images.max' => 'Nel quick start puoi caricare fino a 12 immagini.',
+            'images.*.max' => 'Ogni immagine del quick start puo pesare al massimo 10 MB.',
+            'images.*.mimes' => 'Le immagini del quick start devono essere PNG, JPG, JPEG o WebP.',
+        ], [
+            'logo' => 'logo',
+            'images' => 'immagini di riferimento',
+            'images.*' => 'immagine di riferimento',
         ]);
 
         try {
@@ -362,6 +372,18 @@ class TenantProfileController extends Controller
             : 'Nessuna demo iniziale da eliminare.';
 
         return redirect()->route('profile.brand')->with('status', $message);
+    }
+
+    public function dismissQuickstart(Request $request)
+    {
+        $dismissed = $this->quickstartOnboardingService->dismissQuickstart($request->user());
+        $message = $dismissed
+            ? 'Quick setup chiuso. Puoi completare subito i dati aziendali nel Brand Center.'
+            : 'Nessun quick setup attivo da chiudere.';
+
+        return redirect()
+            ->to(route('profile.brand') . '#brand-profile-section')
+            ->with('status', $message);
     }
 
     public function destroyAssets(Request $request)

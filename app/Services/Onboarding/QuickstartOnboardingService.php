@@ -289,6 +289,22 @@ class QuickstartOnboardingService
         });
     }
 
+    public function dismissQuickstart(User $user): bool
+    {
+        $tenantId = (int) $user->tenant_id;
+        $profile = TenantProfile::query()->where('tenant_id', $tenantId)->first();
+
+        if (!$profile) {
+            return false;
+        }
+
+        $profile->forceFill([
+            'quickstart_dismissed_at' => now(),
+        ])->save();
+
+        return true;
+    }
+
     /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>

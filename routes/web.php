@@ -45,6 +45,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     // Profilo attivita e asset del tenant.
     Route::get('/profile/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
     Route::post('/profile/brand/quickstart', [TenantProfileController::class, 'storeQuickstart'])->name('profile.brand.quickstart.store');
+    Route::post('/profile/brand/quickstart/dismiss', [TenantProfileController::class, 'dismissQuickstart'])->name('profile.brand.quickstart.dismiss');
     Route::post('/profile/brand/quickstart/save', [TenantProfileController::class, 'saveQuickstartDemo'])->name('profile.brand.quickstart.save');
     Route::post('/profile/brand/quickstart/regenerate', [TenantProfileController::class, 'regenerateQuickstartDemo'])->name('profile.brand.quickstart.regenerate');
     Route::delete('/profile/brand/quickstart', [TenantProfileController::class, 'destroyQuickstartDemo'])->name('profile.brand.quickstart.destroy');
