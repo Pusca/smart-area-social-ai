@@ -470,13 +470,25 @@ class GenerateAiForContentItem implements ShouldQueue
                 $thumbPath = trim((string) ($videoResult['thumbnail_path'] ?? ''));
 
                 if ($videoPath !== '') {
-                    $videoPlaybackPostprocess = $this->postProcessGeneratedVideoForPlayback(
-                        item: $item,
-                        videoPath: $videoPath,
-                        provider: (string) ($videoResult['provider'] ?? data_get($item->ai_meta, 'video_provider', ''))
-                    );
-                    if (!empty($videoPlaybackPostprocess['video_path']) && is_string($videoPlaybackPostprocess['video_path'])) {
-                        $videoPath = (string) $videoPlaybackPostprocess['video_path'];
+                    $skipPlaybackPostprocess = (bool) ($videoResult['skip_playback_postprocess'] ?? false);
+                    if ($skipPlaybackPostprocess) {
+                        $videoPlaybackPostprocess = [
+                            'applied' => false,
+                            'reason' => 'already_playback_ready',
+                            'provider' => (string) ($videoResult['provider'] ?? data_get($item->ai_meta, 'video_provider', '')),
+                            'input_video_path' => $videoPath,
+                            'video_path' => $videoPath,
+                            'error' => null,
+                        ];
+                    } else {
+                        $videoPlaybackPostprocess = $this->postProcessGeneratedVideoForPlayback(
+                            item: $item,
+                            videoPath: $videoPath,
+                            provider: (string) ($videoResult['provider'] ?? data_get($item->ai_meta, 'video_provider', ''))
+                        );
+                        if (!empty($videoPlaybackPostprocess['video_path']) && is_string($videoPlaybackPostprocess['video_path'])) {
+                            $videoPath = (string) $videoPlaybackPostprocess['video_path'];
+                        }
                     }
 
                     $audioAttach = $this->maybeAttachAudioTrackToVideo(
@@ -522,6 +534,10 @@ class GenerateAiForContentItem implements ShouldQueue
                         'generation_attempts' => (int) ($videoResult['generation_attempts'] ?? 1),
                         'request_summary' => $videoResult['request_summary'] ?? null,
                         'reference_input_summary' => $videoResult['reference_input_summary'] ?? null,
+                        'extended' => $videoResult['extended'] ?? null,
+                        'segment_count' => (int) ($videoResult['segment_count'] ?? count((array) ($videoResult['segments'] ?? []))),
+                        'target_total_seconds' => (int) ($videoResult['target_total_seconds'] ?? 0),
+                        'segments' => (array) ($videoResult['segments'] ?? []),
                         'audio' => $audioAttach,
                         'playback_postprocess' => $videoPlaybackPostprocess,
                         'fallback' => $imageSourceFallback,
@@ -1421,6 +1437,37 @@ SVG;
             }
         }
 
+        $targetTotalSeconds = $this->targetTotalVideoSecondsForItem($item, $videoProvider);
+        if ($this->shouldGenerateExtendedVideo($item, $videoProvider, $targetTotalSeconds)) {
+            return $this->generateExtendedVideoAsset(
+                openAi: $openAi,
+                runway: $runway,
+                kling: $kling,
+                item: $item,
+                briefRaw: $briefRaw,
+                fallbackPrompt: $prompt,
+                videoProvider: $videoProvider,
+                runwayExecutionPrompt: $runwayExecutionPrompt,
+                klingExecutionPrompt: $klingExecutionPrompt,
+                openAiExecutionPrompt: $openAiExecutionPrompt,
+                referenceAbs: $referenceAbs,
+                referencePath: $referencePath,
+                referencePaths: $referencePaths,
+                referenceReason: $referenceReason,
+                generationReferenceAbsPool: $generationReferenceAbsPool,
+                imageReferencePathPool: $imageReferencePathPool,
+                validationReferenceAbsPool: $validationReferenceAbsPool,
+                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                compositionMeta: $compositionMeta,
+                brandDecision: $brandDecision,
+                videoOptions: $videoOptions,
+                assetVariables: $assetVariables,
+                activeFeedbackRequest: $activeFeedbackRequest,
+                locationSequenceMode: $locationSequenceMode,
+                targetTotalSeconds: $targetTotalSeconds
+            );
+        }
+
         if ($videoProvider === 'kling') {
             try {
                 return $this->generateVideoWithKling(
@@ -1753,6 +1800,486 @@ SVG;
                 }
             }
         }
+    }
+
+    /**
+     * Durata totale richiesta per il video finale. Se supera il limite del provider,
+     * la pipeline entra in modalita segmentata e concatena piu clip coerenti.
+     */
+    private function targetTotalVideoSecondsForItem(ContentItem $item, string $provider): int
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $candidates = [
+            (int) data_get($meta, 'requested_video_duration_seconds', 0),
+            (int) data_get($meta, 'video_duration_seconds_requested', 0),
+            (int) data_get($meta, 'video_duration_seconds', 0),
+            (int) data_get($meta, 'reel_duration_seconds', 0),
+            (int) data_get($meta, 'video_generation.target_total_seconds', 0),
+        ];
+
+        $target = 0;
+        foreach ($candidates as $candidate) {
+            if ($candidate > 0) {
+                $target = $candidate;
+                break;
+            }
+        }
+
+        if ($target <= 0) {
+            $brief = trim((string) data_get($meta, 'manual_brief', (string) ($item->caption ?? '')));
+            if ($brief !== '' && preg_match('/\b(\d{1,2})\s*(secondi|secondo|sec)\b/iu', $brief, $matches) === 1) {
+                $target = (int) ($matches[1] ?? 0);
+            }
+        }
+
+        if ($target <= 0) {
+            $target = (int) $this->targetVideoSecondsForFormat($item);
+        }
+
+        $providerMax = $this->providerSingleClipMaxSeconds($provider);
+
+        return max(3, min(45, max($target, $providerMax > 0 ? min($providerMax, $target) : $target)));
+    }
+
+    private function shouldGenerateExtendedVideo(ContentItem $item, string $provider, int $targetTotalSeconds): bool
+    {
+        if (!$this->isVideoFormat($item)) {
+            return false;
+        }
+
+        return $targetTotalSeconds > $this->providerSingleClipMaxSeconds($provider);
+    }
+
+    private function providerSingleClipMaxSeconds(string $provider): int
+    {
+        return match (strtolower(trim($provider))) {
+            'runway' => 15,
+            'kling' => 10,
+            default => 12,
+        };
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function segmentDurationsForExtendedVideo(string $provider, int $targetTotalSeconds): array
+    {
+        $provider = strtolower(trim($provider));
+
+        if ($provider === 'kling') {
+            $durations = [];
+            $remaining = max(0, $targetTotalSeconds);
+            while ($remaining > 10) {
+                $durations[] = 10;
+                $remaining -= 10;
+            }
+            if ($remaining > 0) {
+                $durations[] = $remaining > 5 ? 10 : 5;
+            }
+
+            return array_values(array_filter($durations, fn ($seconds) => $seconds >= 5));
+        }
+
+        if ($provider === 'openai') {
+            $allowed = [12, 8, 4];
+            $durations = [];
+            $remaining = max(0, $targetTotalSeconds);
+
+            while ($remaining > 12) {
+                $durations[] = 12;
+                $remaining -= 12;
+            }
+
+            if ($remaining > 0) {
+                foreach ($allowed as $option) {
+                    if ($remaining >= $option) {
+                        $durations[] = $option;
+                        $remaining -= $option;
+                        break;
+                    }
+                }
+            }
+
+            if ($remaining > 0 && !empty($durations)) {
+                $durations[count($durations) - 1] = min(12, $durations[count($durations) - 1] + $remaining);
+            }
+
+            return array_values(array_filter($durations, fn ($seconds) => in_array($seconds, [4, 8, 12], true)));
+        }
+
+        $max = $this->providerSingleClipMaxSeconds($provider);
+        $segmentCount = (int) ceil(max(1, $targetTotalSeconds) / max(1, $max));
+        $segmentCount = max(2, $segmentCount);
+        $base = intdiv($targetTotalSeconds, $segmentCount);
+        $remainder = $targetTotalSeconds % $segmentCount;
+        $durations = [];
+
+        for ($i = 0; $i < $segmentCount; $i++) {
+            $seconds = $base + ($i < $remainder ? 1 : 0);
+            $durations[] = max(3, min($max, $seconds));
+        }
+
+        return $durations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array<int, string>
+     */
+    private function buildExtendedVideoSegmentPrompts(
+        string $provider,
+        ContentItem $item,
+        array $meta,
+        string $basePrompt,
+        int $segmentCount
+    ): array {
+        $segmentCount = max(2, $segmentCount);
+        $blueprint = is_array(data_get($meta, 'reel_blueprint', []))
+            ? (array) data_get($meta, 'reel_blueprint', [])
+            : [];
+        $hook = trim((string) ($blueprint['hook'] ?? ''));
+        $continuityLock = trim((string) ($blueprint['continuity_lock'] ?? ''));
+        $visualPayoff = trim((string) ($blueprint['visual_payoff'] ?? ''));
+        $shotChunks = $this->chunkReelBlueprintShots((array) ($blueprint['shots'] ?? []), $segmentCount);
+        $limit = $this->videoPromptCharLimitForProvider($provider);
+        $prompts = [];
+
+        for ($index = 0; $index < $segmentCount; $index++) {
+            $humanIndex = $index + 1;
+            $isFirst = $index === 0;
+            $isLast = $humanIndex === $segmentCount;
+            $parts = [$basePrompt];
+            $parts[] = "Long reel assembly rule: this is segment {$humanIndex} of {$segmentCount} for one single final reel.";
+
+            if ($isFirst) {
+                $parts[] = 'Open with the hook immediately and establish the scene anchors in a premium, native-Instagram way.';
+                if ($hook !== '') {
+                    $parts[] = "Opening hook to preserve: {$hook}.";
+                }
+            } elseif ($isLast) {
+                $parts[] = 'Continue naturally from the previous segment and close with a strong visual payoff, not with a fade or unresolved motion.';
+                if ($visualPayoff !== '') {
+                    $parts[] = "Final payoff to preserve: {$visualPayoff}.";
+                }
+            } else {
+                $parts[] = 'This is a middle continuation segment: maintain continuity and evolve camera, gesture and framing without changing subject identity.';
+            }
+
+            if ($continuityLock !== '') {
+                $parts[] = "Continuity lock: {$continuityLock}.";
+            }
+
+            $shotSummary = $this->summarizeReelShotChunk($shotChunks[$index] ?? []);
+            if ($shotSummary !== '') {
+                $parts[] = "Shot focus for this segment: {$shotSummary}.";
+            }
+
+            if (!$isLast) {
+                $parts[] = 'End this segment with a clean visual bridge so the next segment can be stitched without a confusing jump cut.';
+            } else {
+                $parts[] = 'Final frame must feel conclusive, premium and ready to stop the reel.';
+            }
+
+            if (strtolower(trim((string) ($item->format ?? ''))) === 'reel') {
+                $parts[] = 'Keep the pacing bold and readable like a real Instagram reel, not a slow showcase clip.';
+            }
+
+            $prompts[] = Str::limit(
+                trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))),
+                $limit,
+                ''
+            );
+        }
+
+        return $prompts;
+    }
+
+    /**
+     * @param  array<int, mixed>  $shots
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function chunkReelBlueprintShots(array $shots, int $segmentCount): array
+    {
+        $shots = array_values(array_filter($shots, fn ($shot) => is_array($shot)));
+        if (empty($shots)) {
+            return array_fill(0, max(2, $segmentCount), []);
+        }
+
+        $segmentCount = max(2, $segmentCount);
+        $chunkSize = (int) ceil(count($shots) / $segmentCount);
+        $chunks = [];
+
+        for ($index = 0; $index < $segmentCount; $index++) {
+            $chunks[] = array_slice($shots, $index * $chunkSize, $chunkSize);
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $shots
+     */
+    private function summarizeReelShotChunk(array $shots): string
+    {
+        if (empty($shots)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($shots as $shot) {
+            if (!is_array($shot)) {
+                continue;
+            }
+
+            $summary = implode(', ', array_values(array_filter([
+                trim((string) ($shot['purpose'] ?? '')),
+                trim((string) ($shot['subject'] ?? '')),
+                trim((string) ($shot['camera'] ?? '')),
+                trim((string) ($shot['motion'] ?? '')),
+            ])));
+
+            if ($summary !== '') {
+                $parts[] = $summary;
+            }
+        }
+
+        return Str::limit(implode(' | ', $parts), 420, '');
+    }
+
+    private function videoPromptCharLimitForProvider(string $provider): int
+    {
+        return match (strtolower(trim($provider))) {
+            'runway' => max(600, min(1600, (int) (config('runway.max_prompt_chars') ?: 1400))),
+            'kling' => max(400, min(1800, (int) (config('kling.max_prompt_chars') ?: 1400))),
+            default => 1800,
+        };
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<int, string>  $generationReferenceAbsPool
+     * @param  array<int, string>  $imageReferencePathPool
+     * @param  array<int, string>  $validationReferenceAbsPool
+     * @param  array<string, mixed>|null  $compositionMeta
+     * @param  array<string, mixed>  $brandDecision
+     * @param  array<string, mixed>  $videoOptions
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<string, mixed>  $activeFeedbackRequest
+     * @return array<string, mixed>
+     */
+    private function generateExtendedVideoAsset(
+        OpenAiService $openAi,
+        RunwayService $runway,
+        KlingService $kling,
+        ContentItem $item,
+        string $briefRaw,
+        string $fallbackPrompt,
+        string $videoProvider,
+        string $runwayExecutionPrompt,
+        string $klingExecutionPrompt,
+        string $openAiExecutionPrompt,
+        ?string $referenceAbs,
+        ?string $referencePath,
+        array $referencePaths,
+        string $referenceReason,
+        array $generationReferenceAbsPool,
+        array $imageReferencePathPool,
+        array $validationReferenceAbsPool,
+        bool $mustEnforceExplicitReferences,
+        ?array $compositionMeta,
+        array $brandDecision,
+        array $videoOptions,
+        array $assetVariables,
+        array $activeFeedbackRequest,
+        bool $locationSequenceMode,
+        int $targetTotalSeconds
+    ): array {
+        $ffmpeg = $this->resolveFfmpegBinary();
+        if (!$this->canRunBinary($ffmpeg)) {
+            throw new \RuntimeException('La durata richiesta supera il limite del provider ma FFmpeg non e disponibile per unire i segmenti.');
+        }
+
+        $segmentDurations = $this->segmentDurationsForExtendedVideo($videoProvider, $targetTotalSeconds);
+        if (count($segmentDurations) < 2) {
+            throw new \RuntimeException('Impossibile costruire un piano segmenti valido per il reel esteso richiesto.');
+        }
+
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $basePrompt = match ($videoProvider) {
+            'runway' => $runwayExecutionPrompt,
+            'kling' => $klingExecutionPrompt,
+            default => $openAiExecutionPrompt,
+        };
+        $segmentPrompts = $this->buildExtendedVideoSegmentPrompts(
+            provider: $videoProvider,
+            item: $item,
+            meta: $meta,
+            basePrompt: $basePrompt,
+            segmentCount: count($segmentDurations)
+        );
+
+        $segments = [];
+        $segmentVideoPaths = [];
+        $thumbnailPath = '';
+        $referencePathOut = '';
+        $referencePathsOut = [];
+        $generationAttempts = 0;
+        $videoIds = [];
+
+        foreach ($segmentDurations as $index => $segmentSeconds) {
+            $segmentPrompt = (string) ($segmentPrompts[$index] ?? end($segmentPrompts) ?: $basePrompt);
+            $segmentVideoOptions = $videoOptions;
+            $segmentVideoOptions['seconds'] = $segmentSeconds;
+            $segmentReferenceReason = $referenceReason . '_segment_' . ($index + 1);
+
+            $segmentResult = match ($videoProvider) {
+                'runway' => $this->generateVideoWithRunway(
+                    runway: $runway,
+                    openAi: $openAi,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $fallbackPrompt,
+                    videoPrompt: $segmentPrompt,
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $segmentReferenceReason,
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool,
+                    validationReferenceAbsPool: $validationReferenceAbsPool,
+                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $segmentVideoOptions
+                ),
+                'kling' => $this->generateVideoWithKling(
+                    kling: $kling,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $fallbackPrompt,
+                    videoPrompt: $segmentPrompt,
+                    referenceAbsPool: $generationReferenceAbsPool,
+                    referencePaths: $imageReferencePathPool,
+                    referenceReason: $segmentReferenceReason,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $segmentVideoOptions,
+                    assetVariables: $assetVariables,
+                    activeFeedbackRequest: $activeFeedbackRequest,
+                    locationSequenceMode: $locationSequenceMode
+                ),
+                default => $this->generateVideoWithOpenAi(
+                    openAi: $openAi,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $fallbackPrompt,
+                    videoPrompt: $segmentPrompt,
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $segmentReferenceReason,
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool,
+                    validationReferenceAbsPool: $validationReferenceAbsPool,
+                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $segmentVideoOptions,
+                    assetVariables: $assetVariables,
+                    providerFallback: null
+                ),
+            };
+
+            $segmentVideoPath = trim((string) ($segmentResult['video_path'] ?? ''));
+            if ($segmentVideoPath === '') {
+                throw new \RuntimeException('Uno dei segmenti del reel esteso non ha prodotto un video salvato.');
+            }
+
+            $segmentPlayback = [
+                'applied' => false,
+                'reason' => 'provider_passthrough',
+                'provider' => $videoProvider,
+                'input_video_path' => $segmentVideoPath,
+                'video_path' => $segmentVideoPath,
+                'error' => null,
+            ];
+            if ($videoProvider === 'runway') {
+                $segmentPlayback = $this->postProcessGeneratedVideoForPlayback($item, $segmentVideoPath, $videoProvider);
+                if (!empty($segmentPlayback['video_path']) && is_string($segmentPlayback['video_path'])) {
+                    $segmentVideoPath = (string) $segmentPlayback['video_path'];
+                }
+            }
+
+            $segmentVideoPaths[] = $segmentVideoPath;
+            $generationAttempts += (int) ($segmentResult['generation_attempts'] ?? 1);
+
+            $segmentVideoId = trim((string) ($segmentResult['video_id'] ?? ''));
+            if ($segmentVideoId !== '') {
+                $videoIds[] = $segmentVideoId;
+            }
+
+            if ($thumbnailPath === '') {
+                $thumbnailPath = trim((string) ($segmentResult['thumbnail_path'] ?? ''));
+            }
+            if ($referencePathOut === '') {
+                $referencePathOut = trim((string) ($segmentResult['reference_path'] ?? ''));
+            }
+            if (empty($referencePathsOut)) {
+                $referencePathsOut = array_values(array_filter(
+                    (array) ($segmentResult['reference_paths'] ?? []),
+                    fn ($value) => is_string($value) && trim($value) !== ''
+                ));
+            }
+
+            $segments[] = [
+                'index' => $index + 1,
+                'seconds' => $segmentSeconds,
+                'provider' => $videoProvider,
+                'video_id' => $segmentVideoId,
+                'video_path' => $segmentVideoPath,
+                'thumbnail_path' => trim((string) ($segmentResult['thumbnail_path'] ?? '')),
+                'reference_reason' => trim((string) ($segmentResult['reference_reason'] ?? $segmentReferenceReason)),
+                'request_summary' => $segmentResult['request_summary'] ?? null,
+                'playback_postprocess' => $segmentPlayback,
+            ];
+        }
+
+        $stitchedVideoPath = $this->concatenateVideoSegments($segmentVideoPaths);
+
+        return [
+            'source' => $videoProvider . '_extended_video_generation',
+            'provider' => $videoProvider,
+            'video_id' => implode('+', $videoIds),
+            'video_path' => $stitchedVideoPath,
+            'thumbnail_path' => $thumbnailPath,
+            'reference_path' => $referencePathOut,
+            'reference_paths' => $referencePathsOut,
+            'reference_reason' => $referenceReason . '_extended_' . count($segments) . '_segments',
+            'reference_validation' => null,
+            'composition_reference' => $compositionMeta,
+            'generation_attempts' => $generationAttempts,
+            'job_status' => 'completed',
+            'brand_selection' => $brandDecision,
+            'provider_fallback' => null,
+            'request_summary' => [
+                'mode' => 'extended_reel',
+                'provider' => $videoProvider,
+                'target_total_seconds' => $targetTotalSeconds,
+                'segment_count' => count($segments),
+                'segment_durations' => $segmentDurations,
+                'size' => (string) ($videoOptions['size'] ?? ''),
+            ],
+            'reference_input_summary' => [
+                'requested_reference_count' => count($imageReferencePathPool),
+                'active_reference_count' => count($referencePathsOut),
+                'reference_reason' => $referenceReason,
+                'extended_mode' => true,
+            ],
+            'extended' => true,
+            'segment_count' => count($segments),
+            'target_total_seconds' => $targetTotalSeconds,
+            'segments' => $segments,
+            'skip_playback_postprocess' => $videoProvider === 'runway',
+        ];
     }
 
     /**
@@ -7181,6 +7708,98 @@ SVG;
     }
 
     /**
+     * @param  array<int, string>  $videoPaths
+     */
+    private function concatenateVideoSegments(array $videoPaths): string
+    {
+        $publicDisk = Storage::disk('public');
+        $paths = array_values(array_filter(
+            array_map(fn ($path) => trim((string) $path), $videoPaths),
+            fn ($path) => $path !== ''
+        ));
+
+        if (count($paths) < 2) {
+            throw new \RuntimeException('Servono almeno due segmenti per concatenare un reel esteso.');
+        }
+
+        $ffmpeg = $this->resolveFfmpegBinary();
+        if (!$this->canRunBinary($ffmpeg)) {
+            throw new \RuntimeException('FFmpeg non disponibile per concatenare i segmenti video.');
+        }
+
+        $sourceAbsPaths = [];
+        foreach ($paths as $path) {
+            if (!$publicDisk->exists($path)) {
+                throw new \RuntimeException("Segmento video non trovato per la concatenazione: {$path}");
+            }
+
+            $sourceAbsPaths[] = $publicDisk->path($path);
+        }
+
+        $tmpDir = storage_path('app/tmp');
+        if (!is_dir($tmpDir)) {
+            @mkdir($tmpDir, 0775, true);
+        }
+
+        $tempOutputAbs = $tmpDir . DIRECTORY_SEPARATOR . 'extended-reel-' . Str::uuid()->toString() . '.mp4';
+
+        try {
+            $command = [$ffmpeg, '-y'];
+            foreach ($sourceAbsPaths as $sourceAbs) {
+                $command[] = '-i';
+                $command[] = $sourceAbs;
+            }
+
+            $filterInputs = '';
+            foreach (array_keys($sourceAbsPaths) as $index) {
+                $filterInputs .= '[' . $index . ':v:0]';
+            }
+
+            $command[] = '-filter_complex';
+            $command[] = $filterInputs . 'concat=n=' . count($sourceAbsPaths) . ':v=1:a=0[v]';
+            $command[] = '-map';
+            $command[] = '[v]';
+            $command[] = '-c:v';
+            $command[] = 'libx264';
+            $command[] = '-preset';
+            $command[] = 'veryfast';
+            $command[] = '-crf';
+            $command[] = '22';
+            $command[] = '-pix_fmt';
+            $command[] = 'yuv420p';
+            $command[] = '-movflags';
+            $command[] = '+faststart';
+            $command[] = $tempOutputAbs;
+
+            $process = new Process($command);
+            $process->setTimeout(900);
+            $process->run();
+
+            if (!$process->isSuccessful() || !is_file($tempOutputAbs) || filesize($tempOutputAbs) <= 0) {
+                $error = trim((string) $process->getErrorOutput()) ?: trim((string) $process->getOutput());
+                throw new \RuntimeException('Concatenazione FFmpeg fallita: ' . Str::limit($error, 320, ''));
+            }
+
+            $targetPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.mp4';
+            $bytes = @file_get_contents($tempOutputAbs);
+            if (!is_string($bytes) || $bytes === '') {
+                throw new \RuntimeException('Il file video concatenato risulta vuoto.');
+            }
+
+            $publicDisk->put($targetPath, $bytes);
+            if (!$publicDisk->exists($targetPath)) {
+                throw new \RuntimeException('Impossibile salvare il reel concatenato sul disco pubblico.');
+            }
+
+            return $targetPath;
+        } finally {
+            if (is_file($tempOutputAbs)) {
+                @unlink($tempOutputAbs);
+            }
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $audioAttach
      */
     private function logVideoAudioOutcome(ContentItem $item, array $audioAttach): void
@@ -7359,7 +7978,3 @@ SVG;
         return false;
     }
 }
-
-
-
-
