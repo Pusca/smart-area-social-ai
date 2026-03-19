@@ -201,14 +201,7 @@ class ContentMediaPreviewService
             return $this->ffmpegAvailable;
         }
 
-        try {
-            $process = new Process([$this->resolveFfmpegBinary(), '-version']);
-            $process->setTimeout(4);
-            $process->run();
-            $this->ffmpegAvailable = $process->isSuccessful();
-        } catch (\Throwable) {
-            $this->ffmpegAvailable = false;
-        }
+        $this->ffmpegAvailable = $this->canRunBinary($this->resolveFfmpegBinary());
 
         return $this->ffmpegAvailable;
     }
@@ -235,8 +228,89 @@ class ContentMediaPreviewService
         }
 
         $configured = trim((string) config('generation.ffmpeg_binary', ''));
-        $this->ffmpegBinary = $configured !== '' ? $configured : 'ffmpeg';
+        $fallback = $configured !== '' ? $configured : $this->defaultBinaryCommand('ffmpeg');
+        $this->ffmpegBinary = $this->firstAvailableBinary(
+            array_merge(
+                $configured !== '' ? [$configured] : [],
+                $this->candidateBinaries('ffmpeg')
+            ),
+            $fallback
+        );
 
         return $this->ffmpegBinary;
+    }
+
+    private function canRunBinary(string $binary): bool
+    {
+        $binary = trim($binary);
+        if ($binary === '') {
+            return false;
+        }
+
+        try {
+            $process = new Process([$binary, '-version']);
+            $process->setTimeout(6);
+            $process->run();
+            return $process->isSuccessful();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function candidateBinaries(string $binary): array
+    {
+        $default = $this->defaultBinaryCommand($binary);
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $windowsName = $binary . '.exe';
+
+            return [
+                $default,
+                'C:\\Program Files\\ffmpeg\\bin\\' . $windowsName,
+                'C:\\ffmpeg\\bin\\' . $windowsName,
+                'C:\\laragon\\bin\\ffmpeg\\' . $windowsName,
+                'C:\\laragon\\bin\\ffmpeg\\bin\\' . $windowsName,
+                'C:\\Program Files\\Wondershare\\Recoverit - Data Recovery (CPC)\\' . $windowsName,
+            ];
+        }
+
+        return [
+            $default,
+            '/usr/bin/' . $binary,
+            '/usr/local/bin/' . $binary,
+            '/opt/homebrew/bin/' . $binary,
+        ];
+    }
+
+    private function defaultBinaryCommand(string $binary): string
+    {
+        return PHP_OS_FAMILY === 'Windows' ? $binary . '.exe' : $binary;
+    }
+
+    /**
+     * @param  array<int, string>  $candidates
+     */
+    private function firstAvailableBinary(array $candidates, string $fallback): string
+    {
+        $unique = [];
+        foreach ($candidates as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '' || in_array($candidate, $unique, true)) {
+                continue;
+            }
+
+            $unique[] = $candidate;
+        }
+
+        foreach ($unique as $candidate) {
+            if ($this->canRunBinary($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $fallback;
     }
 }

@@ -7855,29 +7855,47 @@ SVG;
     private function resolveFfmpegBinary(): string
     {
         $configured = trim((string) config('generation.ffmpeg_binary', ''));
-        return $configured !== '' ? $configured : 'ffmpeg';
+        $fallback = $configured !== '' ? $configured : $this->defaultBinaryCommand('ffmpeg');
+
+        return $this->firstAvailableBinary(
+            array_merge(
+                $configured !== '' ? [$configured] : [],
+                $this->candidateBinaries('ffmpeg')
+            ),
+            $fallback
+        );
     }
 
     private function resolveFfprobeBinary(string $ffmpegBinary): string
     {
         $configured = trim((string) config('generation.ffprobe_binary', ''));
-        if ($configured !== '') {
+        if ($configured !== '' && $this->canRunBinary($configured)) {
             return $configured;
         }
 
-        $normalized = str_replace('\\', '/', $ffmpegBinary);
-        if (str_ends_with(strtolower($normalized), '/ffmpeg.exe')) {
-            return substr($ffmpegBinary, 0, -10) . 'ffprobe.exe';
-        }
-        if (str_ends_with(strtolower($normalized), '/ffmpeg')) {
-            return substr($ffmpegBinary, 0, -6) . 'ffprobe';
+        $derived = $this->deriveSiblingBinary($ffmpegBinary, 'ffmpeg', 'ffprobe');
+        if ($derived !== null && $this->canRunBinary($derived)) {
+            return $derived;
         }
 
-        return 'ffprobe';
+        $fallback = $configured !== '' ? $configured : $this->defaultBinaryCommand('ffprobe');
+
+        return $this->firstAvailableBinary(
+            array_merge(
+                $configured !== '' ? [$configured] : [],
+                $this->candidateBinaries('ffprobe')
+            ),
+            $fallback
+        );
     }
 
     private function canRunBinary(string $binary): bool
     {
+        $binary = trim($binary);
+        if ($binary === '') {
+            return false;
+        }
+
         try {
             $process = new Process([$binary, '-version']);
             $process->setTimeout(6);
@@ -7886,6 +7904,83 @@ SVG;
         } catch (Throwable) {
             return false;
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function candidateBinaries(string $binary): array
+    {
+        $default = $this->defaultBinaryCommand($binary);
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $windowsName = $binary . '.exe';
+
+            return [
+                $default,
+                'C:\\Program Files\\ffmpeg\\bin\\' . $windowsName,
+                'C:\\ffmpeg\\bin\\' . $windowsName,
+                'C:\\laragon\\bin\\ffmpeg\\' . $windowsName,
+                'C:\\laragon\\bin\\ffmpeg\\bin\\' . $windowsName,
+                'C:\\Program Files\\Wondershare\\Recoverit - Data Recovery (CPC)\\' . $windowsName,
+            ];
+        }
+
+        return [
+            $default,
+            '/usr/bin/' . $binary,
+            '/usr/local/bin/' . $binary,
+            '/opt/homebrew/bin/' . $binary,
+        ];
+    }
+
+    private function defaultBinaryCommand(string $binary): string
+    {
+        return PHP_OS_FAMILY === 'Windows' ? $binary . '.exe' : $binary;
+    }
+
+    /**
+     * @param  array<int, string>  $candidates
+     */
+    private function firstAvailableBinary(array $candidates, string $fallback): string
+    {
+        $unique = [];
+        foreach ($candidates as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '' || in_array($candidate, $unique, true)) {
+                continue;
+            }
+
+            $unique[] = $candidate;
+        }
+
+        foreach ($unique as $candidate) {
+            if ($this->canRunBinary($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $fallback;
+    }
+
+    private function deriveSiblingBinary(string $sourceBinary, string $sourceName, string $targetName): ?string
+    {
+        $normalized = str_replace('\\', '/', trim($sourceBinary));
+        if ($normalized === '') {
+            return null;
+        }
+
+        $sourceExe = '/' . $sourceName . '.exe';
+        if (str_ends_with(strtolower($normalized), $sourceExe)) {
+            return substr($sourceBinary, 0, -strlen($sourceName . '.exe')) . $targetName . '.exe';
+        }
+
+        $sourcePlain = '/' . $sourceName;
+        if (str_ends_with(strtolower($normalized), $sourcePlain)) {
+            return substr($sourceBinary, 0, -strlen($sourceName)) . $targetName;
+        }
+
+        return null;
     }
 
     private function attachBrandVideoReference(ContentItem $item): void
