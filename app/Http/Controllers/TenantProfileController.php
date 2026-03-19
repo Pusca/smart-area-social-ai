@@ -13,6 +13,7 @@ use App\Services\Editorial\EditorialStrategyService;
 use App\Services\GuidedAssetVariableService;
 use App\Services\Onboarding\QuickstartOnboardingService;
 use App\Services\TenantQuotaService;
+use App\Support\SpeechProviderResolver;
 use App\Support\GenerationExecution;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
@@ -854,6 +855,195 @@ class TenantProfileController extends Controller
         return redirect()->route('profile.brand')->with('status', 'Variabile asset eliminata.');
     }
 
+    public function storeVariableAssets(Request $request, AssetVariable $assetVariable)
+    {
+        $user = $request->user();
+        if ((int) $assetVariable->tenant_id !== (int) $user->tenant_id) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'variable_images' => 'nullable|array|max:12',
+            'variable_images.*' => 'file|mimes:png,jpg,jpeg,webp|max:6144',
+            'variable_videos' => 'nullable|array|max:6',
+            'variable_videos.*' => 'file|mimetypes:video/mp4,video/quicktime,video/webm|max:51200',
+            'variable_audios' => 'nullable|array|max:6',
+            'variable_audios.*' => 'file|mimes:mp3,wav,m4a,ogg,webm|max:20480',
+            'variable_asset_notes' => 'nullable|string|max:1200',
+            'variable_asset_set_video_reference' => 'nullable|boolean',
+            'variable_asset_set_voice_reference' => 'nullable|boolean',
+        ], [], [
+            'variable_images' => 'immagini aggiuntive',
+            'variable_images.*' => 'immagine aggiuntiva',
+            'variable_videos' => 'video aggiuntivi',
+            'variable_videos.*' => 'video aggiuntivo',
+            'variable_audios' => 'audio aggiuntivi',
+            'variable_audios.*' => 'audio aggiuntivo',
+        ]);
+
+        $imageFiles = array_values(array_filter((array) $request->file('variable_images', []), fn ($file) => $file instanceof UploadedFile));
+        $videoFiles = array_values(array_filter((array) $request->file('variable_videos', []), fn ($file) => $file instanceof UploadedFile));
+        $audioFiles = array_values(array_filter((array) $request->file('variable_audios', []), fn ($file) => $file instanceof UploadedFile));
+
+        if (empty($imageFiles) && empty($videoFiles) && empty($audioFiles)) {
+            return redirect()
+                ->route('profile.brand')
+                ->with('status', 'Carica almeno un immagine, un video o un audio per arricchire la variabile.');
+        }
+
+        $notes = $this->normalizeInlineText((string) ($data['variable_asset_notes'] ?? ''));
+        $setVideoReference = (bool) ($data['variable_asset_set_video_reference'] ?? false);
+        $setVoiceReference = (bool) ($data['variable_asset_set_voice_reference'] ?? false);
+
+        $tenantId = (int) $user->tenant_id;
+        $baseDir = 'brand-assets/' . $tenantId . '/variables/' . ($assetVariable->slug ?: ('var-' . $assetVariable->id));
+
+        DB::transaction(function () use (
+            $assetVariable,
+            $tenantId,
+            $baseDir,
+            $notes,
+            $imageFiles,
+            $videoFiles,
+            $audioFiles,
+            $setVideoReference,
+            $setVoiceReference
+        ): void {
+            $newImageAssets = [];
+            $newVideoAssets = [];
+            $newAudioAssets = [];
+            $newAssetIds = [];
+
+            foreach ($imageFiles as $file) {
+                $asset = $this->storeBrandAssetUpload(
+                    tenantId: $tenantId,
+                    file: $file,
+                    kind: 'image',
+                    directory: $baseDir . '/images',
+                    notes: $notes,
+                    meta: $this->buildVariableAssetUploadMeta($assetVariable, 'image')
+                );
+
+                if ($asset) {
+                    $newImageAssets[] = $asset;
+                    $newAssetIds[] = (int) $asset->id;
+                }
+            }
+
+            foreach ($videoFiles as $file) {
+                $asset = $this->storeBrandAssetUpload(
+                    tenantId: $tenantId,
+                    file: $file,
+                    kind: 'video',
+                    directory: $baseDir . '/videos',
+                    notes: $notes,
+                    meta: $this->buildVariableAssetUploadMeta($assetVariable, 'video')
+                );
+
+                if ($asset) {
+                    $newVideoAssets[] = $asset;
+                    $newAssetIds[] = (int) $asset->id;
+                }
+            }
+
+            foreach ($audioFiles as $file) {
+                $asset = $this->storeBrandAssetUpload(
+                    tenantId: $tenantId,
+                    file: $file,
+                    kind: 'audio',
+                    directory: $baseDir . '/audio',
+                    notes: $notes,
+                    meta: $this->buildVariableAssetUploadMeta($assetVariable, 'audio')
+                );
+
+                if ($asset) {
+                    $newAudioAssets[] = $asset;
+                    $newAssetIds[] = (int) $asset->id;
+                }
+            }
+
+            $existingAssetIds = collect((array) ($assetVariable->asset_ids ?? []))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->values()
+                ->all();
+
+            $assetVariable->asset_ids = array_values(array_unique(array_merge($existingAssetIds, $newAssetIds)));
+
+            if ((int) ($assetVariable->canonical_asset_id ?? 0) < 1 && !empty($newImageAssets)) {
+                $assetVariable->canonical_asset_id = (int) $newImageAssets[0]->id;
+            }
+
+            $profile = is_array($assetVariable->profile) ? $assetVariable->profile : [];
+            if (!empty($newImageAssets)) {
+                $profile = $this->appendVariableImageReferences($profile, $newImageAssets);
+            }
+
+            if (!empty($newVideoAssets)) {
+                $shouldPromoteVideo = $setVideoReference || trim((string) data_get($profile, 'reference_video_path', '')) === '';
+                if ($shouldPromoteVideo) {
+                    $primaryVideo = $newVideoAssets[0];
+                    data_set($profile, 'reference_video_asset_id', (int) $primaryVideo->id);
+                    data_set($profile, 'reference_video_path', (string) $primaryVideo->path);
+                }
+            }
+
+            if (!empty($newAudioAssets)) {
+                $shouldPromoteVoice = $setVoiceReference || (int) ($assetVariable->voice_asset_id ?? 0) < 1;
+                if ($shouldPromoteVoice) {
+                    $primaryAudio = $newAudioAssets[0];
+                    $voiceProvider = $this->defaultVoiceCloneProvider();
+
+                    $assetVariable->voice_asset_id = (int) $primaryAudio->id;
+                    $assetVariable->voice_provider = $voiceProvider;
+                    $assetVariable->voice_provider_voice_id = null;
+                    $assetVariable->voice_status = 'sample_ready';
+
+                    data_set($profile, 'reference_voice_asset_id', (int) $primaryAudio->id);
+                    data_set($profile, 'reference_voice_path', (string) $primaryAudio->path);
+                    data_set($profile, 'voice_reference.label', 'Campione voce reale');
+                    data_set($profile, 'voice_reference.sample_asset_id', (int) $primaryAudio->id);
+                    data_set($profile, 'voice_reference.sample_path', (string) $primaryAudio->path);
+                    data_set($profile, 'voice_reference.sample_name', (string) ($primaryAudio->original_name ?? ''));
+                    data_set($profile, 'voice_reference.provider', $voiceProvider);
+                    data_set($profile, 'voice_reference.provider_voice_id', null);
+                    data_set($profile, 'voice_reference.status', 'sample_ready');
+                }
+            }
+
+            if ($notes !== '') {
+                $profile = $this->appendProfileTextValue(
+                    $profile,
+                    'prompt_notes',
+                    'Nuovi riferimenti: ' . $notes,
+                    2000
+                );
+                $profile = $this->appendProfileTextValue($profile, 'usage_notes', $notes, 2000);
+            }
+
+            if ((int) data_get($profile, 'canonical_asset_id', 0) < 1 && (int) ($assetVariable->canonical_asset_id ?? 0) > 0) {
+                data_set($profile, 'canonical_asset_id', (int) $assetVariable->canonical_asset_id);
+                data_set($profile, 'preferred_still_asset_id', (int) $assetVariable->canonical_asset_id);
+            }
+
+            $assetVariable->profile = $profile;
+            $assetVariable->save();
+
+            $extraAssetIds = [];
+            if ((int) ($assetVariable->voice_asset_id ?? 0) > 0) {
+                $extraAssetIds[] = (int) $assetVariable->voice_asset_id;
+            }
+
+            $this->assetIdentityService->syncAssetMetaForVariable($assetVariable, (array) $assetVariable->asset_ids, $extraAssetIds);
+        });
+
+        $uploadedCount = count($imageFiles) + count($videoFiles) + count($audioFiles);
+
+        return redirect()
+            ->route('profile.brand')
+            ->with('status', "Variabile {$assetVariable->name} aggiornata con {$uploadedCount} nuovi riferimenti.");
+    }
+
     /**
      * Remove deleted brand assets from variable references so runtime selection stays valid.
      *
@@ -1063,5 +1253,100 @@ class TenantProfileController extends Controller
         }
 
         return !empty($out) ? array_values(array_unique($out)) : ['11:00', '15:00', '19:00'];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildVariableAssetUploadMeta(AssetVariable $variable, string $kind): array
+    {
+        $kind = strtolower(trim($kind));
+
+        return [
+            'source' => 'brand_center_variable_extension',
+            'ingestion_scope' => 'asset_variable_library',
+            'variable_name' => (string) ($variable->name ?? ''),
+            'variable_kind' => (string) ($variable->kind ?? 'custom'),
+            'identity_kind' => (string) ($variable->kind ?? 'custom'),
+            'slot' => match ($kind) {
+                'video' => 'reference_video',
+                'audio' => 'voice_sample',
+                default => 'supporting_reference',
+            },
+            'slot_label' => match ($kind) {
+                'video' => 'Video riferimento aggiuntivo',
+                'audio' => 'Campione voce aggiuntivo',
+                default => 'Riferimento immagine aggiuntivo',
+            },
+            'training_priority' => 'supporting',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @param  array<int, BrandAsset>  $assets
+     * @return array<string, mixed>
+     */
+    private function appendVariableImageReferences(array $profile, array $assets): array
+    {
+        $shotSummary = collect((array) data_get($profile, 'shot_summary', []))
+            ->filter(fn ($row) => is_array($row))
+            ->values()
+            ->all();
+
+        $nextIndex = count($shotSummary) + 1;
+        foreach ($assets as $asset) {
+            $shotSummary[] = [
+                'slot' => 'reference_still_' . $nextIndex,
+                'label' => 'Riferimento extra ' . $nextIndex,
+                'asset_id' => (int) $asset->id,
+                'path' => (string) $asset->path,
+            ];
+            $nextIndex++;
+        }
+
+        data_set($profile, 'shot_summary', $shotSummary);
+        data_set($profile, 'shot_count', count($shotSummary));
+
+        return $profile;
+    }
+
+    private function defaultVoiceCloneProvider(): ?string
+    {
+        $provider = strtolower(trim((string) config('generation.voice_clone_provider_default', 'elevenlabs')));
+        if ($provider === '') {
+            return null;
+        }
+
+        $provider = SpeechProviderResolver::normalize($provider);
+
+        return $provider === 'elevenlabs' ? $provider : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private function appendProfileTextValue(array $profile, string $key, string $value, int $limit = 2000): array
+    {
+        $value = $this->normalizeInlineText($value);
+        if ($value === '') {
+            return $profile;
+        }
+
+        $existing = trim((string) data_get($profile, $key, ''));
+        if ($existing === '') {
+            data_set($profile, $key, Str::limit($value, $limit, ''));
+
+            return $profile;
+        }
+
+        if (str_contains($existing, $value)) {
+            return $profile;
+        }
+
+        data_set($profile, $key, Str::limit($existing . "\n" . $value, $limit, ''));
+
+        return $profile;
     }
 }

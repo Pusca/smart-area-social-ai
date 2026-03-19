@@ -1726,7 +1726,10 @@
                                 $varThreshold = (int) ($variable['consistency_threshold'] ?? 0);
                                 $varAssetRole = trim((string) ($variable['asset_role'] ?? ''));
                                 $varCanonicalPath = trim((string) ($variable['canonical_asset_path'] ?? ''));
+                                $varAssetCount = count($varAssets);
+                                $varImageCount = collect($varAssets)->where('kind', 'image')->count();
                                 $varVideoCount = collect($varAssets)->where('kind', 'video')->count();
+                                $varAudioCount = collect($varAssets)->where('kind', 'audio')->count();
                                 $varVoicePath = trim((string) ($variable['voice_asset_path'] ?? data_get($varProfile, 'voice_reference.sample_path', '')));
                                 $varVoiceName = trim((string) ($variable['voice_asset_name'] ?? data_get($varProfile, 'voice_reference.sample_name', '')));
                                 $varVoiceMime = trim((string) ($variable['voice_asset_mime'] ?? data_get($variable, 'voice_asset.mime', 'audio/mpeg')));
@@ -1751,6 +1754,20 @@
                                 @if($varDesc !== '')
                                     <p class="mt-2 text-xs text-gray-600">{{ \Illuminate\Support\Str::limit($varDesc, 110, '...') }}</p>
                                 @endif
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                                        {{ $varAssetCount }} asset
+                                    </span>
+                                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                                        {{ $varImageCount }} immagini
+                                    </span>
+                                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                                        {{ $varVideoCount }} video
+                                    </span>
+                                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                                        {{ $varAudioCount + ($varVoicePath !== '' && $varAudioCount === 0 ? 1 : 0) }} audio
+                                    </span>
+                                </div>
                                 @if($varRole !== '' || $varImmutableTraits !== '' || $varPromptNotes !== '' || $varDescriptor !== '' || $varLocked !== '' || !empty($varAllowedTransforms) || $varAssetRole !== '' || $varIdentityMode !== '' || $varVideoCount > 0 || $varVoicePath !== '' || $varVoiceStatus !== '' || $varVoiceProvider !== '')
                                     <details class="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                                         <summary class="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-gray-700">Dettagli variabile</summary>
@@ -1832,6 +1849,52 @@
                                         @endif
                                     @endforeach
                                 </div>
+                                <details class="mt-3 overflow-hidden rounded-xl border border-cyan-200 bg-cyan-50/50">
+                                    <summary class="cursor-pointer list-none px-3 py-2 text-xs font-semibold text-cyan-800">Aggiungi nuovi riferimenti a questa variabile</summary>
+                                    <div class="border-t border-cyan-200 p-3">
+                                        <form method="POST" action="{{ route('profile.brand.variables.assets.store', $variableId) }}" enctype="multipart/form-data" class="space-y-3">
+                                            @csrf
+                                            <div class="grid gap-3 lg:grid-cols-3">
+                                                <div>
+                                                    <label for="variable_images_{{ $variableId }}" class="{{ $labelClass }}">Immagini aggiuntive</label>
+                                                    <input id="variable_images_{{ $variableId }}" type="file" name="variable_images[]" accept="image/*" multiple class="{{ $inputClass }}">
+                                                    <p class="mt-1 text-xs text-gray-500">Nuovi scatti, pose, angoli e contesti dello stesso soggetto o asset.</p>
+                                                </div>
+                                                <div>
+                                                    <label for="variable_videos_{{ $variableId }}" class="{{ $labelClass }}">Video aggiuntivi</label>
+                                                    <input id="variable_videos_{{ $variableId }}" type="file" name="variable_videos[]" accept="video/mp4,video/quicktime,video/webm" multiple class="{{ $inputClass }}">
+                                                    <p class="mt-1 text-xs text-gray-500">Utili per postura, gestualita, presenza scenica e continuita nei reel.</p>
+                                                </div>
+                                                <div>
+                                                    <label for="variable_audios_{{ $variableId }}" class="{{ $labelClass }}">Audio aggiuntivi</label>
+                                                    <input id="variable_audios_{{ $variableId }}" type="file" name="variable_audios[]" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm" multiple class="{{ $inputClass }}">
+                                                    <p class="mt-1 text-xs text-gray-500">Campioni voce o audio reali che aiutano il motore a mantenere la stessa persona.</p>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label for="variable_asset_notes_{{ $variableId }}" class="{{ $labelClass }}">Note operative per questi nuovi riferimenti</label>
+                                                <textarea id="variable_asset_notes_{{ $variableId }}" name="variable_asset_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. Silvia in studio con microfono, tono piu istituzionale, camminata naturale, voce registrata in ambiente silenzioso"></textarea>
+                                            </div>
+                                            @if($varKind === 'person')
+                                                <div class="grid gap-2 md:grid-cols-2">
+                                                    <label class="flex items-start gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-3 text-xs text-gray-700">
+                                                        <input type="checkbox" name="variable_asset_set_video_reference" value="1" class="mt-0.5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500" @checked($varVideoCount === 0)>
+                                                        <span>Usa il primo video caricato come riferimento principale per postura, mimica e presenza della persona.</span>
+                                                    </label>
+                                                    <label class="flex items-start gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-3 text-xs text-gray-700">
+                                                        <input type="checkbox" name="variable_asset_set_voice_reference" value="1" class="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" @checked($varVoicePath === '')>
+                                                        <span>Usa il primo audio caricato come campione voce principale per voiceover e contenuti parlati.</span>
+                                                    </label>
+                                                </div>
+                                            @endif
+                                            <div class="flex justify-end">
+                                                <button type="submit" class="inline-flex items-center rounded-xl border border-cyan-200 bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700">
+                                                    Aggiungi contenuti
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </details>
                             </article>
                         @endforeach
                     </div>
