@@ -89,6 +89,7 @@ class OpenAiService
             . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
             . "Usa memory_summary.feedback_summary come memoria del gusto del tenant: cio che piace va riutilizzato con intelligenza, cio che non piace va evitato.\n"
             . "Usa knowledge_pack come dossier operativo del cliente: identita, segnali positivi, divieti, temi, offerte e preferenze hanno priorita reale.\n"
+            . "Dentro knowledge_pack.asset_library trovi foto, video, logo e audio reali del cliente: usali per capire soggetti, prodotti, luoghi, voce e riferimenti ricorrenti da preservare.\n"
             . "Usa examples come esempi approvati del tenant: assorbi struttura, tono e concretezza, ma non copiare frasi, hook o CTA.\n"
             . "Usa negative_examples per capire cosa NON ripetere: evita gli errori gia segnalati dal cliente.\n"
             . "Tratta memory_summary.hard_avoid_rules e feedback_loop.tenant_feedback.recent_objections come vincoli forti.\n"
@@ -162,7 +163,7 @@ class OpenAiService
 
             $data = $res->json();
 
-            // Estrai testo: in Responses è dentro output[*].content[*].text
+            // Estrai testo dal payload Responses.
             $text = $this->extractResponsesText($data);
             $parsed = $this->safeJsonParse($text);
             $parsed = is_array($parsed) ? $parsed : [];
@@ -245,7 +246,7 @@ class OpenAiService
     }
 
     /**
-     * Image edit/variation partendo da una o più immagini locali.
+     * Image edit/variation partendo da una o piu immagini locali.
      * Ritorna b64_json coerente con Images API.
      */
     public function generateImageEditBase64(string $prompt, array $imageAbsolutePaths, ?string $modelOverride = null): array

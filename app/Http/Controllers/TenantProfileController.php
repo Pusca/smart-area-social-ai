@@ -14,6 +14,7 @@ use App\Services\GuidedAssetVariableService;
 use App\Services\Onboarding\QuickstartOnboardingService;
 use App\Services\TenantQuotaService;
 use App\Support\GenerationExecution;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -160,6 +161,11 @@ class TenantProfileController extends Controller
             'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:4096',
             'images' => 'nullable|array',
             'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:4096',
+            'videos' => 'nullable|array',
+            'videos.*' => 'file|mimes:mp4,mov,webm|max:51200',
+            'audios' => 'nullable|array',
+            'audios.*' => 'file|mimes:mp3,wav,m4a,ogg,webm|max:20480',
+            'asset_upload_notes' => 'nullable|string|max:1200',
 
             'strategy_action' => 'nullable|string|in:save,regenerate',
             'strategy_locked' => 'nullable|boolean',
@@ -217,35 +223,51 @@ class TenantProfileController extends Controller
             );
 
             $baseDir = 'brand-assets/' . $tenantId;
+            $assetUploadNotes = trim((string) ($data['asset_upload_notes'] ?? ''));
 
             if ($request->hasFile('logo')) {
-                $file = $request->file('logo');
-                $path = $file->store($baseDir . '/logo', 'public');
-
-                BrandAsset::query()->create([
-                    'tenant_id' => $tenantId,
-                    'content_plan_id' => null,
-                    'kind' => 'logo',
-                    'path' => $path,
-                    'original_name' => $file->getClientOriginalName(),
-                    'size' => $file->getSize(),
-                    'mime' => $file->getMimeType(),
-                ]);
+                $this->storeBrandAssetUpload(
+                    tenantId: $tenantId,
+                    file: $request->file('logo'),
+                    kind: 'logo',
+                    directory: $baseDir . '/logo',
+                    notes: $assetUploadNotes
+                );
             }
 
             if ($request->hasFile('images')) {
                 foreach ((array) $request->file('images') as $img) {
-                    $path = $img->store($baseDir . '/images', 'public');
+                    $this->storeBrandAssetUpload(
+                        tenantId: $tenantId,
+                        file: $img,
+                        kind: 'image',
+                        directory: $baseDir . '/images',
+                        notes: $assetUploadNotes
+                    );
+                }
+            }
 
-                    BrandAsset::query()->create([
-                        'tenant_id' => $tenantId,
-                        'content_plan_id' => null,
-                        'kind' => 'image',
-                        'path' => $path,
-                        'original_name' => $img->getClientOriginalName(),
-                        'size' => $img->getSize(),
-                        'mime' => $img->getMimeType(),
-                    ]);
+            if ($request->hasFile('videos')) {
+                foreach ((array) $request->file('videos') as $video) {
+                    $this->storeBrandAssetUpload(
+                        tenantId: $tenantId,
+                        file: $video,
+                        kind: 'video',
+                        directory: $baseDir . '/videos',
+                        notes: $assetUploadNotes
+                    );
+                }
+            }
+
+            if ($request->hasFile('audios')) {
+                foreach ((array) $request->file('audios') as $audio) {
+                    $this->storeBrandAssetUpload(
+                        tenantId: $tenantId,
+                        file: $audio,
+                        kind: 'audio',
+                        directory: $baseDir . '/audio',
+                        notes: $assetUploadNotes
+                    );
                 }
             }
 
@@ -474,6 +496,39 @@ class TenantProfileController extends Controller
         $this->assetIdentityService->syncAssetMetaForVariable($variable, $assetIds);
 
         return redirect()->route('profile.brand')->with('status', 'Identita asset creata e collegata al Brand Center.');
+    }
+
+    private function storeBrandAssetUpload(
+        int $tenantId,
+        ?UploadedFile $file,
+        string $kind,
+        string $directory,
+        string $notes = ''
+    ): ?BrandAsset {
+        if (!$file instanceof UploadedFile) {
+            return null;
+        }
+
+        $path = $file->store($directory, 'public');
+        $meta = [
+            'source' => 'brand_center',
+            'ingestion_scope' => 'tenant_library',
+        ];
+
+        if ($notes !== '') {
+            $meta['grounding_notes'] = $notes;
+        }
+
+        return BrandAsset::query()->create([
+            'tenant_id' => $tenantId,
+            'content_plan_id' => null,
+            'kind' => $kind,
+            'path' => $path,
+            'original_name' => $file->getClientOriginalName(),
+            'size' => $file->getSize(),
+            'mime' => $file->getMimeType(),
+            'meta' => $meta,
+        ]);
     }
 
     public function storeGuidedPersonaVariable(Request $request)

@@ -586,6 +586,7 @@ class ContentItemController extends Controller
                 'path' => (string) $asset->path,
                 'original_name' => (string) ($asset->original_name ?? ''),
                 'mime' => (string) ($asset->mime ?? ''),
+                'meta' => is_array($asset->meta) ? $asset->meta : [],
             ])
             ->values()
             ->all();

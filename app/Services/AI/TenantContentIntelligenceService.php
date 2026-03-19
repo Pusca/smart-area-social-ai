@@ -7,6 +7,7 @@ use App\Models\ContentFeedbackEntry;
 use App\Models\ContentItem;
 use App\Models\TenantProfile;
 use App\Services\MemoryBuilderService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class TenantContentIntelligenceService
@@ -38,11 +39,14 @@ class TenantContentIntelligenceService
             ->first();
 
         $memory = $this->memoryBuilder->buildForTenant($tenantId, 40);
-
-        $assets = BrandAsset::query()
+        $assetCounts = $this->loadAssetCounts($tenantId);
+        $assetRows = BrandAsset::query()
             ->where('tenant_id', $tenantId)
-            ->get(['kind'])
-            ->groupBy(fn (BrandAsset $asset) => strtolower(trim((string) $asset->kind)));
+            ->whereNull('content_plan_id')
+            ->latest('id')
+            ->limit((int) config('generation.knowledge_pack_asset_rows_limit', 48))
+            ->get(['id', 'kind', 'original_name', 'mime', 'meta']);
+        $assetLibrary = $this->buildAssetLibrary($assetRows);
 
         $examples = $this->selectExamples($tenantId, $brief, $format, $platforms);
         $negativeExamples = $this->selectNegativeExamples($tenantId, $brief, $format, $platforms);
@@ -58,10 +62,12 @@ class TenantContentIntelligenceService
                 'cta' => trim((string) ($profile?->cta ?? '')),
             ],
             'asset_counts' => [
-                'logos' => (int) (($assets['logo'] ?? collect())->count()),
-                'images' => (int) (($assets['image'] ?? collect())->count()),
-                'videos' => (int) (($assets['video'] ?? collect())->count()),
+                'logos' => (int) ($assetCounts['logo'] ?? 0),
+                'images' => (int) ($assetCounts['image'] ?? 0),
+                'videos' => (int) ($assetCounts['video'] ?? 0),
+                'audios' => (int) ($assetCounts['audio'] ?? 0),
             ],
+            'asset_library' => $assetLibrary,
             'memory' => [
                 'themes' => (array) ($memory['themes'] ?? []),
                 'offers' => (array) ($memory['offers'] ?? []),
@@ -252,6 +258,164 @@ class TenantContentIntelligenceService
     }
 
     /**
+     * @return array<string, int>
+     */
+    private function loadAssetCounts(int $tenantId): array
+    {
+        return BrandAsset::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('content_plan_id')
+            ->get(['kind'])
+            ->countBy(fn (BrandAsset $asset) => strtolower(trim((string) $asset->kind)))
+            ->map(fn ($count) => (int) $count)
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, BrandAsset>  $assets
+     * @return array<string, mixed>
+     */
+    private function buildAssetLibrary(Collection $assets): array
+    {
+        $perKindLimit = max(1, (int) config('generation.knowledge_pack_asset_items_per_kind_limit', 6));
+        $signalLimit = max(1, (int) config('generation.knowledge_pack_asset_signal_limit', 10));
+
+        $grouped = $assets
+            ->groupBy(fn (BrandAsset $asset) => strtolower(trim((string) $asset->kind)));
+
+        $library = [
+            'logos' => $this->summarizeAssetGroup($grouped->get('logo', collect()), $perKindLimit),
+            'images' => $this->summarizeAssetGroup($grouped->get('image', collect()), $perKindLimit),
+            'videos' => $this->summarizeAssetGroup($grouped->get('video', collect()), $perKindLimit),
+            'audios' => $this->summarizeAssetGroup($grouped->get('audio', collect()), $perKindLimit),
+        ];
+
+        $signals = $assets
+            ->map(fn (BrandAsset $asset) => $this->buildAssetSignal($asset))
+            ->filter(fn ($value) => is_string($value) && trim($value) !== '')
+            ->unique()
+            ->take($signalLimit)
+            ->values()
+            ->all();
+
+        $notes = $assets
+            ->map(fn (BrandAsset $asset) => trim((string) data_get(is_array($asset->meta) ? $asset->meta : [], 'grounding_notes', '')))
+            ->filter(fn (string $note) => $note !== '')
+            ->unique()
+            ->take(8)
+            ->values()
+            ->all();
+
+        return $library + [
+            'identity_signals' => $signals,
+            'upload_notes' => $notes,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, BrandAsset>  $assets
+     * @return array<int, array<string, mixed>>
+     */
+    private function summarizeAssetGroup(Collection $assets, int $limit): array
+    {
+        return $assets
+            ->take($limit)
+            ->map(fn (BrandAsset $asset) => $this->summarizeAsset($asset))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function summarizeAsset(BrandAsset $asset): array
+    {
+        $meta = is_array($asset->meta) ? $asset->meta : [];
+        $label = trim((string) ($asset->original_name ?: data_get($meta, 'variable_name', 'asset-' . $asset->id)));
+        $source = trim((string) data_get($meta, 'source', 'brand_center'));
+        $notes = trim((string) data_get($meta, 'grounding_notes', ''));
+        $variableName = trim((string) data_get($meta, 'variable_name', ''));
+        $variableKind = trim((string) (data_get($meta, 'variable_kind', '') ?: data_get($meta, 'identity_kind', '')));
+        $slot = trim((string) data_get($meta, 'slot', ''));
+        $slotLabel = trim((string) data_get($meta, 'slot_label', ''));
+        $linkedVariables = collect((array) data_get($meta, 'linked_variable_slugs', []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $tags = array_values(array_unique(array_slice(array_filter(array_merge(
+            $this->extractKeywords($label),
+            $this->extractKeywords($notes),
+            $this->extractKeywords($variableName),
+            $this->extractKeywords($slotLabel)
+        )), 0, 8)));
+
+        $hintParts = array_values(array_filter([
+            $variableName !== '' ? 'identita ' . $variableName : '',
+            $slotLabel !== '' ? 'slot ' . $slotLabel : '',
+            $notes !== '' ? $notes : '',
+            $source !== '' ? 'source ' . $source : '',
+        ]));
+
+        return [
+            'asset_id' => (int) $asset->id,
+            'kind' => strtolower(trim((string) $asset->kind)),
+            'label' => Str::limit($this->normalizeUtf8($label), 80, ''),
+            'mime' => trim((string) ($asset->mime ?? '')),
+            'source' => $source,
+            'variable_name' => $variableName,
+            'variable_kind' => $variableKind,
+            'slot' => $slot,
+            'slot_label' => $slotLabel,
+            'notes' => Str::limit($this->normalizeUtf8($notes), 180, ''),
+            'training_priority' => trim((string) data_get($meta, 'training_priority', '')),
+            'is_identity_anchor' => (bool) data_get($meta, 'is_canonical_for_identity', false),
+            'linked_variables' => $linkedVariables,
+            'tags' => $tags,
+            'grounding_hint' => Str::limit($this->normalizeUtf8(implode(' | ', $hintParts)), 180, ''),
+        ];
+    }
+
+    private function buildAssetSignal(BrandAsset $asset): string
+    {
+        $meta = is_array($asset->meta) ? $asset->meta : [];
+        $kind = strtolower(trim((string) $asset->kind));
+        $kindLabel = match ($kind) {
+            'logo' => 'logo',
+            'image' => 'foto',
+            'video' => 'video',
+            'audio' => 'voce/audio',
+            default => 'asset',
+        };
+
+        $parts = [
+            trim((string) data_get($meta, 'variable_name', '')),
+            trim((string) data_get($meta, 'slot_label', '')),
+            trim((string) data_get($meta, 'grounding_notes', '')),
+        ];
+
+        $parts = array_values(array_filter(array_map(
+            fn ($value) => Str::limit($this->normalizeUtf8((string) $value), 120, ''),
+            $parts
+        ), fn (string $value) => $value !== ''));
+
+        if (empty($parts)) {
+            $label = trim((string) ($asset->original_name ?? ''));
+            if ($label !== '') {
+                $parts[] = Str::limit($this->normalizeUtf8($label), 120, '');
+            }
+        }
+
+        if (empty($parts)) {
+            return '';
+        }
+
+        return trim($kindLabel . ': ' . implode(' - ', $parts));
+    }
+
+    /**
      * @param  array<int, string>  $keywords
      */
     private function scoreItemForBrief(string $haystack, array $keywords): float
@@ -277,7 +441,7 @@ class TenantContentIntelligenceService
     private function extractKeywords(string $text): array
     {
         $text = Str::lower($this->normalizeUtf8($text));
-        $text = preg_replace('/[^\\p{L}\\p{N}\\s]/u', ' ', $text) ?? '';
+        $text = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $text) ?? '';
         $tokens = preg_split('/\s+/', trim($text)) ?: [];
         $stopWords = [
             'questo', 'quella', 'quello', 'della', 'delle', 'degli', 'dello', 'nelle', 'nella', 'nello',
@@ -322,4 +486,3 @@ class TenantContentIntelligenceService
         return $text;
     }
 }
-

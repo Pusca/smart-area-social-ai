@@ -26,7 +26,8 @@
     $images = $byKind['image'] ?? collect();
     $videos = $byKind['video'] ?? collect();
     $audios = $byKind['audio'] ?? collect();
-    $variableCandidateAssets = $assets->whereIn('kind', ['image', 'logo'])->values();
+    $variableCandidateAssets = $assets->whereIn('kind', ['image', 'logo', 'video', 'audio'])->values();
+    $canonicalVariableAssets = $assets->whereIn('kind', ['image', 'logo', 'video'])->values();
     $selectedVariableAssetIds = old('asset_ids', []);
     if (!is_array($selectedVariableAssetIds)) {
         $selectedVariableAssetIds = [];
@@ -90,19 +91,19 @@
         [
             'label' => 'Target e obiettivo',
             'ready' => filled($profile?->target) && filled($profile?->default_goal) && filled($profile?->cta),
-            'hint' => 'PiÃƒÆ’Ã‚Â¹ l AI capisce chi vuoi raggiungere, piÃƒÆ’Ã‚Â¹ i contenuti risultano centrati.',
+            'hint' => 'PiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ l AI capisce chi vuoi raggiungere, piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ i contenuti risultano centrati.',
             'href' => '#brand-defaults-section',
         ],
         [
             'label' => 'Direzione strategica',
             'ready' => filled($profile?->vision) && filled($profile?->values) && filled(data_get($analysis, 'primary_goal')),
-            'hint' => 'Dai alla strategia piÃƒÆ’Ã‚Â¹ contesto su posizionamento e tono del brand.',
+            'hint' => 'Dai alla strategia piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ contesto su posizionamento e tono del brand.',
             'href' => '#brand-strategy-section',
         ],
         [
-            'label' => 'Materiali visual',
+            'label' => 'Materiali brand',
             'ready' => $images->count() >= 3 && $logos->count() >= 1,
-            'hint' => 'Logo e immagini reali aiutano l output a restare coerente e credibile.',
+            'hint' => 'Foto, video e audio reali aiutano l output a restare coerente, credibile e piu aderente al cliente.',
             'href' => '#brand-assets-section',
         ],
         [
@@ -197,7 +198,7 @@
         'immutable_elements',
         'allowed_transforms',
     ];
-    $assetUploadFieldNames = ['logo', 'images', 'images.*'];
+    $assetUploadFieldNames = ['logo', 'images', 'images.*', 'videos', 'videos.*', 'audios', 'audios.*', 'asset_upload_notes'];
 
     $uploadSectionOpen = $assets->isEmpty() || $hasErrorFor($assetUploadFieldNames);
     $defaultsSectionOpen = $hasErrorFor($defaultsFieldNames) || !filled($profile?->default_goal);
@@ -509,7 +510,7 @@
                             action="{{ route('profile.brand.quickstart.regenerate') }}"
                             class="js-quickstart-generation-submit"
                             data-loader-title="Sto rigenerando la tua demo iniziale"
-                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand piÃƒÆ’Ã‚Â¹ recenti."
+                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ recenti."
                             data-loader-estimate="150"
                         >
                             @csrf
@@ -536,9 +537,9 @@
             <div class="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Prossimo passo</div>
-                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai piÃƒÆ’Ã‚Â¹ contesto alla macchina</h2>
+                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ contesto alla macchina</h2>
                     <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                        PiÃƒÆ’Ã‚Â¹ dettagli aggiungi qui, piÃƒÆ’Ã‚Â¹ Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attivitÃƒÆ’Ã‚Â .
+                        PiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ dettagli aggiungi qui, piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attivitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â .
                         Non serve fare tutto subito: basta completare un blocco alla volta e salvare.
                     </p>
 
@@ -551,7 +552,7 @@
                             Brand readiness {{ $brandReadinessRate }}%
                         </span>
                         <span class="inline-flex items-center rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
-                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree giÃƒÆ’Ã‚Â  coperte
+                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree giÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  coperte
                         </span>
                         @if($brandReadinessMissing->count() > 0)
                             <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
@@ -571,8 +572,8 @@
                     @empty
                         <div class="sm:col-span-2 rounded-2xl border border-emerald-200 bg-white/90 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Profilo ben compilato</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai giÃƒÆ’Ã‚Â  dato alla macchina una base solida.</p>
-                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno giÃƒÆ’Ã‚Â  un contesto utile da cui partire.</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai giÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  dato alla macchina una base solida.</p>
+                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno giÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  un contesto utile da cui partire.</p>
                         </div>
                     @endforelse
                 </div>
@@ -605,9 +606,9 @@
                     </div>
                     <div class="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-4">
                         <a href="#brand-assets-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Materiali visual</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} logo, {{ $images->count() }} immagini</p>
-                            <p class="mt-1 text-xs text-gray-600">La base piu usata per guidare output e stile.</p>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Materiali brand</p>
+                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} logo, {{ $images->count() }} immagini, {{ $videos->count() }} video, {{ $audios->count() }} audio</p>
+                            <p class="mt-1 text-xs text-gray-600">Entrano nel dossier cliente usato per grounding e riferimenti.</p>
                         </a>
                         <a href="#brand-defaults-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Default contenuti</p>
@@ -893,12 +894,12 @@
                 <details id="brand-assets-section" class="order-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($uploadSectionOpen) open @endif>
                     <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Materiali visual</h2>
-                            <p class="mt-1 text-sm text-gray-600">Logo e immagini base per guidare output, stile e riconoscibilita del brand.</p>
+                            <h2 class="text-lg font-semibold text-gray-900">Materiali brand</h2>
+                            <p class="mt-1 text-sm text-gray-600">Logo, foto, video e audio reali che l AI usera come patrimonio cliente per grounding, coerenza e riconoscibilita.</p>
                         </div>
                         <div class="text-right text-xs text-gray-600">
-                            <p class="font-semibold text-gray-900">{{ $logos->count() }} logo / {{ $images->count() }} immagini</p>
-                            <p class="mt-1">Apri solo quando devi caricare o aggiornare.</p>
+                            <p class="font-semibold text-gray-900">{{ $logos->count() }} logo / {{ $images->count() }} immagini / {{ $videos->count() }} video / {{ $audios->count() }} audio</p>
+                            <p class="mt-1">Apri solo quando devi caricare, aggiornare o arricchire il dossier brand.</p>
                         </div>
                     </summary>
 
@@ -910,9 +911,24 @@
                             <p class="mt-1 text-xs text-gray-500">PNG consigliato, trasparente se possibile.</p>
                         </div>
                         <div>
-                            <label for="images" class="{{ $labelClass }}">Immagini (multiple)</label>
+                            <label for="images" class="{{ $labelClass }}">Foto e immagini (multiple)</label>
                             <input id="images" type="file" name="images[]" accept="image/*" multiple class="{{ $inputClass }}" />
-                            <p class="mt-1 text-xs text-gray-500">Esempi: prodotti, progetti, mood, palette.</p>
+                            <p class="mt-1 text-xs text-gray-500">Esempi: prodotti, progetti, showroom, team, palette e ambienti reali.</p>
+                        </div>
+                        <div>
+                            <label for="videos" class="{{ $labelClass }}">Video brand (multipli)</label>
+                            <input id="videos" type="file" name="videos[]" accept="video/mp4,video/quicktime,video/webm" multiple class="{{ $inputClass }}" />
+                            <p class="mt-1 text-xs text-gray-500">Utile per postura, gestualita, ambienti reali, prodotto in uso e tono visivo del cliente.</p>
+                        </div>
+                        <div>
+                            <label for="audios" class="{{ $labelClass }}">Audio e vocali (multipli)</label>
+                            <input id="audios" type="file" name="audios[]" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/ogg,audio/webm,.mp3,.wav,.m4a,.ogg,.webm" multiple class="{{ $inputClass }}" />
+                            <p class="mt-1 text-xs text-gray-500">Voice note, campioni voce, audio ambientali o materiali vocali utili a capire il cliente.</p>
+                        </div>
+                        <div>
+                            <label for="asset_upload_notes" class="{{ $labelClass }}">Note per questi materiali</label>
+                            <textarea id="asset_upload_notes" name="asset_upload_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. showroom principale, Ferrari in pronta consegna, voce della titolare, tono premium ma reale">{{ old('asset_upload_notes') }}</textarea>
+                            <p class="mt-1 text-xs text-gray-500">Queste note entrano nel dossier cliente e aiutano l AI a usare meglio gli asset caricati.</p>
                         </div>
                     </div>
                     </div>
@@ -932,7 +948,7 @@
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">Libreria asset</h2>
-                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file gia caricati. Selezione multipla per logo e immagini, elimina singolo per video e audio.</p>
+                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file gia caricati e riusati dal sistema come dossier cliente. Selezione multipla per logo e immagini, elimina singolo per video e audio.</p>
                     </div>
 
                     @if($assets->count() > 0)
@@ -1138,7 +1154,7 @@
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">Variabili asset</h2>
                         <p class="mt-1 text-sm text-gray-600">
-                            Raggruppa immagini e logo in riferimenti riutilizzabili. I blocchi di creazione stanno sotto e i dettagli delle card saranno piu leggibili.
+                            Raggruppa foto, logo, video e audio in riferimenti riutilizzabili. Le variabili aiutano l AI a riconoscere meglio persone, prodotti, luoghi e contenuti ricorrenti del cliente.
                         </p>
                     </div>
                     <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
@@ -1152,7 +1168,7 @@
                             <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Nuovo flusso guidato</p>
                             <h3 class="mt-1 text-base font-semibold text-gray-900">Crea un persona pack per immagini e video</h3>
                             <p class="mt-2 max-w-2xl text-sm text-gray-600">
-                                Carica i riferimenti reali della persona da preservare. L AI userÃƒÆ’Ã‚Â  questo pack come ancora identitaria:
+                                Carica i riferimenti reali della persona da preservare. L AI userÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  questo pack come ancora identitaria:
                                 stesso volto, stessi tratti e presenza coerente tra contenuti diversi.
                             </p>
                         </div>
@@ -1166,7 +1182,7 @@
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Scatti richiesti</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">4 angoli chiave + mezzo busto opzionale</p>
-                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base piÃƒÆ’Ã‚Â¹ utile.</p>
+                            <p class="mt-1 text-xs text-gray-600">Frontale, tre quarti sinistra, tre quarti destra e profilo sono la base piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ utile.</p>
                         </div>
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Video reale</p>
@@ -1176,7 +1192,7 @@
                         <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
                             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Istruzioni dirette</p>
                             <p class="mt-2 text-sm font-semibold text-gray-900">Cosa non deve cambiare</p>
-                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertÃƒÆ’Ã‚Â  creative sono ammesse.</p>
+                            <p class="mt-1 text-xs text-gray-600">Puoi dire all AI quali tratti preservare sempre e quali libertÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  creative sono ammesse.</p>
                         </div>
                     </div>
 
@@ -1196,11 +1212,11 @@
                         <div class="grid gap-4 lg:grid-cols-2">
                             <div>
                                 <label for="guided_persona_description" class="{{ $labelClass }}">Descrizione base</label>
-                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi ÃƒÆ’Ã‚Â¨ questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
+                                <textarea id="guided_persona_description" name="description" rows="3" class="{{ $inputClass }}" placeholder="Chi ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ questa persona e in che contesto va usata" required>{{ old('description') }}</textarea>
                             </div>
                             <div>
                                 <label for="guided_persona_immutable_traits" class="{{ $labelClass }}">Tratti da non cambiare mai</label>
-                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, etÃƒÆ’Ã‚Â  percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
+                                <textarea id="guided_persona_immutable_traits" name="immutable_traits" rows="3" class="{{ $inputClass }}" placeholder="Es. volto, taglio capelli, barba, etÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  percepita, lineamenti, occhiali" required>{{ old('immutable_traits') }}</textarea>
                             </div>
                         </div>
 
@@ -1226,7 +1242,7 @@
 
                         <div class="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/70 p-4">
                             <p class="text-sm font-semibold text-gray-900">Carica il pack fotografico</p>
-                            <p class="mt-1 text-xs text-gray-600">Per vedere subito lÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢effetto in azione, qui chiediamo i riferimenti piÃƒÆ’Ã‚Â¹ utili e leggibili per l AI.</p>
+                            <p class="mt-1 text-xs text-gray-600">Per vedere subito lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢effetto in azione, qui chiediamo i riferimenti piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ utili e leggibili per l AI.</p>
 
                             <div class="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                 <div>
@@ -1355,9 +1371,9 @@
                             <label for="var_canonical_asset_id" class="{{ $labelClass }}">Asset canonico</label>
                             <select id="var_canonical_asset_id" name="canonical_asset_id" class="{{ $inputClass }}">
                                 <option value="">Primo asset selezionato</option>
-                                @foreach($variableCandidateAssets as $asset)
+                                @foreach($canonicalVariableAssets as $asset)
                                     <option value="{{ (int) $asset->id }}" @selected((int) old('canonical_asset_id', 0) === (int) $asset->id)>
-                                        #{{ (int) $asset->id }} - {{ \Illuminate\Support\Str::limit((string) ($asset->original_name ?? basename((string) $asset->path)), 28, '...') }}
+                                        #{{ (int) $asset->id }} - {{ strtoupper((string) ($asset->kind ?? 'asset')) }} - {{ \Illuminate\Support\Str::limit((string) ($asset->original_name ?? basename((string) $asset->path)), 22, '...') }}
                                     </option>
                                 @endforeach
                             </select>
@@ -1390,7 +1406,7 @@
 
                     @if($variableCandidateAssets->isEmpty())
                         <div class="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-4 text-sm text-gray-600">
-                            Nessun asset disponibile: carica prima immagini o logo dal blocco Materiali visual.
+                            Nessun asset disponibile: carica prima logo, foto, video o audio dal blocco Materiali brand.
                         </div>
                     @else
                         <details class="overflow-hidden rounded-xl border border-gray-200 bg-white" @if($manualVariableSectionOpen) open @endif>
@@ -1400,10 +1416,12 @@
                                 @foreach($variableCandidateAssets as $asset)
                                     @php
                                         $assetId = (int) $asset->id;
+                                        $assetKind = strtolower((string) ($asset->kind ?? ''));
+                                        $assetLabel = (string) ($asset->original_name ?? basename((string) $asset->path));
                                         $isSelectedForVariable = in_array($assetId, $selectedVariableAssetIds, true);
                                     @endphp
                                     <label class="overflow-hidden rounded-xl border border-gray-200 bg-white">
-                                        <div class="border-b border-gray-200 bg-gray-50 p-2">
+                                        <div class="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 p-2">
                                             <span class="inline-flex items-center gap-2 text-xs text-gray-600">
                                                 <input
                                                     type="checkbox"
@@ -1414,10 +1432,23 @@
                                                 >
                                                 #{{ $assetId }}
                                             </span>
+                                            <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">{{ $assetKind }}</span>
                                         </div>
-                                        <div class="aspect-square overflow-hidden">
-                                            <img src="{{ asset('storage/' . ltrim($asset->path, '/')) }}" class="h-full w-full object-cover" alt="asset {{ $assetId }}">
-                                        </div>
+                                        @if(in_array($assetKind, ['image', 'logo'], true))
+                                            <div class="aspect-square overflow-hidden bg-gray-100">
+                                                <img src="{{ asset('storage/' . ltrim($asset->path, '/')) }}" class="h-full w-full object-cover" alt="asset {{ $assetId }}">
+                                            </div>
+                                        @elseif($assetKind === 'video')
+                                            <div class="flex aspect-square items-center justify-center bg-slate-950 px-3 text-center text-xs font-semibold text-white">
+                                                Video brand<br>{{ \Illuminate\Support\Str::limit($assetLabel, 32, '...') }}
+                                            </div>
+                                        @else
+                                            <div class="flex aspect-square flex-col items-center justify-center gap-2 bg-emerald-50 px-3 text-center text-xs font-semibold text-emerald-900">
+                                                <span class="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-700">Audio</span>
+                                                <span>{{ \Illuminate\Support\Str::limit($assetLabel, 34, '...') }}</span>
+                                            </div>
+                                        @endif
+                                        <div class="truncate px-2 py-1 text-[11px] text-gray-600">{{ $assetLabel }}</div>
                                     </label>
                                 @endforeach
                             </div>
