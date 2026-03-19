@@ -20,6 +20,7 @@
     $isOnboardingPending = (bool) ($isOnboardingPending ?? false);
     $quickstartDismissed = (bool) ($quickstartDismissed ?? false);
     $shouldShowQuickstart = (bool) ($shouldShowQuickstart ?? (!$quickstartDismissed && ($isOnboardingPending || $demoPlan !== null)));
+    $quickstartDismissRoute = \Illuminate\Support\Facades\Route::has('profile.brand.quickstart.dismiss') ? route('profile.brand.quickstart.dismiss') : null;
 
     $byKind = $assets->groupBy('kind');
     $logos = $byKind['logo'] ?? collect();
@@ -362,12 +363,14 @@
                         I motori AI e i provider restano selezionabili nei singoli contenuti: qui stai solo attivando la prova iniziale.
                     </div>
 
-                    <form method="POST" action="{{ route('profile.brand.quickstart.dismiss') }}" class="mt-4">
+                    @if($quickstartDismissRoute)
+                    <form method="POST" action="{{ $quickstartDismissRoute }}" class="mt-4">
                         @csrf
                         <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                             Salta la prova breve e vai al Brand Center
                         </button>
                     </form>
+                    @endif
                 </div>
 
                 <form
@@ -459,9 +462,11 @@
                         <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                             <p class="text-xs text-gray-500">La demo usa Instagram e Facebook, con 2 post immagine e 1 reel.</p>
                             <div class="flex flex-wrap items-center gap-2">
-                                <button type="submit" formaction="{{ route('profile.brand.quickstart.dismiss') }}" formnovalidate class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                                    Vai al Brand Center completo
-                                </button>
+                                @if($quickstartDismissRoute)
+                                    <button type="submit" formaction="{{ $quickstartDismissRoute }}" formnovalidate class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                        Vai al Brand Center completo
+                                    </button>
+                                @endif
                                 <button type="submit" class="ui-btn-primary justify-center">
                                     Crea la prova guidata
                                 </button>
@@ -511,12 +516,14 @@
                                 Salva i contenuti nel workspace
                             </button>
                         </form>
-                        <form method="POST" action="{{ route('profile.brand.quickstart.dismiss') }}">
+                        @if($quickstartDismissRoute)
+                        <form method="POST" action="{{ $quickstartDismissRoute }}">
                             @csrf
                             <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                                 Chiudi quick setup e continua nel Brand Center
                             </button>
                         </form>
+                        @endif
                         <a href="{{ route('calendar') }}" class="ui-btn-primary w-full justify-center">
                             Apri pianificazione demo
                         </a>
