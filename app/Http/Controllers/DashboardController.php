@@ -131,15 +131,21 @@ class DashboardController extends Controller
                 $end = $start->copy()->endOfDay();
             }
             $planDaysTotal = max(1, $start->diffInDays($end->copy()->startOfDay()) + 1);
-            $today = now();
-            if ($today->lt($start)) {
+            $planStatus = strtolower(trim((string) ($latestPlan->status ?? '')));
+            if (in_array($planStatus, ['draft', 'queued', 'pending'], true)) {
                 $planDaysElapsed = 0;
-            } elseif ($today->gt($end)) {
-                $planDaysElapsed = $planDaysTotal;
+                $planTimeProgress = 0;
             } else {
-                $planDaysElapsed = $start->diffInDays($today->copy()->startOfDay()) + 1;
+                $today = now();
+                if ($today->lt($start)) {
+                    $planDaysElapsed = 0;
+                } elseif ($today->gt($end)) {
+                    $planDaysElapsed = $planDaysTotal;
+                } else {
+                    $planDaysElapsed = $start->diffInDays($today->copy()->startOfDay()) + 1;
+                }
+                $planTimeProgress = (int) round(($planDaysElapsed / $planDaysTotal) * 100);
             }
-            $planTimeProgress = (int) round(($planDaysElapsed / $planDaysTotal) * 100);
             $planOutputProgress = $planItemsTotal > 0 ? (int) round(($planItemsDone / $planItemsTotal) * 100) : 0;
         }
 

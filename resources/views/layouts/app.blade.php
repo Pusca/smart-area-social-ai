@@ -98,8 +98,8 @@
                         <p class="font-semibold">Modalita admin attiva nel workspace</p>
                         <p class="text-xs text-amber-800">
                             Tenant: {{ $impersonation['target_tenant_name'] ?? 'Tenant' }}
-                            Â· Utente: {{ $impersonation['target_user_name'] ?? auth()->user()?->name }}
-                            Â· Admin origine: {{ $impersonation['original_admin_email'] ?? '' }}
+                            · Utente: {{ $impersonation['target_user_name'] ?? auth()->user()?->name }}
+                            · Admin origine: {{ $impersonation['original_admin_email'] ?? '' }}
                         </p>
                     </div>
                     <form method="POST" action="{{ route('admin.impersonation.stop') }}">

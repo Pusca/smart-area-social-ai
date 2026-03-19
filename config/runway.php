@@ -8,7 +8,7 @@ return [
     'model' => env('RUNWAY_VIDEO_MODEL', 'gen4.5'),
     'video_seconds' => (int) env('RUNWAY_VIDEO_SECONDS', 8),
     'video_ratio' => env('RUNWAY_VIDEO_RATIO', ''),
-    'max_prompt_chars' => (int) env('RUNWAY_MAX_PROMPT_CHARS', 980),
+    'max_prompt_chars' => (int) env('RUNWAY_MAX_PROMPT_CHARS', 1400),
 
     'create_endpoint' => env('RUNWAY_CREATE_ENDPOINT', '/v1/image_to_video'),
     'retrieve_endpoint' => env('RUNWAY_RETRIEVE_ENDPOINT', '/v1/tasks/{id}'),

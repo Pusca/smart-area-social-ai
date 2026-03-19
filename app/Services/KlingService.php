@@ -287,24 +287,12 @@ class KlingService
             return $this->defaultModelForRequestMode($requestMode);
         }
 
-        if ($requestMode === 'multi-image' && in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master'], true)) {
-            return 'kling-v1-6';
-        }
-
         return $model;
     }
 
     private function defaultModelForRequestMode(string $requestMode): string
     {
-        if (!$this->isOfficialKlingEndpoint()) {
-            return 'kling-v2-6';
-        }
-
-        return match ($requestMode) {
-            'multi-image' => 'kling-v1-6',
-            'image' => 'kling-v2-1',
-            default => 'kling-v2-1-master',
-        };
+        return 'kling-v2-6';
     }
 
     private function shouldSendModeForModel(string $modelName): bool

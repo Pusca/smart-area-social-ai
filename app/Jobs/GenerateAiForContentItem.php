@@ -403,7 +403,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
                     . ($selectedBrandImage ? "Parti dai riferimenti brand forniti e trasformali in un visual editoriale strategico, non in una semplice copia della foto originale. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                     . "Non generare loghi finti, nome brand scritto, watermark o testo sovraimpresso nell'immagine. "
-                    . "Se ÃƒÆ’Ã‚Â¨ necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
+                    . "Se è necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
                     . "Stile professionale, coerente con il brand e totalmente in italiano.";
 
                 $item->ai_image_prompt = $prompt;
@@ -966,21 +966,21 @@ class GenerateAiForContentItem implements ShouldQueue
         $presets = [
             [
                 'title' => 'Prezzi dinamici senza stress',
-                'caption' => "Uno degli errori piÃƒÆ’Ã‚Â¹ comuni negli affitti brevi ÃƒÆ’Ã‚Â¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÆ’Ã‚Â  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÆ’Ã‚Â¹ margine e meno camere ferme.",
+                'caption' => "Uno degli errori più comuni negli affitti brevi è aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilità in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: più margine e meno camere ferme.",
                 'hashtags' => ['#Hostup', '#AffittiBrevi', '#RevenueManagement', '#PropertyManagement', '#Automazione'],
                 'cta' => "Vuoi vedere il flusso completo in azione? {$ctaDefault}",
                 'image_prompt' => "Dashboard moderna di revenue management per affitti brevi, stile pulito tech, palette brand, scena realistica senza testo.",
             ],
             [
                 'title' => 'Canali OTA allineati in tempo reale',
-                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÆ’Ã‚Â , restrizioni e regole vengono aggiornate automaticamente.",
+                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilità, restrizioni e regole vengono aggiornate automaticamente.",
                 'hashtags' => ['#Hostup', '#ChannelManager', '#AirbnbHost', '#BookingCom', '#ShortTermRental'],
                 'cta' => "Se vuoi, ti mostriamo in 10 minuti come configurarlo sul tuo portfolio.",
                 'image_prompt' => "Interfaccia channel manager multi-canale con card OTA, look future-tech, senza watermark e senza testo.",
             ],
             [
-                'title' => 'Meno operativitÃƒÆ’Ã‚Â , piÃƒÆ’Ã‚Â¹ controllo',
-                'caption' => "La gestione efficace non ÃƒÆ’Ã‚Â¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÆ’Ã‚Â  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÆ’Ã‚Â  del servizio.",
+                'title' => 'Meno operatività, più controllo',
+                'caption' => "La gestione efficace non è fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attività ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualità del servizio.",
                 'hashtags' => ['#Hostup', '#HospitalityTech', '#AffittiBreviItalia', '#Automation', '#SmartOperations'],
                 'cta' => "Scrivici e prepariamo un setup pilota sui tuoi annunci.",
                 'image_prompt' => "Team operativo hospitality che monitora KPI su schermo, stile professionale, luci soft, no testo sovraimpresso.",
@@ -994,14 +994,14 @@ class GenerateAiForContentItem implements ShouldQueue
             ],
             [
                 'title' => 'Template operativi pronti',
-                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÆ’Ã‚Â  costante.",
-                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÆ’Ã‚Â ', '#DigitalHospitality'],
+                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualità costante.",
+                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#Scalabilità', '#DigitalHospitality'],
                 'cta' => "Vuoi una checklist pronta per partire? Te la condividiamo.",
                 'image_prompt' => "Vista workflow operativo per property management, cards ordinate e look minimal futuristico.",
             ],
             [
                 'title' => 'Setup rapido per team piccoli',
-                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÆ’Ã‚Â¹ controllo centralizzato. {$brand} organizza attivitÃƒÆ’Ã‚Â , prioritÃƒÆ’Ã‚Â  e pubblicazione contenuti in un unico flusso chiaro.",
+                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, più controllo centralizzato. {$brand} organizza attività, priorità e pubblicazione contenuti in un unico flusso chiaro.",
                 'hashtags' => ['#Hostup', '#TeamProduttivo', '#Workflow', '#SmartTools', '#BusinessGrowth'],
                 'cta' => "Prenota una prova: impostiamo insieme il primo piano operativo.",
                 'image_prompt' => "Scrivania moderna con laptop e pannello operativo, mood tech pulito, nessun testo visibile.",
@@ -2102,8 +2102,8 @@ SVG;
         $parts[] = 'Ogni shot deve cambiare davvero per angolazione, distanza, movimento camera o dettaglio principale, mantenendo continuita narrativa.';
         $parts[] = 'Movimenti camera preferiti: push-in leggero, reveal laterale, tracking morbido, micro parallax. Evita motion caotico.';
 
-        $limit = (int) (config('runway.max_prompt_chars') ?: 980);
-        $limit = max(300, min(1000, $limit));
+        $limit = (int) (config('runway.max_prompt_chars') ?: 1400);
+        $limit = max(600, min(1600, $limit));
 
         return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), $limit, '');
     }
@@ -2607,7 +2607,7 @@ SVG;
         foreach ([
             'non sembra lei',
             'non e lei',
-            'non ÃƒÆ’Ã‚Â¨ lei',
+            'non è lei',
             'volto diverso',
             'viso diverso',
             'faccia diversa',
@@ -3034,7 +3034,6 @@ SVG;
             'deformed hands',
             'bad anatomy',
             'plastic skin',
-            'synthetic skin texture',
             'wax face',
             'airbrushed face',
             'cartoon look',
@@ -3049,7 +3048,6 @@ SVG;
             'toy vehicle proportions',
             'unreal metallic reflections',
             'over-smoothed paint reflections',
-            'video game cinematic look',
             'text overlay',
             'watermark',
             'fake logo',
@@ -3063,12 +3061,15 @@ SVG;
 
         if ($locationSequenceMode) {
             $parts[] = 'merged rooms';
-            $parts[] = 'changed architecture';
-            $parts[] = 'invented interiors';
         }
 
         if ($this->feedbackTargetsVisual($activeFeedbackRequest)) {
             $parts[] = 'too similar to previous version';
+        }
+
+        if ($locationSequenceMode) {
+            $parts[] = 'changed architecture';
+            $parts[] = 'invented interiors';
         }
 
         if (Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel') {
@@ -7358,11 +7359,6 @@ SVG;
         return false;
     }
 }
-
-
-
-
-
 
 
 
