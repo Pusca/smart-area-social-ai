@@ -69,7 +69,7 @@ class GenerateAiForContentItem implements ShouldQueue
         $tenantProfile = data_get($meta, 'tenant_profile', data_get($meta, 'brand', []));
         $memorySummary = $memoryBuilder->buildForTenant((int) $item->tenant_id, 40);
         $activeFeedbackRequest = $this->normalizeFeedbackRequest((array) data_get($meta, 'feedback_loop.active_request', []));
-        $assetVariables = $this->resolveAssetVariableContext($meta, $strategy);
+        $assetVariables = $this->resolveAssetVariableContext((int) $item->tenant_id, $meta, $strategy);
         $assetIdentity = $this->resolveAssetIdentityContext($meta, $assetVariables);
         $briefSeed = trim((string) ($item->caption ?: data_get($meta, 'manual_brief', $item->title ?: '')));
         $tenantIntelligence = $tenantContentIntelligence->buildForGeneration(
@@ -2692,7 +2692,12 @@ SVG;
             $requestMode = $kling->resolveRequestMode($referenceInputs, 'image');
             $referenceReason .= '_primary_location_anchor_only';
         }
-
+        $referenceCap = $this->resolveKlingReferenceCap($item, $assetVariables);
+        if (count($referenceInputs) > $referenceCap) {
+            $referenceInputs = array_values(array_slice($referenceInputs, 0, $referenceCap));
+            $requestMode = $kling->resolveRequestMode($referenceInputs, $referenceCap > 1 ? 'multi-image' : 'image');
+            $referenceReason .= '_capped_' . $referenceCap . '_refs';
+        }
         $requestSummary = (array) ($referenceBundle['summary'] ?? []);
         $requestSummary['identity_board_applied'] = $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $referencePaths);
         $requestSummary['location_sequence_mode'] = $locationSequenceMode;
@@ -2704,6 +2709,7 @@ SVG;
             'request_mode' => $requestMode,
             'model' => (string) ($videoOptions['model'] ?? ''),
             'mode' => (string) (config('kling.mode') ?: 'pro'),
+            'cfg_scale' => $this->resolveKlingCfgScale($item, $assetVariables),
             'seconds' => (int) ($videoOptions['seconds'] ?? (int) (config('kling.video_seconds') ?: 5)),
             'size' => (string) ($videoOptions['size'] ?? '720x1280'),
             'negative_prompt' => $this->buildKlingNegativePrompt(
@@ -2761,6 +2767,40 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @return array{inputs: array<int, string>, summary: array<string, mixed>}
      */
+    private function resolveKlingCfgScale(ContentItem $item, array $assetVariables): float
+    {
+        $configured = (float) (config('kling.cfg_scale') ?: 0.78);
+        $configured = max(0.3, min(1.0, $configured));
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $context = $this->videoSubjectContextText(
+            $meta,
+            (string) data_get($meta, 'manual_brief', ''),
+            (string) data_get($meta, 'video_prompt', '')
+        );
+        if ($this->videoNeedsDualSubjectLock($meta, $context, $assetVariables)) {
+            return max($configured, 0.86);
+        }
+        if ($this->hasPersonAssetVariable($assetVariables) || Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel') {
+            return max($configured, 0.78);
+        }
+        return $configured;
+    }
+    private function resolveKlingReferenceCap(ContentItem $item, array $assetVariables): int
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $context = $this->videoSubjectContextText(
+            $meta,
+            (string) data_get($meta, 'manual_brief', ''),
+            (string) data_get($meta, 'video_prompt', '')
+        );
+        if ($this->videoNeedsDualSubjectLock($meta, $context, $assetVariables)) {
+            return 2;
+        }
+        if ($this->hasPersonAssetVariable($assetVariables) || Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel') {
+            return 2;
+        }
+        return 3;
+    }
     private function buildKlingReferenceInputs(array $referenceAbsPool, array $referencePaths): array
     {
         $referenceAbsPool = array_values(array_filter(
@@ -2890,14 +2930,21 @@ SVG;
             'deformed hands',
             'bad anatomy',
             'plastic skin',
+            'synthetic skin texture',
+            'wax face',
+            'airbrushed face',
             'cartoon look',
             'cgi render',
             '3d animation',
+            'digital painting',
             'anime style',
             'illustration style',
             'beauty filter face',
             'doll face',
             'toy car look',
+            'toy vehicle proportions',
+            'unreal metallic reflections',
+            'over-smoothed paint reflections',
             'video game cinematic look',
             'text overlay',
             'watermark',
@@ -5051,7 +5098,7 @@ SVG;
     /**
      * @return array<string, mixed>
      */
-    private function resolveAssetVariableContext(array $meta, array $strategy): array
+    private function resolveAssetVariableContext(int $tenantId, array $meta, array $strategy): array
     {
         $metaPayload = (array) data_get($meta, 'asset_variables', []);
 
@@ -5062,6 +5109,7 @@ SVG;
         if (empty($catalog)) {
             $catalog = $this->normalizeAssetVariableRows((array) data_get($strategy, 'brand_references.asset_variables', []));
         }
+        $catalog = $this->mergeLiveAssetVariableCatalog($catalog, $this->loadAssetVariableCatalogFromDb($tenantId));
 
         $requestedIds = collect((array) data_get($metaPayload, 'requested_ids', []))
             ->map(fn ($id) => (int) $id)
@@ -5082,7 +5130,10 @@ SVG;
             (array) data_get($metaPayload, 'recognized_terms', [])
         ))));
 
-        $resolved = $this->normalizeAssetVariableRows((array) data_get($metaPayload, 'resolved', []));
+        $resolved = $this->refreshResolvedRowsFromCatalog(
+            $this->normalizeAssetVariableRows((array) data_get($metaPayload, 'resolved', [])),
+            $catalog
+        );
 
         if (empty($resolved) && !empty($catalog) && (!empty($requestedIds) || !empty($detectedIds))) {
             $catalogById = collect($catalog)->keyBy(fn ($row) => (int) ($row['id'] ?? 0));
@@ -5357,6 +5408,183 @@ SVG;
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
+    private function loadAssetVariableCatalogFromDb(int $tenantId): array
+    {
+        if ($tenantId < 1) {
+            return [];
+        }
+
+        $variables = AssetVariable::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->get();
+
+        if ($variables->isEmpty()) {
+            return [];
+        }
+
+        $allAssetIds = $variables
+            ->flatMap(function (AssetVariable $row): array {
+                $ids = collect((array) ($row->asset_ids ?? []))
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => $id > 0)
+                    ->values()
+                    ->all();
+
+                $voiceAssetId = (int) ($row->voice_asset_id ?? 0);
+                if ($voiceAssetId > 0) {
+                    $ids[] = $voiceAssetId;
+                }
+
+                return $ids;
+            })
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $assets = BrandAsset::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('content_plan_id')
+            ->whereIn('id', $allAssetIds)
+            ->get(['id', 'kind', 'path', 'original_name', 'mime', 'meta'])
+            ->keyBy('id');
+
+        $out = [];
+        foreach ($variables as $variable) {
+            $assetIds = collect((array) ($variable->asset_ids ?? []))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values();
+
+            $linkedAssets = $assetIds
+                ->map(fn (int $id) => $assets->get($id))
+                ->filter()
+                ->values();
+
+            $assetPaths = $linkedAssets
+                ->map(fn ($asset) => (string) ($asset->path ?? ''))
+                ->filter(fn (string $path) => $path !== '')
+                ->values()
+                ->all();
+
+            $canonicalAssetId = (int) ($variable->canonical_asset_id ?? 0);
+            $canonicalAsset = $canonicalAssetId > 0 ? $assets->get($canonicalAssetId) : null;
+            $voiceAssetId = (int) ($variable->voice_asset_id ?? 0);
+            $voiceAsset = $voiceAssetId > 0 ? $assets->get($voiceAssetId) : null;
+
+            $out[] = [
+                'id' => (int) $variable->id,
+                'name' => (string) $variable->name,
+                'slug' => (string) $variable->slug,
+                'kind' => (string) $variable->kind,
+                'asset_role' => (string) ($variable->asset_role ?? ''),
+                'description' => (string) ($variable->description ?? ''),
+                'canonical_asset_id' => $canonicalAssetId > 0 ? $canonicalAssetId : null,
+                'canonical_asset_path' => $canonicalAsset ? (string) ($canonicalAsset->path ?? '') : '',
+                'voice_asset_id' => $voiceAssetId > 0 ? $voiceAssetId : null,
+                'voice_asset_path' => $voiceAsset ? (string) ($voiceAsset->path ?? '') : '',
+                'voice_asset_name' => $voiceAsset ? (string) ($voiceAsset->original_name ?? '') : '',
+                'voice_asset_mime' => $voiceAsset ? (string) ($voiceAsset->mime ?? '') : '',
+                'voice_provider' => (string) ($variable->voice_provider ?? data_get($variable->profile, 'voice_reference.provider', '')),
+                'voice_provider_voice_id' => (string) ($variable->voice_provider_voice_id ?? data_get($variable->profile, 'voice_reference.provider_voice_id', '')),
+                'voice_status' => (string) ($variable->voice_status ?? data_get($variable->profile, 'voice_reference.status', '')),
+                'identity_mode' => (string) ($variable->identity_mode ?? 'balanced'),
+                'consistency_threshold' => $variable->consistency_threshold !== null ? (int) $variable->consistency_threshold : null,
+                'profile' => is_array($variable->profile) ? $variable->profile : [],
+                'asset_ids' => $assetIds->all(),
+                'asset_paths' => $assetPaths,
+                'assets' => $linkedAssets->map(fn ($asset) => [
+                    'id' => (int) ($asset->id ?? 0),
+                    'kind' => (string) ($asset->kind ?? ''),
+                    'path' => (string) ($asset->path ?? ''),
+                    'original_name' => (string) ($asset->original_name ?? ''),
+                    'mime' => (string) ($asset->mime ?? ''),
+                    'meta' => is_array($asset->meta) ? $asset->meta : [],
+                ])->all(),
+                'voice_asset' => $voiceAsset ? [
+                    'id' => (int) ($voiceAsset->id ?? 0),
+                    'kind' => (string) ($voiceAsset->kind ?? ''),
+                    'path' => (string) ($voiceAsset->path ?? ''),
+                    'original_name' => (string) ($voiceAsset->original_name ?? ''),
+                    'mime' => (string) ($voiceAsset->mime ?? ''),
+                    'meta' => is_array($voiceAsset->meta) ? $voiceAsset->meta : [],
+                ] : null,
+            ];
+        }
+
+        return $this->normalizeAssetVariableRows($out);
+    }
+
+    private function mergeLiveAssetVariableCatalog(array $catalog, array $liveCatalog): array
+    {
+        if (empty($liveCatalog)) {
+            return $catalog;
+        }
+
+        $merged = [];
+        foreach ($catalog as $row) {
+            $key = $this->assetVariableCatalogKey($row);
+            if ($key === '') {
+                continue;
+            }
+            $merged[$key] = $row;
+        }
+
+        foreach ($liveCatalog as $row) {
+            $key = $this->assetVariableCatalogKey($row);
+            if ($key === '') {
+                continue;
+            }
+            $merged[$key] = isset($merged[$key]) && is_array($merged[$key])
+                ? array_replace($merged[$key], $row)
+                : $row;
+        }
+
+        return array_values($merged);
+    }
+
+    private function refreshResolvedRowsFromCatalog(array $resolved, array $catalog): array
+    {
+        if (empty($resolved) || empty($catalog)) {
+            return $resolved;
+        }
+
+        $catalogMap = [];
+        foreach ($catalog as $row) {
+            $key = $this->assetVariableCatalogKey($row);
+            if ($key === '') {
+                continue;
+            }
+            $catalogMap[$key] = $row;
+        }
+
+        foreach ($resolved as $index => $row) {
+            $key = $this->assetVariableCatalogKey($row);
+            if ($key === '' || !isset($catalogMap[$key])) {
+                continue;
+            }
+            $resolved[$index] = array_replace($row, $catalogMap[$key]);
+        }
+
+        return $resolved;
+    }
+
+    private function assetVariableCatalogKey(array $row): string
+    {
+        $id = isset($row['id']) ? (int) $row['id'] : 0;
+        if ($id > 0) {
+            return 'id:' . $id;
+        }
+
+        $slug = Str::lower(trim((string) ($row['slug'] ?? '')));
+
+        return $slug !== '' ? 'slug:' . $slug : '';
+    }
+
     private function normalizeAssetVariableRows(array $rows): array
     {
         $out = [];
@@ -6191,7 +6419,9 @@ SVG;
         }
 
         $videoAbsPath = $publicDisk->path($videoPath);
-        if ($ffprobeAvailable && $this->videoHasAudioStream($videoAbsPath, $ffprobe)) {
+        $narration = $this->resolveNarrationTextForVideo($item);
+        $videoAlreadyHasAudio = $ffprobeAvailable && $this->videoHasAudioStream($videoAbsPath, $ffprobe);
+        if ($videoAlreadyHasAudio && $narration === '') {
             return [
                 'applied' => false,
                 'reason' => 'video_already_has_audio',
@@ -6204,7 +6434,6 @@ SVG;
                 'error' => null,
             ];
         }
-
         $tmpDir = storage_path('app/tmp');
         if (!is_dir($tmpDir)) {
             @mkdir($tmpDir, 0775, true);
@@ -6218,8 +6447,6 @@ SVG;
         $voiceId = null;
         $voiceLabel = null;
         $error = null;
-        $narration = $this->resolveNarrationTextForVideo($item);
-
         try {
             if ($narration !== '') {
                 $voiceContext = $this->resolvePersonaVoiceContext($item);
@@ -6400,7 +6627,13 @@ SVG;
         if ($caption !== '') {
             return $this->sanitizeNarrationText($this->compactCaptionForVoiceover($caption));
         }
-
+        $title = trim((string) ($item->title ?? ''));
+        $brief = trim((string) data_get($meta, 'manual_brief', ''));
+        $angle = trim((string) data_get($meta, 'item_brain.angle', ''));
+        $fallback = trim(implode('. ', array_values(array_filter([$title, $brief !== '' ? Str::limit($brief, 180, '') : '', $angle]))));
+        if ($fallback !== '') {
+            return $this->sanitizeNarrationText($fallback);
+        }
         return '';
     }
 

@@ -9,7 +9,7 @@ return [
     'mode' => env('KLING_VIDEO_MODE', 'pro'),
     'video_seconds' => (int) env('KLING_VIDEO_SECONDS', 5),
     'video_ratio' => env('KLING_VIDEO_RATIO', '9:16'),
-    'cfg_scale' => (float) env('KLING_CFG_SCALE', 0.5),
+    'cfg_scale' => (float) env('KLING_CFG_SCALE', 0.78),
     'negative_prompt' => env('KLING_NEGATIVE_PROMPT', ''),
     'sound' => env('KLING_SOUND', ''),
     'callback_url' => env('KLING_CALLBACK_URL', ''),
@@ -32,3 +32,4 @@ return [
     'poll_interval' => (int) env('KLING_VIDEO_POLL_INTERVAL', 8),
     'poll_timeout' => (int) env('KLING_VIDEO_POLL_TIMEOUT', 420),
 ];
+
