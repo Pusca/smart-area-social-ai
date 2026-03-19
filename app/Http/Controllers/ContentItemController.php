@@ -205,6 +205,7 @@ class ContentItemController extends Controller
             'platform' => 'nullable|string|max:255',
             'format' => 'required|string|max:50',
             'video_provider' => ['nullable', VideoProviderResolver::inRule()],
+            'video_duration_seconds_requested' => 'nullable|integer|min:4|max:45',
             'image_provider' => ['nullable', ImageProviderResolver::inRule()],
             'scheduled_at' => 'required|date',
             'generation_brief' => 'nullable|string|max:3000',
@@ -227,6 +228,7 @@ class ContentItemController extends Controller
         $platformValue = implode(',', $platforms);
         $videoProvider = VideoProviderResolver::normalize((string) ($data['video_provider'] ?? ''));
         $imageProvider = ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), ImageProviderResolver::default());
+        $requestedVideoDurationSeconds = max(0, (int) ($data['video_duration_seconds_requested'] ?? 0));
 
         $brief = trim((string) (
             $data['generation_brief']
@@ -377,6 +379,7 @@ class ContentItemController extends Controller
         $item->ai_meta = [
             'source' => 'manual_single_content',
             'video_provider' => $videoProvider,
+            'requested_video_duration_seconds' => $requestedVideoDurationSeconds > 0 ? $requestedVideoDurationSeconds : null,
             'image_provider' => $imageProvider,
             'tenant_profile' => $profileData,
             'brand_assets' => $assets,
@@ -1370,6 +1373,5 @@ class ContentItemController extends Controller
     }
 
 }
-
 
 

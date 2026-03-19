@@ -43,7 +43,7 @@
             ? (string) $profile->default_formats[0]
             : 'post'));
     $defaultVideoProvider = old('video_provider', $isReelPreset
-        ? 'runway'
+        ? 'openai'
         : (string) config('generation.video_provider_default', 'openai'));
     if (!array_key_exists($defaultVideoProvider, $videoProviderOptions)) {
         $defaultVideoProvider = 'openai';
@@ -54,6 +54,7 @@
     }
 
     $defaultSchedule = old('scheduled_at', now($tz)->addHour()->startOfHour()->format('Y-m-d\\TH:i'));
+    $defaultVideoDurationSeconds = (int) old('video_duration_seconds_requested', $isReelPreset ? 20 : 0);
 
     $referenceImages = $referenceImages ?? [];
     if ($referenceImages instanceof \Illuminate\Support\Collection) {
@@ -109,7 +110,7 @@
                 </h1>
                 <p class="mt-3 max-w-2xl text-sm text-gray-600">
                     {{ $isReelPreset
-                        ? 'Qui lavori su un solo reel alla volta: hook, anchor frame, ritmo visivo e direzione brand vengono preparati per aiutare meglio Runway.'
+                        ? 'Qui lavori su un solo reel alla volta: hook, anchor frame, ritmo visivo e direzione brand vengono preparati per aiutare il motore video selezionato.'
                         : 'Qui puoi creare un contenuto singolo on demand oppure impostare un piano editoriale con almeno 2 contenuti e una logica di insieme.' }}
                 </p>
 
@@ -176,11 +177,11 @@
                     <h2 class="mt-2 text-xl font-semibold text-gray-900">Un solo reel, costruito come contenuto singolo</h2>
                 </div>
                 <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $isReelPreset ? 'border-indigo-200 bg-white text-indigo-700' : 'border-gray-200 bg-white text-gray-600' }}">
-                    {{ $isReelPreset ? 'Runway image-to-video' : 'Editor reel dedicato' }}
+                        {{ $isReelPreset ? 'Editor reel dedicato' : 'Editor reel dedicato' }}
                 </span>
             </div>
             <p class="mt-3 text-sm leading-6 text-gray-600">
-                La macchina prepara un blueprint breve con hook, anchor frame, progressione degli shot e payoff finale. Poi traduce tutto in un input piu adatto a Runway, che oggi lavora meglio su una clip coerente che su uno storyboard confuso.
+                La macchina prepara un blueprint breve con hook, anchor frame, progressione degli shot e payoff finale. Poi traduce tutto in un input adatto al motore video selezionato, mantenendo il reel coerente anche quando richiede piu di una clip.
             </p>
             <div class="mt-4 flex flex-wrap gap-2">
                 <span class="ui-chip">Reel singolo</span>
@@ -241,14 +242,14 @@
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <h2 class="text-lg font-semibold text-gray-900">{{ $isReelPreset ? 'Crea reel' : 'Contenuto singolo' }}</h2>
                     <p class="mt-1 text-sm text-gray-600">
-                        {{ $isReelPreset ? 'Qui stai creando un reel singolo guidato: hook, anchor frame, shot plan e resa social vengono ordinati prima di arrivare a Runway.' : 'Qui stai creando un singolo contenuto on demand.' }}
+                        {{ $isReelPreset ? 'Qui stai creando un reel singolo guidato: hook, anchor frame, shot plan e resa social vengono ordinati prima di arrivare al motore video.' : 'Qui stai creando un singolo contenuto on demand.' }}
                     </p>
 
                     <div class="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">{{ $isReelPreset ? 'Modalita reel attiva' : 'Se vuoi un insieme di contenuti' }}</p>
                         <p class="mt-1 text-sm text-gray-700">
                             @if($isReelPreset)
-                                Il formato reel parte gia attivo. Descrivi bene hook iniziale, soggetto principale, micro-progressione delle scene e payoff finale: la macchina costruira un blueprint sintetico e lo tradurra in un input piu adatto a Runway.
+                                Il formato reel parte gia attivo. Descrivi bene hook iniziale, soggetto principale, micro-progressione delle scene e payoff finale: la macchina costruira un blueprint sintetico e lo tradurra in un input piu adatto al motore video scelto.
                             @else
                                 Per una sequenza di pubblicazioni o un piano editoriale usa il <a href="{{ route('wizard.start') }}" class="font-semibold text-indigo-700 hover:text-indigo-800">piano editoriale</a>, che lavora da minimo 2 contenuti.
                             @endif
@@ -299,9 +300,27 @@
                                 @endforeach
                             </select>
                             <p class="mt-1 text-xs text-gray-500">
-                                Per i post immagine il provider video viene ignorato. La modalita reel continua a partire su Runway, mentre Kling e pensato soprattutto per mantenere piu stabile lo stesso soggetto o la stessa persona nei video.
+                                Per i post immagine il provider video viene ignorato. Per reel da 20 secondi o piu usa OpenAI: se serve, il sistema genera piu segmenti coerenti e li unisce.
                             </p>
                         </div>
+                        @if($isReelPreset)
+                        <div class="sm:col-span-2">
+                            <label for="video_duration_seconds_requested" class="mb-1 block text-sm font-semibold text-gray-700">Durata video (secondi)</label>
+                            <input
+                                id="video_duration_seconds_requested"
+                                type="number"
+                                name="video_duration_seconds_requested"
+                                min="4"
+                                max="45"
+                                step="1"
+                                value="{{ $defaultVideoDurationSeconds > 0 ? $defaultVideoDurationSeconds : 20 }}"
+                                class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                            />
+                            <p class="mt-1 text-xs text-gray-500">
+                                Imposta qui la durata finale desiderata. Se supera il limite del provider, il reel viene spezzato in segmenti coerenti e ricucito automaticamente.
+                            </p>
+                        </div>
+                        @endif
                     </div>
                 </div>
 
@@ -744,6 +763,5 @@
     })();
 </script>
 @endsection
-
 
 
