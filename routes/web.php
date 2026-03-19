@@ -75,6 +75,8 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
 
     Route::get('/setup', [SettingsController::class, 'index'])->name('setup.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
+    Route::post('/settings/fine-tuning/start', [SettingsController::class, 'startFineTuning'])->name('settings.fine-tuning.start');
+    Route::post('/settings/fine-tuning/sync', [SettingsController::class, 'syncFineTuning'])->name('settings.fine-tuning.sync');
     Route::get('/settings/social/meta/redirect', [SocialAccountController::class, 'redirectToMeta'])->name('settings.social.meta.redirect');
     Route::get('/settings/social/meta/callback', [SocialAccountController::class, 'handleMetaCallback'])->name('settings.social.meta.callback');
     Route::post('/settings/social/accounts/{socialAccount}/disconnect', [SocialAccountController::class, 'disconnect'])->name('settings.social.accounts.disconnect');

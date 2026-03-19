@@ -8,6 +8,7 @@ return [
     'force_ipv4' => env('OPENAI_FORCE_IPV4', false),
 
     'text_model' => env('OPENAI_TEXT_MODEL', 'gpt-4.1-mini'),
+    'fine_tuning_base_model' => env('OPENAI_FINE_TUNING_BASE_MODEL', env('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')),
     'vision_model' => env('OPENAI_VISION_MODEL', env('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')),
     'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-1'),
     'video_model' => env('OPENAI_VIDEO_MODEL', 'sora-2'),
@@ -16,6 +17,7 @@ return [
     'speech_max_chars' => (int) env('OPENAI_SPEECH_MAX_CHARS', 1000),
 
     'timeout' => env('OPENAI_TIMEOUT', 60),
+    'fine_tuning_timeout' => env('OPENAI_FINE_TUNING_TIMEOUT', env('OPENAI_TIMEOUT', 60)),
     'timeout_images' => env('OPENAI_TIMEOUT_IMAGES', 120),
     'timeout_speech' => env('OPENAI_TIMEOUT_SPEECH', 90),
     'timeout_video_create' => env('OPENAI_TIMEOUT_VIDEO_CREATE', 60),

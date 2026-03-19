@@ -78,7 +78,7 @@ class GenerateAiForContentItem implements ShouldQueue
             (string) $item->format,
             $item->platforms()
         );
-        $providerMatrix = $aiProviderMatrixService->resolve($meta);
+        $providerMatrix = $aiProviderMatrixService->resolve($meta, (int) $item->tenant_id);
         $meta['memory_summary'] = $memorySummary;
         $meta['image_provider'] = $this->resolveImageProvider($meta);
         $meta['asset_variables'] = $assetVariables;
@@ -403,7 +403,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
                     . ($selectedBrandImage ? "Parti dai riferimenti brand forniti e trasformali in un visual editoriale strategico, non in una semplice copia della foto originale. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                     . "Non generare loghi finti, nome brand scritto, watermark o testo sovraimpresso nell'immagine. "
-                    . "Se ÃƒÂ¨ necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
+                    . "Se ÃƒÆ’Ã‚Â¨ necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
                     . "Stile professionale, coerente con il brand e totalmente in italiano.";
 
                 $item->ai_image_prompt = $prompt;
@@ -953,21 +953,21 @@ class GenerateAiForContentItem implements ShouldQueue
         $presets = [
             [
                 'title' => 'Prezzi dinamici senza stress',
-                'caption' => "Uno degli errori piÃƒÂ¹ comuni negli affitti brevi ÃƒÂ¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÂ  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÂ¹ margine e meno camere ferme.",
+                'caption' => "Uno degli errori piÃƒÆ’Ã‚Â¹ comuni negli affitti brevi ÃƒÆ’Ã‚Â¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÆ’Ã‚Â  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÆ’Ã‚Â¹ margine e meno camere ferme.",
                 'hashtags' => ['#Hostup', '#AffittiBrevi', '#RevenueManagement', '#PropertyManagement', '#Automazione'],
                 'cta' => "Vuoi vedere il flusso completo in azione? {$ctaDefault}",
                 'image_prompt' => "Dashboard moderna di revenue management per affitti brevi, stile pulito tech, palette brand, scena realistica senza testo.",
             ],
             [
                 'title' => 'Canali OTA allineati in tempo reale',
-                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÂ , restrizioni e regole vengono aggiornate automaticamente.",
+                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÆ’Ã‚Â , restrizioni e regole vengono aggiornate automaticamente.",
                 'hashtags' => ['#Hostup', '#ChannelManager', '#AirbnbHost', '#BookingCom', '#ShortTermRental'],
                 'cta' => "Se vuoi, ti mostriamo in 10 minuti come configurarlo sul tuo portfolio.",
                 'image_prompt' => "Interfaccia channel manager multi-canale con card OTA, look future-tech, senza watermark e senza testo.",
             ],
             [
-                'title' => 'Meno operativitÃƒÂ , piÃƒÂ¹ controllo',
-                'caption' => "La gestione efficace non ÃƒÂ¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÂ  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÂ  del servizio.",
+                'title' => 'Meno operativitÃƒÆ’Ã‚Â , piÃƒÆ’Ã‚Â¹ controllo',
+                'caption' => "La gestione efficace non ÃƒÆ’Ã‚Â¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÆ’Ã‚Â  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÆ’Ã‚Â  del servizio.",
                 'hashtags' => ['#Hostup', '#HospitalityTech', '#AffittiBreviItalia', '#Automation', '#SmartOperations'],
                 'cta' => "Scrivici e prepariamo un setup pilota sui tuoi annunci.",
                 'image_prompt' => "Team operativo hospitality che monitora KPI su schermo, stile professionale, luci soft, no testo sovraimpresso.",
@@ -981,14 +981,14 @@ class GenerateAiForContentItem implements ShouldQueue
             ],
             [
                 'title' => 'Template operativi pronti',
-                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÂ  costante.",
-                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÂ ', '#DigitalHospitality'],
+                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÆ’Ã‚Â  costante.",
+                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÆ’Ã‚Â ', '#DigitalHospitality'],
                 'cta' => "Vuoi una checklist pronta per partire? Te la condividiamo.",
                 'image_prompt' => "Vista workflow operativo per property management, cards ordinate e look minimal futuristico.",
             ],
             [
                 'title' => 'Setup rapido per team piccoli',
-                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÂ¹ controllo centralizzato. {$brand} organizza attivitÃƒÂ , prioritÃƒÂ  e pubblicazione contenuti in un unico flusso chiaro.",
+                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÆ’Ã‚Â¹ controllo centralizzato. {$brand} organizza attivitÃƒÆ’Ã‚Â , prioritÃƒÆ’Ã‚Â  e pubblicazione contenuti in un unico flusso chiaro.",
                 'hashtags' => ['#Hostup', '#TeamProduttivo', '#Workflow', '#SmartTools', '#BusinessGrowth'],
                 'cta' => "Prenota una prova: impostiamo insieme il primo piano operativo.",
                 'image_prompt' => "Scrivania moderna con laptop e pannello operativo, mood tech pulito, nessun testo visibile.",
@@ -2594,7 +2594,7 @@ SVG;
         foreach ([
             'non sembra lei',
             'non e lei',
-            'non ÃƒÂ¨ lei',
+            'non ÃƒÆ’Ã‚Â¨ lei',
             'volto diverso',
             'viso diverso',
             'faccia diversa',
@@ -6675,7 +6675,7 @@ SVG;
                     'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
-                    'error' => $error ?: 'FFmpeg non � riuscito ad agganciare l audio al video',
+                    'error' => $error ?: 'FFmpeg non è riuscito ad agganciare l audio al video',
                 ];
             }
 

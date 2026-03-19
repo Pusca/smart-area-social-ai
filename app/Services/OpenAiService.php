@@ -81,7 +81,10 @@ class OpenAiService
      */
     public function generateContent(array $context): array
     {
-        $model = (string) (config('openai.text_model') ?: env('OPENAI_TEXT_MODEL') ?: 'gpt-4.1-mini');
+        $model = trim((string) data_get($context, 'provider_matrix.text.model_override', ''));
+        if ($model === '') {
+            $model = (string) (config('openai.text_model') ?: env('OPENAI_TEXT_MODEL') ?: 'gpt-4.1-mini');
+        }
         $timeout = (int) (config('openai.timeout') ?: 60);
 
         $instructions =

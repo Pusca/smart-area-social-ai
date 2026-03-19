@@ -6,12 +6,15 @@ use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\SocialAccount;
 use App\Models\TenantProfile;
+use App\Services\AI\TenantFineTuningService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Throwable;
 
 class SettingsController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, TenantFineTuningService $tenantFineTuningService): View
     {
         $tenantId = (int) $request->user()->tenant_id;
 
@@ -34,8 +37,10 @@ class SettingsController extends Controller
         $logosCount = $assets->where('kind', 'logo')->count();
         $imagesCount = $assets->where('kind', 'image')->count();
         $videosCount = $assets->where('kind', 'video')->count();
+        $audiosCount = $assets->where('kind', 'audio')->count();
         $activeSocialAccounts = $socialAccounts->where('status', 'active');
         $connectedPlatforms = $activeSocialAccounts->pluck('platform')->filter()->unique()->values();
+        $fineTuning = $tenantFineTuningService->previewStats($tenantId);
 
         $setupChecks = collect([
             [
@@ -51,7 +56,7 @@ class SettingsController extends Controller
                 'href' => route('profile.brand') . '#brand-defaults-section',
             ],
             [
-                'label' => 'Materiali visual',
+                'label' => 'Materiali brand',
                 'ready' => $logosCount > 0 && $imagesCount >= 3,
                 'hint' => 'Carica logo e almeno alcune immagini reali.',
                 'href' => route('profile.brand') . '#brand-assets-section',
@@ -68,6 +73,12 @@ class SettingsController extends Controller
                 'hint' => 'Collega almeno un account Meta.',
                 'href' => route('settings'),
             ],
+            [
+                'label' => 'Fine-tuning testo',
+                'ready' => !empty($fineTuning['active_model']),
+                'hint' => 'Attiva un modello fine-tuned del tenant quando hai abbastanza esempi buoni.',
+                'href' => route('settings') . '#fine-tuning',
+            ],
         ])->values();
 
         $setupDone = $setupChecks->filter(fn ($item) => (bool) ($item['ready'] ?? false))->count();
@@ -82,14 +93,56 @@ class SettingsController extends Controller
             'logosCount' => $logosCount,
             'imagesCount' => $imagesCount,
             'videosCount' => $videosCount,
+            'audiosCount' => $audiosCount,
             'activeSocialAccounts' => $activeSocialAccounts,
             'connectedPlatforms' => $connectedPlatforms,
             'setupChecks' => $setupChecks,
             'setupDone' => $setupDone,
             'setupRate' => $setupRate,
             'setupMissing' => $setupMissing,
+            'fineTuning' => $fineTuning,
             'metaReady' => !empty(config('meta.app_id')) && !empty(config('meta.app_secret')),
             'metaScopes' => (array) config('meta.scopes', []),
         ]);
+    }
+
+    public function startFineTuning(Request $request, TenantFineTuningService $tenantFineTuningService): RedirectResponse
+    {
+        try {
+            $tenantFineTuningService->startRunForTenant((int) $request->user()->tenant_id);
+
+            return redirect()
+                ->route('settings')
+                ->with('status', 'Fine-tuning avviato: dataset creato, file caricati e job OpenAI in coda.');
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('settings')
+                ->with('status', 'Impossibile avviare il fine-tuning: ' . $e->getMessage());
+        }
+    }
+
+    public function syncFineTuning(Request $request, TenantFineTuningService $tenantFineTuningService): RedirectResponse
+    {
+        try {
+            $run = $tenantFineTuningService->syncLatestRunForTenant((int) $request->user()->tenant_id);
+            if (!$run) {
+                return redirect()
+                    ->route('settings')
+                    ->with('status', 'Nessun run di fine-tuning presente per questo tenant.');
+            }
+
+            $status = (string) ($run->status ?? 'unknown');
+            $model = trim((string) ($run->fine_tuned_model ?? ''));
+            $message = 'Stato fine-tuning aggiornato: ' . $status . '.';
+            if ($model !== '' && (bool) $run->is_active) {
+                $message .= ' Modello attivo: ' . $model . '.';
+            }
+
+            return redirect()->route('settings')->with('status', $message);
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('settings')
+                ->with('status', 'Impossibile aggiornare il fine-tuning: ' . $e->getMessage());
+        }
     }
 }

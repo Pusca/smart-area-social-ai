@@ -9,6 +9,13 @@
         $metaScopes = is_array($metaScopes ?? null) ? $metaScopes : [];
         $activeSocialAccounts = $socialAccounts->where('status', 'active');
         $connectedPlatforms = $activeSocialAccounts->pluck('platform')->filter()->unique()->values();
+        $fineTuning = is_array($fineTuning ?? null) ? $fineTuning : [];
+        $fineTuningRun = $fineTuning['latest_run'] ?? null;
+        $fineTuningActiveModel = trim((string) ($fineTuning['active_model'] ?? ''));
+        $fineTuningEligible = (int) ($fineTuning['eligible_examples'] ?? 0);
+        $fineTuningMinimum = (int) ($fineTuning['minimum_examples'] ?? 12);
+        $fineTuningPlatforms = collect((array) ($fineTuning['platforms'] ?? []))->filter()->values();
+        $fineTuningFormats = collect((array) ($fineTuning['formats'] ?? []))->filter()->values();
     @endphp
 
     <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
@@ -111,6 +118,73 @@ PWA + Push
                         <p class="mt-1 text-xs text-emerald-700">Puoi passare direttamente a crea, piano editoriale o libreria.</p>
                     </div>
                 @endforelse
+            </div>
+        </div>
+    </div>
+
+    <div id="fine-tuning" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-900">Fine-tuning testo tenant</h2>
+                <p class="mt-1 max-w-3xl text-sm text-gray-600">Serve a stabilizzare tono, struttura e tipo di copy del cliente. Foto, video e audio continuano invece a migliorare il grounding dinamico del contenuto.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <form method="POST" action="{{ route('settings.fine-tuning.start') }}">
+                    @csrf
+                    <button type="submit" class="ui-btn-primary justify-center" @disabled($fineTuningEligible < $fineTuningMinimum)>
+                        Avvia fine-tuning
+                    </button>
+                </form>
+                <form method="POST" action="{{ route('settings.fine-tuning.sync') }}">
+                    @csrf
+                    <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Aggiorna stato
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-4">
+            <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Esempi utili</p>
+                <p class="mt-2 text-2xl font-semibold text-gray-900">{{ $fineTuningEligible }}</p>
+                <p class="mt-1 text-xs text-gray-600">Minimo richiesto: {{ $fineTuningMinimum }}</p>
+            </div>
+            <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Run piu recente</p>
+                <p class="mt-2 text-sm font-semibold text-gray-900">{{ $fineTuningRun?->status ? strtoupper((string) $fineTuningRun->status) : 'NESSUNO' }}</p>
+                <p class="mt-1 text-xs text-gray-600">{{ $fineTuningRun?->requested_at ? $fineTuningRun->requested_at->format('d/m/Y H:i') : 'Ancora non avviato' }}</p>
+            </div>
+            <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Modello attivo</p>
+                <p class="mt-2 text-sm font-semibold text-gray-900">{{ $fineTuningActiveModel !== '' ? $fineTuningActiveModel : 'Base model' }}</p>
+                <p class="mt-1 text-xs text-gray-600">{{ $fineTuningActiveModel !== '' ? 'Il tenant usa il modello fine-tuned.' : 'Nessun modello personalizzato attivo.' }}</p>
+            </div>
+            <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Mix dataset</p>
+                <p class="mt-2 text-sm font-semibold text-gray-900">{{ $fineTuningFormats->isNotEmpty() ? $fineTuningFormats->implode(' / ') : 'Da costruire' }}</p>
+                <p class="mt-1 text-xs text-gray-600">{{ $fineTuningPlatforms->isNotEmpty() ? $fineTuningPlatforms->implode(' / ') : 'Nessuna piattaforma rilevata' }}</p>
+            </div>
+        </div>
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-4">
+                <p class="text-sm font-semibold text-gray-900">Come viene costruito</p>
+                <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
+                    <li>Usa contenuti approvati, programmati o pubblicati con caption AI valida.</li>
+                    <li>Esclude i contenuti con feedback negativo esplicito.</li>
+                    <li>Crea dataset JSONL per tenant e avvia un run OpenAI separato dal runtime standard.</li>
+                    <li>Se il run va a buon fine, il modello viene attivato solo per il testo e solo per quel tenant.</li>
+                </ul>
+            </div>
+            <div class="rounded-2xl border border-gray-200 bg-white px-4 py-4">
+                <p class="text-sm font-semibold text-gray-900">Note operative</p>
+                <p class="mt-2 text-sm text-gray-600">Il fine-tuning non sostituisce gli asset reali: migliora il modo in cui il modello scrive. Per video, voce, prodotti, luoghi e realismo visivo continua a contare soprattutto il grounding del Brand Center.</p>
+                @if($fineTuningRun?->last_error)
+                    <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-700">
+                        Ultimo errore: {{ $fineTuningRun->last_error }}
+                    </div>
+                @endif
             </div>
         </div>
     </div>

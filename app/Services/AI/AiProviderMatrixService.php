@@ -10,11 +10,16 @@ use App\Support\VideoProviderResolver;
 
 class AiProviderMatrixService
 {
+    public function __construct(
+        private readonly TenantFineTuningService $tenantFineTuningService
+    ) {
+    }
+
     /**
      * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
-    public function resolve(array $meta = []): array
+    public function resolve(array $meta = [], ?int $tenantId = null): array
     {
         $text = TextProviderResolver::resolve(
             (string) data_get($meta, 'provider_matrix.text.provider', data_get($meta, 'text_provider', '')),
@@ -37,7 +42,7 @@ class AiProviderMatrixService
             VideoProviderResolver::default()
         );
 
-        return [
+        $matrix = [
             'text' => [
                 'provider' => $text,
                 'available' => TextProviderResolver::allowed(),
@@ -60,5 +65,11 @@ class AiProviderMatrixService
             ],
             'resolved_at' => now()->toDateTimeString(),
         ];
+
+        if ($tenantId && $tenantId > 0) {
+            $matrix = $this->tenantFineTuningService->decorateProviderMatrix($tenantId, $matrix);
+        }
+
+        return $matrix;
     }
 }

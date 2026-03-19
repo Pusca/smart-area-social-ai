@@ -64,7 +64,7 @@ class AiController extends Controller
             'post',
             [(string) $payload['platform']]
         );
-        $providerMatrix = $aiProviderMatrixService->resolve([]);
+        $providerMatrix = $aiProviderMatrixService->resolve([], (int) $request->user()->tenant_id);
         $context = $this->buildContext($payload, $tenantIntelligence, $providerMatrix);
 
         try {

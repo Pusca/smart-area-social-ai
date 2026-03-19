@@ -338,7 +338,7 @@ class ContentItemController extends Controller
             'grader_provider' => data_get($data, 'grader_provider', ''),
             'image_provider' => $imageProvider,
             'video_provider' => $videoProvider,
-        ]);
+        ], $tenantId);
         $internalTitle = Str::limit($brief, 110, '');
         $imagePreference = $explicitImageReferences['primary_preference'] ?? $this->selectPreferredBrandImage($brief, $assets);
         $uniquenessSeed = implode('|', [
@@ -495,7 +495,7 @@ class ContentItemController extends Controller
         $meta['image_provider'] = $this->allowsCustomImageProvider($contentItem)
             ? ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), $existingImageProvider)
             : ImageProviderResolver::default();
-        $meta['provider_matrix'] = $this->aiProviderMatrixService->resolve($meta);
+        $meta['provider_matrix'] = $this->aiProviderMatrixService->resolve($meta, (int) $contentItem->tenant_id);
         $contentItem->ai_meta = $meta;
 
         $contentItem->save();
