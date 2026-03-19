@@ -538,6 +538,7 @@ class GenerateAiForContentItem implements ShouldQueue
                         'segment_count' => (int) ($videoResult['segment_count'] ?? count((array) ($videoResult['segments'] ?? []))),
                         'target_total_seconds' => (int) ($videoResult['target_total_seconds'] ?? 0),
                         'segments' => (array) ($videoResult['segments'] ?? []),
+                        'extended_fallback' => $videoResult['extended_fallback'] ?? null,
                         'audio' => $audioAttach,
                         'playback_postprocess' => $videoPlaybackPostprocess,
                         'fallback' => $imageSourceFallback,
@@ -1438,39 +1439,64 @@ SVG;
         }
 
         $targetTotalSeconds = $this->targetTotalVideoSecondsForItem($item, $videoProvider);
+        $extendedVideoFallback = null;
+        $finalizeVideoResult = function (array $result) use (&$extendedVideoFallback): array {
+            return $this->applyExtendedVideoSingleClipFallback($result, $extendedVideoFallback);
+        };
+
         if ($this->shouldGenerateExtendedVideo($item, $videoProvider, $targetTotalSeconds)) {
-            return $this->generateExtendedVideoAsset(
-                openAi: $openAi,
-                runway: $runway,
-                kling: $kling,
-                item: $item,
-                briefRaw: $briefRaw,
-                fallbackPrompt: $prompt,
-                videoProvider: $videoProvider,
-                runwayExecutionPrompt: $runwayExecutionPrompt,
-                klingExecutionPrompt: $klingExecutionPrompt,
-                openAiExecutionPrompt: $openAiExecutionPrompt,
-                referenceAbs: $referenceAbs,
-                referencePath: $referencePath,
-                referencePaths: $referencePaths,
-                referenceReason: $referenceReason,
-                generationReferenceAbsPool: $generationReferenceAbsPool,
-                imageReferencePathPool: $imageReferencePathPool,
-                validationReferenceAbsPool: $validationReferenceAbsPool,
-                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
-                compositionMeta: $compositionMeta,
-                brandDecision: $brandDecision,
+            $ffmpeg = $this->resolveFfmpegBinary();
+            if ($this->canRunBinary($ffmpeg)) {
+                return $this->generateExtendedVideoAsset(
+                    openAi: $openAi,
+                    runway: $runway,
+                    kling: $kling,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $prompt,
+                    videoProvider: $videoProvider,
+                    runwayExecutionPrompt: $runwayExecutionPrompt,
+                    klingExecutionPrompt: $klingExecutionPrompt,
+                    openAiExecutionPrompt: $openAiExecutionPrompt,
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $referenceReason,
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool,
+                    validationReferenceAbsPool: $validationReferenceAbsPool,
+                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $videoOptions,
+                    assetVariables: $assetVariables,
+                    activeFeedbackRequest: $activeFeedbackRequest,
+                    locationSequenceMode: $locationSequenceMode,
+                    targetTotalSeconds: $targetTotalSeconds
+                );
+            }
+
+            $extendedVideoFallback = $this->buildExtendedVideoSingleClipFallback(
+                provider: $videoProvider,
+                targetTotalSeconds: $targetTotalSeconds,
                 videoOptions: $videoOptions,
-                assetVariables: $assetVariables,
-                activeFeedbackRequest: $activeFeedbackRequest,
-                locationSequenceMode: $locationSequenceMode,
-                targetTotalSeconds: $targetTotalSeconds
+                ffmpegBinary: $ffmpeg
             );
+            $videoOptions['seconds'] = (int) ($extendedVideoFallback['delivered_seconds'] ?? $videoOptions['seconds']);
+            $referenceReason .= '_single_clip_fallback_no_ffmpeg';
+
+            Log::warning('GenerateAiForContentItem extended video downgraded to single clip', [
+                'content_item_id' => $item->id,
+                'provider' => $videoProvider,
+                'requested_total_seconds' => $targetTotalSeconds,
+                'delivered_seconds' => $videoOptions['seconds'],
+                'ffmpeg_binary' => $ffmpeg,
+            ]);
         }
 
         if ($videoProvider === 'kling') {
             try {
-                return $this->generateVideoWithKling(
+                return $finalizeVideoResult($this->generateVideoWithKling(
                     kling: $kling,
                     item: $item,
                     briefRaw: $briefRaw,
@@ -1485,7 +1511,7 @@ SVG;
                     assetVariables: $assetVariables,
                     activeFeedbackRequest: $activeFeedbackRequest,
                     locationSequenceMode: $locationSequenceMode
-                );
+                ));
             } catch (Throwable $klingError) {
                 if (!$this->shouldFallbackFromKlingToSecondaryProvider($klingError)) {
                     throw $klingError;
@@ -1551,7 +1577,7 @@ SVG;
                             'nested' => $result['provider_fallback'] ?? null,
                         ];
 
-                        return $result;
+                        return $finalizeVideoResult($result);
                     } catch (Throwable $fallbackError) {
                         $fallbackFailures[] = $fallbackProvider . ': ' . Str::limit($fallbackError->getMessage(), 220, '');
 
@@ -1584,7 +1610,7 @@ SVG;
 
         if ($videoProvider === 'runway') {
             try {
-                return $this->generateVideoWithRunway(
+                return $finalizeVideoResult($this->generateVideoWithRunway(
                     runway: $runway,
                     openAi: $openAi,
                     item: $item,
@@ -1602,14 +1628,14 @@ SVG;
                     compositionMeta: $compositionMeta,
                     brandDecision: $brandDecision,
                     videoOptions: $videoOptions
-                );
+                ));
             } catch (Throwable $runwayError) {
                 if (!$this->shouldFallbackFromRunwayToOpenAi($runwayError)) {
                     throw $runwayError;
                 }
 
                 try {
-                    return $this->generateVideoWithOpenAi(
+                    return $finalizeVideoResult($this->generateVideoWithOpenAi(
                         openAi: $openAi,
                         briefRaw: $briefRaw,
                         fallbackPrompt: $prompt,
@@ -1632,7 +1658,7 @@ SVG;
                             'reason' => Str::limit($runwayError->getMessage(), 220, ''),
                             'at' => now()->toDateTimeString(),
                         ]
-                    );
+                    ));
                 } catch (Throwable $openAiFallbackError) {
                     if (!$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiFallbackError)) {
                         throw $openAiFallbackError;
@@ -1674,7 +1700,7 @@ SVG;
                                 'at' => now()->toDateTimeString(),
                             ];
 
-                            return $result;
+                            return $finalizeVideoResult($result);
                         } catch (Throwable $secondaryError) {
                             $secondaryFailures[] = $secondaryProvider . ': ' . Str::limit($secondaryError->getMessage(), 220, '');
                         }
@@ -1693,7 +1719,7 @@ SVG;
         }
 
         try {
-            return $this->generateVideoWithOpenAi(
+            return $finalizeVideoResult($this->generateVideoWithOpenAi(
                 openAi: $openAi,
                 briefRaw: $briefRaw,
                 fallbackPrompt: $prompt,
@@ -1711,7 +1737,7 @@ SVG;
                 videoOptions: $videoOptions,
                 assetVariables: $assetVariables,
                 providerFallback: null
-            );
+            ));
         } catch (Throwable $openAiError) {
             if (!$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiError)) {
                 throw $openAiError;
@@ -1768,7 +1794,7 @@ SVG;
                         'at' => now()->toDateTimeString(),
                     ];
 
-                    return $result;
+                    return $finalizeVideoResult($result);
                 } catch (Throwable $fallbackError) {
                     $fallbackFailures[] = $fallbackProvider . ': ' . Str::limit($fallbackError->getMessage(), 220, '');
 
@@ -1839,6 +1865,56 @@ SVG;
         $providerMax = $this->providerSingleClipMaxSeconds($provider);
 
         return max(3, min(45, max($target, $providerMax > 0 ? min($providerMax, $target) : $target)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $videoOptions
+     * @return array<string, mixed>
+     */
+    private function buildExtendedVideoSingleClipFallback(
+        string $provider,
+        int $targetTotalSeconds,
+        array $videoOptions,
+        string $ffmpegBinary
+    ): array {
+        return [
+            'mode' => 'single_clip_fallback',
+            'reason' => 'ffmpeg_unavailable',
+            'provider' => strtolower(trim($provider)),
+            'requested_total_seconds' => $targetTotalSeconds,
+            'delivered_seconds' => $this->providerSingleClipMaxSeconds($provider),
+            'size' => (string) ($videoOptions['size'] ?? ''),
+            'ffmpeg_binary' => trim($ffmpegBinary) !== '' ? trim($ffmpegBinary) : null,
+            'at' => now()->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @param  array<string, mixed>|null  $extendedVideoFallback
+     * @return array<string, mixed>
+     */
+    private function applyExtendedVideoSingleClipFallback(array $result, ?array $extendedVideoFallback): array
+    {
+        if ($extendedVideoFallback === null) {
+            return $result;
+        }
+
+        $requestSummary = is_array($result['request_summary'] ?? null) ? $result['request_summary'] : [];
+        $requestSummary['mode'] = 'single_clip_fallback';
+        $requestSummary['extended_requested'] = true;
+        $requestSummary['fallback_reason'] = (string) ($extendedVideoFallback['reason'] ?? 'ffmpeg_unavailable');
+        $requestSummary['target_total_seconds'] = (int) ($extendedVideoFallback['requested_total_seconds'] ?? 0);
+        $requestSummary['delivered_seconds'] = (int) ($extendedVideoFallback['delivered_seconds'] ?? 0);
+
+        $result['request_summary'] = $requestSummary;
+        $result['extended'] = false;
+        $result['segment_count'] = 1;
+        $result['target_total_seconds'] = (int) ($extendedVideoFallback['requested_total_seconds'] ?? 0);
+        $result['segments'] = [];
+        $result['extended_fallback'] = $extendedVideoFallback;
+
+        return $result;
     }
 
     private function shouldGenerateExtendedVideo(ContentItem $item, string $provider, int $targetTotalSeconds): bool

@@ -291,6 +291,67 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertFalse($method->invoke($job, new RuntimeException('Video generation timeout after 420s')));
     }
 
+    public function test_it_builds_extended_video_single_clip_fallback_metadata(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildExtendedVideoSingleClipFallback');
+        $method->setAccessible(true);
+
+        $fallback = $method->invoke(
+            $job,
+            'openai',
+            20,
+            ['size' => '720x1280'],
+            'ffmpeg.exe'
+        );
+
+        $this->assertSame('single_clip_fallback', $fallback['mode']);
+        $this->assertSame('ffmpeg_unavailable', $fallback['reason']);
+        $this->assertSame('openai', $fallback['provider']);
+        $this->assertSame(20, $fallback['requested_total_seconds']);
+        $this->assertSame(12, $fallback['delivered_seconds']);
+        $this->assertSame('720x1280', $fallback['size']);
+        $this->assertSame('ffmpeg.exe', $fallback['ffmpeg_binary']);
+        $this->assertNotEmpty($fallback['at']);
+    }
+
+    public function test_it_marks_video_result_as_single_clip_fallback_when_extended_generation_is_downgraded(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'applyExtendedVideoSingleClipFallback');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $job,
+            [
+                'source' => 'sora_video_generation',
+                'provider' => 'openai',
+                'video_path' => 'ai/videos/2026/03/test.mp4',
+                'request_summary' => [
+                    'seconds' => '12',
+                    'size' => '720x1280',
+                ],
+            ],
+            [
+                'reason' => 'ffmpeg_unavailable',
+                'requested_total_seconds' => 20,
+                'delivered_seconds' => 12,
+                'provider' => 'openai',
+            ]
+        );
+
+        $this->assertSame('single_clip_fallback', $result['request_summary']['mode']);
+        $this->assertTrue($result['request_summary']['extended_requested']);
+        $this->assertSame('ffmpeg_unavailable', $result['request_summary']['fallback_reason']);
+        $this->assertSame(20, $result['request_summary']['target_total_seconds']);
+        $this->assertSame(12, $result['request_summary']['delivered_seconds']);
+        $this->assertFalse($result['extended']);
+        $this->assertSame(1, $result['segment_count']);
+        $this->assertSame(20, $result['target_total_seconds']);
+        $this->assertSame([], $result['segments']);
+        $this->assertSame('ffmpeg_unavailable', $result['extended_fallback']['reason']);
+    }
+
     public function test_it_builds_a_moderation_safe_video_prompt_for_guided_person_wellness_content(): void
     {
         $job = new GenerateAiForContentItem(1);
