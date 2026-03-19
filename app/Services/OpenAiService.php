@@ -384,34 +384,23 @@ class OpenAiService
         $size = (string) ($options['size'] ?? config('openai.video_size') ?: '720x1280');
         $timeout = (int) (config('openai.timeout_video_create') ?: config('openai.timeout') ?: 60);
         $url = $this->url('/v1/videos');
+        $payload = [
+            'model' => $model,
+            'prompt' => $prompt,
+            'seconds' => $seconds,
+            'size' => $size,
+        ];
 
         try {
             if (is_string($inputReferenceAbsolutePath) && $inputReferenceAbsolutePath !== '' && is_file($inputReferenceAbsolutePath)) {
-                $mime = mime_content_type($inputReferenceAbsolutePath) ?: 'application/octet-stream';
-                $content = file_get_contents($inputReferenceAbsolutePath);
-                if (!is_string($content) || $content === '') {
-                    throw new RuntimeException('Unable to read input reference image for video generation.');
-                }
-
-                $res = $this->request($timeout, false)
-                    ->retry(1, 400)
-                    ->attach('input_reference', $content, basename($inputReferenceAbsolutePath), ['Content-Type' => $mime])
-                    ->post($url, [
-                        'model' => $model,
-                        'prompt' => $prompt,
-                        'seconds' => $seconds,
-                        'size' => $size,
-                    ]);
-            } else {
-                $res = $this->request($timeout, true)
-                    ->retry(1, 400)
-                    ->post($url, [
-                        'model' => $model,
-                        'prompt' => $prompt,
-                        'seconds' => $seconds,
-                        'size' => $size,
-                    ]);
+                $payload['input_reference'] = [
+                    'image_url' => $this->toVideoInputReferenceDataUri($inputReferenceAbsolutePath),
+                ];
             }
+
+            $res = $this->request($timeout, true)
+                ->retry(1, 400)
+                ->post($url, $payload);
 
             if (!$res->successful()) {
                 throw new RuntimeException("OpenAI video create error ({$res->status()}) URL={$url} BODY=" . $res->body());
@@ -439,6 +428,23 @@ class OpenAiService
             ]);
             throw $e;
         }
+    }
+
+    private function toVideoInputReferenceDataUri(string $absolutePath): string
+    {
+        $mime = strtolower((string) (mime_content_type($absolutePath) ?: ''));
+        $mime = $mime === 'image/jpg' ? 'image/jpeg' : $mime;
+
+        if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            throw new RuntimeException('OpenAI video input_reference must be a JPEG, PNG, or WEBP image.');
+        }
+
+        $bytes = @file_get_contents($absolutePath);
+        if (!is_string($bytes) || $bytes === '') {
+            throw new RuntimeException('Unable to read OpenAI video input reference image.');
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
     /**
@@ -1267,7 +1273,6 @@ class OpenAiService
         };
     }
 }
-
 
 
 
