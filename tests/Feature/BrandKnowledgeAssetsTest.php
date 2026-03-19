@@ -167,4 +167,140 @@ class BrandKnowledgeAssetsTest extends TestCase
         );
         $this->assertNotEmpty(data_get($result, 'knowledge_pack.asset_library.knowledge_sources'));
     }
+
+    public function test_brand_center_page_renders_with_knowledge_assets(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Demo Tenant',
+            'slug' => 'demo-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        $user = User::factory()->create([
+            'tenant_id' => $tenant->id,
+            'role' => 'owner',
+        ]);
+
+        TenantProfile::create([
+            'tenant_id' => $tenant->id,
+            'business_name' => 'Studio Alfa',
+            'industry' => 'Consulenza',
+        ]);
+
+        BrandAsset::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => null,
+            'kind' => 'document',
+            'path' => 'brand-assets/' . $tenant->id . '/faq.pdf',
+            'original_name' => 'faq.pdf',
+            'mime' => 'application/pdf',
+            'meta' => [
+                'source' => 'brand_center',
+                'content_origin' => 'uploaded_document',
+                'text_excerpt' => 'Consegna in 48 ore e supporto via WhatsApp.',
+            ],
+        ]);
+
+        BrandAsset::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => null,
+            'kind' => 'text',
+            'path' => '',
+            'original_name' => 'FAQ showroom',
+            'mime' => 'text/plain',
+            'meta' => [
+                'source' => 'brand_center',
+                'content_origin' => 'manual_text_entry',
+                'text_excerpt' => 'Aperto il sabato su appuntamento.',
+            ],
+        ]);
+
+        BrandAsset::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => null,
+            'kind' => 'link',
+            'path' => '',
+            'original_name' => 'Catalogo ufficiale',
+            'mime' => 'text/uri-list',
+            'meta' => [
+                'source' => 'brand_center',
+                'content_origin' => 'reference_link',
+                'source_url' => 'https://example.com/catalogo',
+                'text_excerpt' => 'Pagina ufficiale con servizi e prezzi.',
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('profile.brand'))
+            ->assertOk()
+            ->assertSee('Documenti')
+            ->assertSee('Note di conoscenza')
+            ->assertSee('Link di riferimento');
+    }
+
+    public function test_setup_page_renders_knowledge_asset_summary(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Demo Tenant',
+            'slug' => 'demo-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        $user = User::factory()->create([
+            'tenant_id' => $tenant->id,
+            'role' => 'owner',
+        ]);
+
+        TenantProfile::create([
+            'tenant_id' => $tenant->id,
+            'business_name' => 'Studio Alfa',
+            'industry' => 'Consulenza',
+        ]);
+
+        BrandAsset::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => null,
+            'kind' => 'text',
+            'path' => '',
+            'original_name' => 'FAQ showroom',
+            'mime' => 'text/plain',
+            'meta' => [
+                'source' => 'brand_center',
+                'content_origin' => 'manual_text_entry',
+                'text_excerpt' => 'Aperto il sabato su appuntamento.',
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('settings'))
+            ->assertOk()
+            ->assertSee('asset di conoscenza');
+    }
+
+    public function test_intelligence_service_tolerates_non_utf8_brief_text(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Demo Tenant',
+            'slug' => 'demo-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        TenantProfile::create([
+            'tenant_id' => $tenant->id,
+            'business_name' => 'Studio Alfa',
+            'industry' => 'Consulenza',
+        ]);
+
+        $brief = mb_convert_encoding('Fai un reel più diretto sul listino', 'Windows-1252', 'UTF-8');
+
+        /** @var TenantContentIntelligenceService $service */
+        $service = app(TenantContentIntelligenceService::class);
+        $result = $service->buildForGeneration($tenant->id, $brief, 'reel', ['instagram']);
+
+        $this->assertIsArray($result);
+        $this->assertSame('reel', data_get($result, 'knowledge_pack.brief_focus.requested_format'));
+    }
 }

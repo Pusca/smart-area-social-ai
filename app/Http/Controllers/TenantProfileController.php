@@ -48,7 +48,8 @@ class TenantProfileController extends Controller
             ->where('tenant_id', $tenantId)
             ->whereNull('content_plan_id')
             ->latest('id')
-            ->get();
+            ->get()
+            ->map(fn (BrandAsset $asset) => $this->sanitizeAssetForDisplay($asset));
 
         $assetVariables = AssetVariable::query()
             ->where('tenant_id', $tenantId)
@@ -56,7 +57,9 @@ class TenantProfileController extends Controller
             ->latest('id')
             ->get();
 
-        $assetVariableCatalog = $this->assetVariableService->catalogForTenant($tenantId);
+        $assetVariableCatalog = $this->sanitizeRecursiveStrings(
+            $this->assetVariableService->catalogForTenant($tenantId)
+        );
         $demoPlan = $this->resolveQuickstartDemoPlan($tenantId, $profile);
         $isOnboardingPending = !$profile || !$profile->onboarding_completed_at;
         $quickstartDismissed = (bool) ($profile?->quickstart_dismissed_at);
@@ -740,7 +743,7 @@ class TenantProfileController extends Controller
 
     private function normalizeInlineText(string $text): string
     {
-        $text = trim($text);
+        $text = $this->normalizeUtf8($text);
         if ($text === '') {
             return '';
         }
@@ -748,6 +751,53 @@ class TenantProfileController extends Controller
         $text = preg_replace('/\r\n?/', "\n", $text) ?? $text;
         $text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
         $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
+
+        return trim($text);
+    }
+
+    private function sanitizeAssetForDisplay(BrandAsset $asset): BrandAsset
+    {
+        $asset->original_name = $this->normalizeUtf8((string) ($asset->original_name ?? ''));
+        $asset->path = trim((string) ($asset->path ?? ''));
+        $asset->mime = $this->normalizeUtf8((string) ($asset->mime ?? ''));
+        $asset->meta = is_array($asset->meta) ? $this->sanitizeRecursiveStrings($asset->meta) : [];
+
+        return $asset;
+    }
+
+    private function sanitizeRecursiveStrings(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            $sanitized = [];
+            foreach ($value as $key => $item) {
+                $sanitized[$key] = $this->sanitizeRecursiveStrings($item);
+            }
+
+            return $sanitized;
+        }
+
+        if (is_string($value)) {
+            return $this->normalizeUtf8($value);
+        }
+
+        return $value;
+    }
+
+    private function normalizeUtf8(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        $converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+        if (is_string($converted) && $converted !== '') {
+            $text = $converted;
+        }
+
+        $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+        if (is_string($sanitized) && $sanitized !== '') {
+            $text = $sanitized;
+        }
 
         return trim($text);
     }

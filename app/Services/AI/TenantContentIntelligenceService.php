@@ -473,8 +473,11 @@ class TenantContentIntelligenceService
      */
     private function extractKeywords(string $text): array
     {
-        $text = Str::lower($this->normalizeUtf8($text));
-        $text = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $text) ?? '';
+        $normalized = Str::lower($this->normalizeUtf8($text));
+        $text = @preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $normalized);
+        if (!is_string($text)) {
+            $text = preg_replace('/[^A-Za-z0-9\s]/', ' ', $normalized) ?? '';
+        }
         $tokens = preg_split('/\s+/', trim($text)) ?: [];
         $stopWords = [
             'questo', 'quella', 'quello', 'della', 'delle', 'degli', 'dello', 'nelle', 'nella', 'nello',
@@ -504,18 +507,16 @@ class TenantContentIntelligenceService
             return '';
         }
 
-        if (!mb_check_encoding($text, 'UTF-8')) {
-            $converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
-            if (is_string($converted) && $converted !== '') {
-                $text = $converted;
-            }
+        $converted = @mb_convert_encoding($text, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1252');
+        if (is_string($converted) && $converted !== '') {
+            $text = $converted;
         }
 
         $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
-        if (is_string($sanitized)) {
+        if (is_string($sanitized) && $sanitized !== '') {
             $text = $sanitized;
         }
 
-        return $text;
+        return trim($text);
     }
 }

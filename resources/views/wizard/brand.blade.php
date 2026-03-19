@@ -1654,29 +1654,26 @@
                             <div class="border-t border-gray-200 px-4 py-4">
                             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                                 @foreach($variableCandidateAssets as $asset)
-                                    @php
-                                        $assetId = (int) $asset->id;
-                                        $assetKind = strtolower((string) ($asset->kind ?? ''));
-                                        $assetLabel = (string) ($asset->original_name ?? basename((string) $asset->path));
-                                        $isSelectedForVariable = in_array($assetId, $selectedVariableAssetIds, true);
-                                    @endphp
+                                    @php($assetKind = strtolower((string) ($asset->kind ?? '')))
+                                    @php($assetLabel = (string) ($asset->original_name ?? basename((string) $asset->path)))
+                                    @php($isSelectedForVariable = in_array((int) $asset->id, $selectedVariableAssetIds, true))
                                     <label class="overflow-hidden rounded-xl border border-gray-200 bg-white">
                                         <div class="flex items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 p-2">
                                             <span class="inline-flex items-center gap-2 text-xs text-gray-600">
                                                 <input
                                                     type="checkbox"
                                                     name="asset_ids[]"
-                                                    value="{{ $assetId }}"
+                                                    value="{{ (int) $asset->id }}"
                                                     class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                                     @checked($isSelectedForVariable)
                                                 >
-                                                #{{ $assetId }}
+                                                #{{ (int) $asset->id }}
                                             </span>
                                             <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">{{ $assetKind }}</span>
                                         </div>
                                         @if(in_array($assetKind, ['image', 'logo'], true))
                                             <div class="aspect-square overflow-hidden bg-gray-100">
-                                                <img src="{{ asset('storage/' . ltrim($asset->path, '/')) }}" class="h-full w-full object-cover" alt="asset {{ $assetId }}">
+                                                <img src="{{ asset('storage/' . ltrim($asset->path, '/')) }}" class="h-full w-full object-cover" alt="asset {{ (int) $asset->id }}">
                                             </div>
                                         @elseif($assetKind === 'video')
                                             <div class="flex aspect-square items-center justify-center bg-slate-950 px-3 text-center text-xs font-semibold text-white">
@@ -1711,7 +1708,7 @@
                 @else
                     <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                         @foreach($assetVariableCatalog as $variable)
-                            @php
+                            <?php
                                 $variableId = (int) ($variable['id'] ?? 0);
                                 $varKind = (string) ($variable['kind'] ?? 'custom');
                                 $varName = (string) ($variable['name'] ?? 'variabile');
@@ -1735,7 +1732,7 @@
                                 $varVoiceMime = trim((string) ($variable['voice_asset_mime'] ?? data_get($variable, 'voice_asset.mime', 'audio/mpeg')));
                                 $varVoiceStatus = trim((string) ($variable['voice_status'] ?? data_get($varProfile, 'voice_reference.status', '')));
                                 $varVoiceProvider = trim((string) ($variable['voice_provider'] ?? data_get($varProfile, 'voice_reference.provider', '')));
-                            @endphp
+                            ?>
                             <article class="rounded-xl border border-gray-200 bg-white p-4">
                                 <div class="flex items-start justify-between gap-3">
                                     <div>
@@ -1815,10 +1812,10 @@
                                 @endif
                                 <div class="mt-3 grid grid-cols-4 gap-2">
                                     @foreach(array_slice($varAssets, 0, 4) as $assetPreview)
-                                        @php
+                                        <?php
                                             $assetPath = (string) ($assetPreview['path'] ?? '');
                                             $assetKind = (string) ($assetPreview['kind'] ?? '');
-                                        @endphp
+                                        ?>
                                         @if($assetPath !== '')
                                             <div class="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
                                                 @if($varCanonicalPath !== '' && $varCanonicalPath === $assetPath)
