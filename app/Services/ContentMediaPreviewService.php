@@ -77,6 +77,18 @@ class ContentMediaPreviewService
      */
     private function extractAssetVideoAndThumbnail(ContentItem $item): array
     {
+        $metaVideoPath = trim((string) data_get($item->ai_meta, 'video_generation.video_path', ''));
+        $metaThumbnailPath = trim((string) data_get($item->ai_meta, 'video_generation.thumbnail_path', ''));
+        $publicDisk = Storage::disk('public');
+
+        if ($metaVideoPath !== '' && $publicDisk->exists($metaVideoPath)) {
+            if ($metaThumbnailPath !== '' && !$publicDisk->exists($metaThumbnailPath)) {
+                $metaThumbnailPath = '';
+            }
+
+            return [$metaVideoPath, $metaThumbnailPath];
+        }
+
         $assetRaw = $item->assets ?? [];
         $assetList = is_string($assetRaw)
             ? (json_decode($assetRaw, true) ?: [])

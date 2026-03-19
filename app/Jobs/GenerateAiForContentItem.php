@@ -519,7 +519,11 @@ class GenerateAiForContentItem implements ShouldQueue
                     $metaNow['video_provider_last_used'] = (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai'));
                     $item->ai_meta = $metaNow;
 
-                    $assets = is_array($item->assets) ? $item->assets : [];
+                    $assets = array_values(array_filter(
+                        is_array($item->assets) ? $item->assets : [],
+                        fn ($asset) => !is_array($asset)
+                            || !in_array(strtolower(trim((string) ($asset['type'] ?? ''))), ['ai_generated_video', 'ai_generated_audio', 'ai_generated_thumbnail'], true)
+                    ));
                     foreach ($selectedBrandImagePaths as $brandPath) {
                         $assets[] = ['type' => 'brand_source', 'path' => $brandPath];
                     }
