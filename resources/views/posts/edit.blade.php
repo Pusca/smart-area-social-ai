@@ -2,21 +2,24 @@
 
 @section('content')
 @php
+    $metaVideoPath = trim((string) data_get($contentItem->ai_meta, 'video_generation.video_path', ''));
     $assetList = is_array($contentItem->assets ?? null) ? $contentItem->assets : [];
-    $videoPath = null;
-    foreach ($assetList as $asset) {
-        if (!is_array($asset)) {
-            continue;
-        }
-        $assetPath = trim((string) ($asset['path'] ?? ''));
-        if ($assetPath === '') {
-            continue;
-        }
-        $assetType = strtolower(trim((string) ($asset['type'] ?? '')));
-        $ext = strtolower((string) pathinfo($assetPath, PATHINFO_EXTENSION));
-        if (str_contains($assetType, 'video') || in_array($ext, ['mp4', 'mov', 'webm', 'm4v', 'avi'], true)) {
-            $videoPath = $assetPath;
-            break;
+    $videoPath = $metaVideoPath !== '' ? $metaVideoPath : null;
+    if ($videoPath === null) {
+        foreach ($assetList as $asset) {
+            if (!is_array($asset)) {
+                continue;
+            }
+            $assetPath = trim((string) ($asset['path'] ?? ''));
+            if ($assetPath === '') {
+                continue;
+            }
+            $assetType = strtolower(trim((string) ($asset['type'] ?? '')));
+            $ext = strtolower((string) pathinfo($assetPath, PATHINFO_EXTENSION));
+            if (str_contains($assetType, 'video') || in_array($ext, ['mp4', 'mov', 'webm', 'm4v', 'avi'], true)) {
+                $videoPath = $assetPath;
+                break;
+            }
         }
     }
 

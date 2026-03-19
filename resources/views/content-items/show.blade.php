@@ -30,21 +30,27 @@
         $hashtags = $item->ai_hashtags;
         $aiInfo = \App\Support\UiStatus::ai((string) $item->ai_status);
         $video = null;
+        $metaVideoPath = trim((string) data_get($item->ai_meta, 'video_generation.video_path', ''));
+        if ($metaVideoPath !== '') {
+            $video = asset('storage/' . ltrim($metaVideoPath, '/'));
+        }
         $assetsRaw = $item->assets ?? [];
         $assetsList = is_string($assetsRaw) ? (json_decode($assetsRaw, true) ?: []) : (is_array($assetsRaw) ? $assetsRaw : []);
-        foreach ($assetsList as $asset) {
-            if (!is_array($asset)) {
-                continue;
-            }
-            $assetPath = trim((string) ($asset['path'] ?? ''));
-            if ($assetPath === '') {
-                continue;
-            }
-            $assetType = strtolower(trim((string) ($asset['type'] ?? '')));
-            $ext = strtolower((string) pathinfo($assetPath, PATHINFO_EXTENSION));
-            if (str_contains($assetType, 'video') || in_array($ext, ['mp4', 'mov', 'webm', 'm4v', 'avi'], true)) {
-                $video = asset('storage/' . ltrim($assetPath, '/'));
-                break;
+        if ($video === null) {
+            foreach ($assetsList as $asset) {
+                if (!is_array($asset)) {
+                    continue;
+                }
+                $assetPath = trim((string) ($asset['path'] ?? ''));
+                if ($assetPath === '') {
+                    continue;
+                }
+                $assetType = strtolower(trim((string) ($asset['type'] ?? '')));
+                $ext = strtolower((string) pathinfo($assetPath, PATHINFO_EXTENSION));
+                if (str_contains($assetType, 'video') || in_array($ext, ['mp4', 'mov', 'webm', 'm4v', 'avi'], true)) {
+                    $video = asset('storage/' . ltrim($assetPath, '/'));
+                    break;
+                }
             }
         }
 

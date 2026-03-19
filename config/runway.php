@@ -20,4 +20,5 @@ return [
 
     'poll_interval' => (int) env('RUNWAY_VIDEO_POLL_INTERVAL', 8),
     'poll_timeout' => (int) env('RUNWAY_VIDEO_POLL_TIMEOUT', 420),
+    'playback_trim_seconds' => (float) env('RUNWAY_PLAYBACK_TRIM_SECONDS', 0.35),
 ];

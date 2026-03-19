@@ -470,14 +470,26 @@ class GenerateAiForContentItem implements ShouldQueue
                 $thumbPath = trim((string) ($videoResult['thumbnail_path'] ?? ''));
 
                 if ($videoPath !== '') {
+                    $videoPlaybackPostprocess = $this->postProcessGeneratedVideoForPlayback(
+                        item: $item,
+                        videoPath: $videoPath,
+                        provider: (string) ($videoResult['provider'] ?? data_get($item->ai_meta, 'video_provider', ''))
+                    );
+                    if (!empty($videoPlaybackPostprocess['video_path']) && is_string($videoPlaybackPostprocess['video_path'])) {
+                        $videoPath = (string) $videoPlaybackPostprocess['video_path'];
+                    }
+
                     $audioAttach = $this->maybeAttachAudioTrackToVideo(
                         item: $item,
                         videoPath: $videoPath,
                         speechSynthesis: $speechSynthesis
                     );
+                    $audioAttach['input_video_path'] = $videoPlaybackPostprocess['input_video_path'] ?? $videoPath;
+                    $audioAttach['postprocess'] = $videoPlaybackPostprocess;
                     if ((bool) ($audioAttach['applied'] ?? false) && !empty($audioAttach['video_path'])) {
                         $videoPath = (string) $audioAttach['video_path'];
                     }
+                    $this->logVideoAudioOutcome($item, $audioAttach);
 
                     $gridPreviewPath = $this->createLocalImagePlaceholder($item, $tenantProfile);
                     if (is_string($gridPreviewPath) && trim($gridPreviewPath) !== '') {
@@ -511,6 +523,7 @@ class GenerateAiForContentItem implements ShouldQueue
                         'request_summary' => $videoResult['request_summary'] ?? null,
                         'reference_input_summary' => $videoResult['reference_input_summary'] ?? null,
                         'audio' => $audioAttach,
+                        'playback_postprocess' => $videoPlaybackPostprocess,
                         'fallback' => $imageSourceFallback,
                         'provider_fallback' => $videoResult['provider_fallback'] ?? null,
                         'generated_at' => now()->toDateTimeString(),
@@ -6964,6 +6977,174 @@ SVG;
         return $process->isSuccessful() && is_file($targetAudioAbs) && filesize($targetAudioAbs) > 0;
     }
 
+    /**
+     * Ripulisce gli output video che richiedono una normalizzazione locale per la preview/playback.
+     *
+     * @return array{
+     *   applied:bool,
+     *   reason:string,
+     *   provider:string,
+     *   input_video_path:string,
+     *   video_path:string,
+     *   error:?string
+     * }
+     */
+    private function postProcessGeneratedVideoForPlayback(ContentItem $item, string $videoPath, string $provider): array
+    {
+        $videoPath = trim($videoPath);
+        $provider = strtolower(trim($provider));
+
+        if ($videoPath === '') {
+            return [
+                'applied' => false,
+                'reason' => 'missing_video_path',
+                'provider' => $provider,
+                'input_video_path' => '',
+                'video_path' => '',
+                'error' => null,
+            ];
+        }
+
+        if ($provider !== 'runway') {
+            return [
+                'applied' => false,
+                'reason' => 'provider_passthrough',
+                'provider' => $provider,
+                'input_video_path' => $videoPath,
+                'video_path' => $videoPath,
+                'error' => null,
+            ];
+        }
+
+        $trimSeconds = (float) config('runway.playback_trim_seconds', 0.35);
+        if ($trimSeconds <= 0) {
+            return [
+                'applied' => false,
+                'reason' => 'trim_disabled',
+                'provider' => $provider,
+                'input_video_path' => $videoPath,
+                'video_path' => $videoPath,
+                'error' => null,
+            ];
+        }
+
+        $publicDisk = Storage::disk('public');
+        if (!$publicDisk->exists($videoPath)) {
+            return [
+                'applied' => false,
+                'reason' => 'source_video_missing',
+                'provider' => $provider,
+                'input_video_path' => $videoPath,
+                'video_path' => $videoPath,
+                'error' => null,
+            ];
+        }
+
+        $ffmpeg = $this->resolveFfmpegBinary();
+        if (!$this->canRunBinary($ffmpeg)) {
+            return [
+                'applied' => false,
+                'reason' => 'ffmpeg_unavailable',
+                'provider' => $provider,
+                'input_video_path' => $videoPath,
+                'video_path' => $videoPath,
+                'error' => 'FFmpeg non disponibile sul server',
+            ];
+        }
+
+        $tmpDir = storage_path('app/tmp');
+        if (!is_dir($tmpDir)) {
+            @mkdir($tmpDir, 0775, true);
+        }
+
+        $sourceAbs = $publicDisk->path($videoPath);
+        $tempOutputAbs = $tmpDir . DIRECTORY_SEPARATOR . 'runway-playback-' . Str::uuid()->toString() . '.mp4';
+        $storedOutputPath = $videoPath;
+
+        try {
+            $process = new Process([
+                $ffmpeg,
+                '-y',
+                '-ss',
+                number_format($trimSeconds, 2, '.', ''),
+                '-i',
+                $sourceAbs,
+                '-map',
+                '0:v:0',
+                '-map',
+                '0:a?',
+                '-c:v',
+                'libx264',
+                '-preset',
+                'veryfast',
+                '-crf',
+                '22',
+                '-pix_fmt',
+                'yuv420p',
+                '-c:a',
+                'aac',
+                '-b:a',
+                '160k',
+                '-movflags',
+                '+faststart',
+                $tempOutputAbs,
+            ]);
+            $process->setTimeout(240);
+            $process->run();
+
+            if (!$process->isSuccessful() || !is_file($tempOutputAbs) || filesize($tempOutputAbs) <= 0) {
+                return [
+                    'applied' => false,
+                    'reason' => 'trim_process_failed',
+                    'provider' => $provider,
+                    'input_video_path' => $videoPath,
+                    'video_path' => $videoPath,
+                    'error' => Str::limit(trim((string) $process->getErrorOutput()) ?: trim((string) $process->getOutput()), 240, ''),
+                ];
+            }
+
+            $targetPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.mp4';
+            $bytes = @file_get_contents($tempOutputAbs);
+            if (!is_string($bytes) || $bytes === '') {
+                return [
+                    'applied' => false,
+                    'reason' => 'trim_output_empty',
+                    'provider' => $provider,
+                    'input_video_path' => $videoPath,
+                    'video_path' => $videoPath,
+                    'error' => null,
+                ];
+            }
+
+            $publicDisk->put($targetPath, $bytes);
+            if ($publicDisk->exists($targetPath)) {
+                $storedOutputPath = $targetPath;
+            }
+
+            return [
+                'applied' => $storedOutputPath !== $videoPath,
+                'reason' => $storedOutputPath !== $videoPath ? 'runway_trimmed_for_playback' : 'trim_store_failed',
+                'provider' => $provider,
+                'input_video_path' => $videoPath,
+                'video_path' => $storedOutputPath,
+                'error' => $storedOutputPath !== $videoPath ? null : 'Impossibile salvare il video normalizzato',
+            ];
+        } catch (Throwable $e) {
+            return [
+                'applied' => false,
+                'reason' => 'trim_exception',
+                'provider' => $provider,
+                'input_video_path' => $videoPath,
+                'video_path' => $videoPath,
+                'error' => Str::limit($e->getMessage(), 240, ''),
+            ];
+        } finally {
+            if (is_file($tempOutputAbs)) {
+                @unlink($tempOutputAbs);
+            }
+        }
+    }
+
     private function muxVideoWithAudioTrack(string $sourceVideoAbs, string $audioAbs, string $targetVideoAbs, string $ffmpegBinary): bool
     {
         $process = new Process([
@@ -6996,6 +7177,34 @@ SVG;
         $process->run();
 
         return $process->isSuccessful() && is_file($targetVideoAbs) && filesize($targetVideoAbs) > 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $audioAttach
+     */
+    private function logVideoAudioOutcome(ContentItem $item, array $audioAttach): void
+    {
+        $context = [
+            'content_item_id' => $item->id,
+            'reason' => (string) ($audioAttach['reason'] ?? ''),
+            'applied' => (bool) ($audioAttach['applied'] ?? false),
+            'source' => $audioAttach['source'] ?? null,
+            'provider' => $audioAttach['provider'] ?? null,
+            'voice_id' => $audioAttach['voice_id'] ?? null,
+            'voice_label' => $audioAttach['voice_label'] ?? null,
+            'video_path' => $audioAttach['video_path'] ?? null,
+            'audio_path' => $audioAttach['audio_path'] ?? null,
+            'error' => $audioAttach['error'] ?? null,
+            'postprocess_reason' => data_get($audioAttach, 'postprocess.reason'),
+            'postprocess_applied' => (bool) data_get($audioAttach, 'postprocess.applied', false),
+        ];
+
+        if ((bool) ($audioAttach['applied'] ?? false)) {
+            Log::info('GenerateAiForContentItem video audio attached', $context);
+            return;
+        }
+
+        Log::warning('GenerateAiForContentItem video audio skipped', $context);
     }
 
     private function videoHasAudioStream(string $videoAbsPath, string $ffprobeBinary): bool
