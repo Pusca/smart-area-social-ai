@@ -32,18 +32,21 @@ class SpeechSynthesisService
             return null;
         }
 
+        $voiceId = trim((string) data_get($voiceContext, 'provider_voice_id', ''));
+        $samplePath = trim((string) data_get($voiceContext, 'asset_path', ''));
+        $sampleName = trim((string) data_get($voiceContext, 'asset_name', ''));
+        $preferredProvider = trim((string) data_get($voiceContext, 'provider', ''));
+        $cloneProviderDefault = strtolower(trim((string) config('generation.voice_clone_provider_default', 'elevenlabs')));
         $provider = SpeechProviderResolver::resolve(
-            (string) data_get($voiceContext, 'provider', data_get($providerMatrix, 'speech.provider', '')),
+            $preferredProvider !== ''
+                ? $preferredProvider
+                : (($voiceId !== '' || $samplePath !== '') ? $cloneProviderDefault : (string) data_get($providerMatrix, 'speech.provider', '')),
             SpeechProviderResolver::default()
         );
 
         if ($provider !== 'elevenlabs' || !$this->elevenLabs->isConfigured()) {
             return null;
         }
-
-        $voiceId = trim((string) data_get($voiceContext, 'provider_voice_id', ''));
-        $samplePath = trim((string) data_get($voiceContext, 'asset_path', ''));
-        $sampleName = trim((string) data_get($voiceContext, 'asset_name', ''));
 
         if ($voiceId === '' && $samplePath !== '' && Storage::disk('public')->exists($samplePath)) {
             $clone = $this->elevenLabs->createVoiceClone(

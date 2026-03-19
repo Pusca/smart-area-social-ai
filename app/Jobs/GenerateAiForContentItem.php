@@ -1216,18 +1216,24 @@ SVG;
         if (empty($imageReferencePathPool) && is_string($imageReferencePath) && $imageReferencePath !== '') {
             $imageReferencePathPool = [$imageReferencePath];
         }
+        $videoControlContext = $this->videoSubjectContextText($meta, $briefRaw !== '' ? $briefRaw : $prompt, (string) data_get($meta, 'video_prompt', ''));
         [$imageReferenceAbsPool, $imageReferencePathPool] = $this->prioritizeVideoReferencePoolsForPersonVariable(
             $imageReferenceAbsPool,
             $imageReferencePathPool,
-            $assetVariables
+            $assetVariables,
+            $meta,
+            $videoControlContext
         );
         $locationSequenceMode = $hasExplicitReferences
             && count($imageReferenceAbsPool) >= 2
             && $this->hasProtectedLocationEnvelope($assetVariables, $imageReferencePathPool);
         $mustEnforceExplicitReferences = $hasExplicitReferences && !empty($imageReferenceAbsPool) && !$locationSequenceMode;
+        $dualSubjectLock = $this->videoNeedsDualSubjectLock($meta, $videoControlContext, $assetVariables);
         $klingIdentityBoardMode = $videoProvider === 'kling'
+            && !$dualSubjectLock
             && $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool);
         $runwayPrimaryAnchorMode = $videoProvider === 'runway'
+            && !$dualSubjectLock
             && Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel'
             && count($imageReferenceAbsPool) >= 2;
         $validationReferenceAbsPool = array_values(array_slice($imageReferenceAbsPool, 0, 4));
@@ -1688,6 +1694,11 @@ SVG;
         $parts[] = 'Niente testo in sovraimpressione, niente watermark, niente loghi inventati, niente look da spot corporate.';
         $parts[] = 'Se compaiono persone, devono sembrare reali, spontanee e coerenti con il contesto.';
         $parts[] = $this->personIdentityVideoInstruction($assetVariables);
+        $parts[] = $this->subjectLockVideoInstruction(
+            $meta,
+            $this->videoSubjectContextText($meta, $briefRaw, (string) data_get($meta, 'video_prompt', '')),
+            $assetVariables
+        );
         $parts[] = $this->feedbackDrivenVideoInstruction($activeFeedbackRequest, $assetVariables, $locationSequenceMode);
 
         if ($locationSequenceMode) {
@@ -1799,15 +1810,27 @@ SVG;
         $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
         $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
         $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
-        $mainSubject = $hasPersonVariable
-            ? 'la persona reale del brand, uguale ai riferimenti'
-            : 'il soggetto principale del contenuto, riconoscibile da subito';
-        $anchor = $hasPersonVariable
-            ? 'medium shot verticale della persona reale del brand nel contesto vero, subito riconoscibile'
-            : 'hero frame verticale pulito del soggetto principale nel contesto reale del brand';
-        $continuity = $hasPersonVariable
-            ? 'mantieni sempre la stessa persona, stesso volto, stessi lineamenti e stessa presenza'
-            : 'mantieni lo stesso spazio, lo stesso soggetto principale e la stessa palette del brand';
+        $controlContext = $this->videoSubjectContextText($meta, (string) data_get($meta, 'manual_brief', ''), $videoPrompt);
+        $needsDualSubjectLock = $this->videoNeedsDualSubjectLock($meta, $controlContext, $assetVariables);
+        $productLabel = $this->productLikeRowName($this->primaryVideoProductLikeRow($meta, $assetVariables, $controlContext));
+        $productLabel = $productLabel !== '' ? $productLabel : 'il veicolo o prodotto reale richiesto';
+
+        if ($needsDualSubjectLock) {
+            $mainSubject = "la persona reale del brand insieme a {$productLabel}";
+            $anchor = "hero frame verticale con la persona reale del brand e {$productLabel} chiaramente visibili nello stesso shot";
+            $continuity = "mantieni sempre la stessa persona, stessi lineamenti e {$productLabel} con marca, modello e colore coerenti tra gli shot";
+        } else {
+            $mainSubject = $hasPersonVariable
+                ? 'la persona reale del brand, uguale ai riferimenti'
+                : 'il soggetto principale del contenuto, riconoscibile da subito';
+            $anchor = $hasPersonVariable
+                ? 'medium shot verticale della persona reale del brand nel contesto vero, subito riconoscibile'
+                : 'hero frame verticale pulito del soggetto principale nel contesto reale del brand';
+            $continuity = $hasPersonVariable
+                ? 'mantieni sempre la stessa persona, stesso volto, stessi lineamenti e stessa presenza'
+                : 'mantieni lo stesso spazio, lo stesso soggetto principale e la stessa palette del brand';
+        }
+
         $payoff = $angle !== ''
             ? "chiusura pulita che fa percepire {$angle}"
             : 'chiusura pulita con payoff visivo coerente con il brand';
@@ -1815,6 +1838,13 @@ SVG;
             ? "apertura forte entro il primo secondo per far percepire {$objective}"
             : 'apertura forte entro il primo secondo con soggetto chiaro e leggibile';
         $toneHint = $tone !== '' ? "con tono {$tone}" : 'con tono coerente al brand';
+
+        $shotTwoSubject = $needsDualSubjectLock
+            ? "{$productLabel} in evidenza con interazione credibile della persona reale del brand"
+            : $mainSubject;
+        $shotThreeSubject = $needsDualSubjectLock
+            ? "payoff finale con persona reale del brand e {$productLabel} ancora presenti e riconoscibili"
+            : $mainSubject;
 
         return [
             'hook' => $hook,
@@ -1832,14 +1862,14 @@ SVG;
                 [
                     'order' => 2,
                     'purpose' => $angle !== '' ? "sviluppo dell angolo {$angle}" : 'sviluppo del contesto e del valore del contenuto',
-                    'subject' => $mainSubject,
+                    'subject' => $shotTwoSubject,
                     'camera' => 'angolazione diversa ma coerente',
                     'motion' => 'tracking morbido o micro parallax',
                 ],
                 [
                     'order' => 3,
                     'purpose' => $objective !== '' ? "chiusura che spinge {$objective}" : 'payoff finale del reel',
-                    'subject' => $mainSubject,
+                    'subject' => $shotThreeSubject,
                     'camera' => 'close medium o dettaglio premium',
                     'motion' => 'movimento pulito e conclusivo',
                 ],
@@ -1906,6 +1936,10 @@ SVG;
         $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
         $series = trim((string) data_get($meta, 'item_brain.series', data_get($meta, 'editorial.series', '')));
         $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+        $controlContext = $this->videoSubjectContextText($meta, (string) data_get($meta, 'manual_brief', ''), $videoPrompt);
+        $needsDualSubjectLock = $this->videoNeedsDualSubjectLock($meta, $controlContext, $assetVariables);
+        $productLabel = $this->productLikeRowName($this->primaryVideoProductLikeRow($meta, $assetVariables, $controlContext));
+        $productLabel = $productLabel !== '' ? $productLabel : 'il veicolo o prodotto richiesto nel brief';
         $blueprint = $this->normalizeReelBlueprint(
             blueprint: is_array(data_get($meta, 'reel_blueprint', [])) ? (array) data_get($meta, 'reel_blueprint', []) : [],
             item: $item,
@@ -1919,6 +1953,7 @@ SVG;
         $parts[] = 'Costruisci il contenuto come un vero reel social di 3-5 shot concatenati, non come una clip piatta o ripetitiva.';
         $parts[] = 'Mantieni un hook visivo entro il primo secondo, con soggetto chiaro e subito leggibile.';
         $parts[] = 'Deve sembrare un reel nativo da feed Instagram: stop-scroll, ritmo chiaro, soggetto forte, non una brochure animata.';
+        $parts[] = 'Look live-action premium, fotorealistico, con pelle vera, riflessi reali su metallo e carrozzeria, ottiche credibili e movimento naturale.';
         if ($objective !== '') {
             $parts[] = "Obiettivo strategico da far percepire nel reel: {$objective}.";
         }
@@ -1933,6 +1968,11 @@ SVG;
         }
         if ($hasPersonVariable) {
             $parts[] = 'Se compare la persona del brand, deve restare la stessa in tutti gli shot del reel.';
+        }
+        if ($needsDualSubjectLock) {
+            $parts[] = "Vincolo visivo: la persona del brand e {$productLabel} devono restare entrambi presenti e riconoscibili.";
+            $parts[] = "Non trasformare il reel in un portrait della sola persona: {$productLabel} deve essere ben visibile gia nel hook, nello sviluppo e nel payoff finale.";
+            $parts[] = "Se il brief indica marca, modello o colore di {$productLabel}, rispettali senza reinterpretarli.";
         }
         if (!empty($blueprint)) {
             $parts[] = 'Hook: ' . (string) ($blueprint['hook'] ?? '');
@@ -1982,12 +2022,23 @@ SVG;
         $series = trim((string) data_get($meta, 'item_brain.series', data_get($meta, 'editorial.series', '')));
         $isReel = Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel';
         $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
+        $controlContext = $this->videoSubjectContextText($meta, (string) data_get($meta, 'manual_brief', ''), $videoPrompt);
+        $needsDualSubjectLock = $this->videoNeedsDualSubjectLock($meta, $controlContext, $assetVariables);
+        $productLabel = $this->productLikeRowName($this->primaryVideoProductLikeRow($meta, $assetVariables, $controlContext));
+        $productLabel = $productLabel !== '' ? $productLabel : 'il veicolo o prodotto richiesto nel brief';
 
         $parts = [$videoPrompt];
-        $parts[] = 'Kling execution rule: if multiple reference images are present, they describe the same real subject from different angles, not different people.';
-        $parts[] = 'Keep one single subject identity across the full video: same face, same age perception, same hair, same body proportions, same overall presence.';
+        if ($needsDualSubjectLock) {
+            $parts[] = 'Kling execution rule: the references describe one coherent scene with two fixed anchors, the brand person and the requested product or vehicle.';
+            $parts[] = "Keep both anchors stable across the full video: same face, same age perception, same hair and same body proportions for the person; same model, same color and same proportions for {$productLabel}.";
+            $parts[] = "Do not let the person replace {$productLabel} and do not let {$productLabel} disappear after the first shot.";
+        } else {
+            $parts[] = 'Kling execution rule: if multiple reference images are present, they describe the same real subject from different angles, not different people.';
+            $parts[] = 'Keep one single subject identity across the full video: same face, same age perception, same hair, same body proportions, same overall presence.';
+        }
         $parts[] = 'Change scene, camera, gesture, styling and lighting only when useful, but do not drift identity.';
         $parts[] = 'No duplicate subject, no face swap, no identity drift, no extra people replacing the brand subject.';
+        $parts[] = 'Live-action photorealism only: real skin texture, real lens behavior, realistic reflections on metal and paint, natural motion, no stylized rendering.';
 
         if ($isReel) {
             $parts[] = 'Build a vertical 9:16 social reel with 3 to 5 clear shots, a fast hook in the first second and a clean visual payoff at the end.';
@@ -2008,6 +2059,10 @@ SVG;
         }
         if ($hasPersonVariable) {
             $parts[] = 'Use the persona pack as an identity board first, and only secondarily as style guidance.';
+        }
+        if ($needsDualSubjectLock) {
+            $parts[] = "The person and {$productLabel} must both be visible in the opening hook and return again in the final payoff shot.";
+            $parts[] = "If the brief specifies brand, model or color for {$productLabel}, preserve them exactly.";
         }
         if ($this->feedbackTargetsVisual($activeFeedbackRequest)) {
             $parts[] = 'This generation follows a correction request: the new result must visibly improve, not just slightly vary the previous cut.';
@@ -2837,6 +2892,13 @@ SVG;
             'plastic skin',
             'cartoon look',
             'cgi render',
+            '3d animation',
+            'anime style',
+            'illustration style',
+            'beauty filter face',
+            'doll face',
+            'toy car look',
+            'video game cinematic look',
             'text overlay',
             'watermark',
             'fake logo',
@@ -3581,6 +3643,189 @@ SVG;
         return count($persons) === 1 ? $persons[0] : null;
     }
 
+    private function videoSubjectContextText(array $meta, string $briefRaw = '', string $videoPrompt = ''): string
+    {
+        $parts = [
+            trim($briefRaw),
+            trim((string) data_get($meta, 'manual_brief', '')),
+            trim($videoPrompt),
+            trim((string) data_get($meta, 'video_prompt', '')),
+            trim((string) data_get($meta, 'item_brain.angle', '')),
+            trim((string) data_get($meta, 'editorial.angle', '')),
+        ];
+
+        return $this->normalizeText(implode(' ', array_values(array_unique(array_filter(
+            $parts,
+            fn ($value) => is_string($value) && trim($value) !== ''
+        )))));
+    }
+
+    private function videoNeedsDualSubjectLock(array $meta, string $contextText, array $assetVariables): bool
+    {
+        if (!$this->hasPersonAssetVariable($assetVariables)) {
+            return false;
+        }
+
+        return $this->primaryVideoProductLikeRow($meta, $assetVariables, $contextText) !== null;
+    }
+
+    private function subjectLockVideoInstruction(array $meta, string $contextText, array $assetVariables): string
+    {
+        if (!$this->videoNeedsDualSubjectLock($meta, $contextText, $assetVariables)) {
+            return '';
+        }
+
+        $productLabel = $this->productLikeRowName($this->primaryVideoProductLikeRow($meta, $assetVariables, $contextText));
+        if ($productLabel === '') {
+            $productLabel = 'il veicolo o prodotto richiesto nel brief';
+        }
+
+        return "Vincolo di scena: la persona del brand e {$productLabel} devono restare entrambi soggetti principali del reel. Non trasformare il video in un ritratto della sola persona: {$productLabel} deve essere chiaramente visibile nel hook, nello sviluppo e nel payoff finale. Se il brief specifica marca, modello o colore, rispettali senza cambiarli.";
+    }
+
+    private function primaryVideoProductLikeRow(array $meta, array $assetVariables, string $contextText = ''): ?array
+    {
+        $candidates = [];
+
+        foreach ((array) data_get($meta, 'asset_identity.slots', []) as $row) {
+            if (is_array($row)) {
+                $candidates[] = $row;
+            }
+        }
+
+        foreach ($this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', [])) as $row) {
+            if (is_array($row)) {
+                $candidates[] = $row;
+            }
+        }
+
+        foreach ($candidates as $row) {
+            if ($this->rowLooksProductLike($row)) {
+                return $row;
+            }
+
+            $kind = strtolower(trim((string) ($row['kind'] ?? 'custom')));
+            if ($kind !== 'person' && $kind !== 'location' && $contextText !== '' && $this->assetVariableMatchesBrief($contextText, $row)) {
+                return $row;
+            }
+        }
+
+        if ($this->videoContextMentionsProduct($contextText)) {
+            return [
+                'name' => $this->extractProductHintFromContext($contextText),
+                'kind' => 'product',
+                'asset_role' => 'hero_product',
+            ];
+        }
+
+        return null;
+    }
+
+    private function rowLooksProductLike(array $row): bool
+    {
+        $kind = strtolower(trim((string) ($row['kind'] ?? 'custom')));
+        if ($kind === 'product') {
+            return true;
+        }
+
+        $haystack = $this->normalizeText(implode(' ', array_filter([
+            (string) ($row['name'] ?? ''),
+            (string) ($row['slug'] ?? ''),
+            (string) ($row['asset_role'] ?? ''),
+            (string) ($row['description'] ?? ''),
+            (string) data_get($row, 'profile.role', ''),
+            (string) data_get($row, 'profile.identity_summary', ''),
+            (string) data_get($row, 'profile.descriptor.summary', ''),
+        ])));
+
+        foreach (['product', 'prodotto', 'hero product', 'hero_product', 'vehicle', 'veicolo', 'auto', 'car', 'ferrari', 'lamborghini', 'porsche', 'mercedes', 'bmw', 'audi', 'alfa romeo', 'maserati', 'tesla', 'suv', 'coupe', 'spyder', 'supercar'] as $needle) {
+            $needle = $this->normalizeText($needle);
+            if ($needle !== '' && str_contains(' ' . $haystack . ' ', ' ' . $needle . ' ')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function videoContextMentionsProduct(string $contextText): bool
+    {
+        $contextText = $this->normalizeText($contextText);
+        if ($contextText === '') {
+            return false;
+        }
+
+        foreach (['ferrari', 'lamborghini', 'porsche', 'bmw', 'mercedes', 'audi', 'maserati', 'tesla', 'auto', 'macchina', 'car', 'vehicle', 'veicolo', 'prodotto', 'modello', 'supercar', 'suv', 'coupe', 'spyder', 'cabrio', 'roadster'] as $needle) {
+            $needle = $this->normalizeText($needle);
+            if ($needle !== '' && str_contains(' ' . $contextText . ' ', ' ' . $needle . ' ')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function extractProductHintFromContext(string $contextText): string
+    {
+        $normalized = $this->normalizeText($contextText);
+        if ($normalized === '') {
+            return '';
+        }
+
+        $brand = '';
+        foreach (['ferrari', 'lamborghini', 'porsche', 'maserati', 'bmw', 'mercedes', 'audi', 'tesla', 'alfa romeo'] as $candidate) {
+            $needle = $this->normalizeText($candidate);
+            if ($needle !== '' && str_contains(' ' . $normalized . ' ', ' ' . $needle . ' ')) {
+                $brand = $candidate;
+                break;
+            }
+        }
+
+        $color = '';
+        foreach (['rossa', 'rosso', 'red', 'nera', 'nero', 'black', 'bianca', 'bianco', 'white', 'gialla', 'giallo', 'yellow', 'blu', 'blue', 'grigia', 'grigio', 'grey', 'gray'] as $candidate) {
+            $needle = $this->normalizeText($candidate);
+            if ($needle !== '' && str_contains(' ' . $normalized . ' ', ' ' . $needle . ' ')) {
+                $color = $candidate;
+                break;
+            }
+        }
+
+        if ($brand !== '' && $color !== '') {
+            return trim($brand . ' ' . $color);
+        }
+        if ($brand !== '') {
+            return $brand;
+        }
+        if ($color !== '') {
+            return 'auto ' . $color;
+        }
+        if ($this->videoContextMentionsProduct($normalized)) {
+            return 'il veicolo o prodotto richiesto nel brief';
+        }
+
+        return '';
+    }
+
+    private function productLikeRowName(?array $row): string
+    {
+        if (!is_array($row)) {
+            return '';
+        }
+
+        $name = trim((string) ($row['name'] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $descriptor = trim((string) (
+            ($row['description'] ?? '')
+            ?: data_get($row, 'profile.identity_summary', '')
+            ?: data_get($row, 'profile.descriptor.summary', '')
+        ));
+
+        return $descriptor;
+    }
+
     private function needsWellnessSafetyLanguage(string $text): bool
     {
         $normalized = Str::lower($this->normalizeText($text));
@@ -3620,8 +3865,14 @@ SVG;
     private function prioritizeVideoReferencePoolsForPersonVariable(
         array $imageReferenceAbsPool,
         array $imageReferencePathPool,
-        array $assetVariables
+        array $assetVariables,
+        array $meta = [],
+        string $contextText = ''
     ): array {
+        if ($this->videoNeedsDualSubjectLock($meta, $contextText, $assetVariables)) {
+            return [$imageReferenceAbsPool, $imageReferencePathPool];
+        }
+
         $row = $this->singleResolvedPersonVariable($assetVariables);
         if ($row === null) {
             return [$imageReferenceAbsPool, $imageReferencePathPool];
@@ -5919,7 +6170,7 @@ SVG;
                 'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
-                'error' => null,
+                'error' => 'FFmpeg non disponibile sul server',
             ];
         }
         $ffprobeAvailable = $this->canRunBinary($ffprobe);
@@ -5935,7 +6186,7 @@ SVG;
                 'voice_label' => null,
                 'video_path' => $videoPath,
                 'audio_path' => null,
-                'error' => null,
+                'error' => 'FFprobe non disponibile sul server',
             ];
         }
 
@@ -6060,7 +6311,7 @@ SVG;
                     'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
-                    'error' => $error,
+                    'error' => $error ?: 'FFmpeg non è riuscito ad agganciare l audio al video',
                 ];
             }
 
