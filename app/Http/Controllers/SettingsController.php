@@ -38,6 +38,10 @@ class SettingsController extends Controller
         $imagesCount = $assets->where('kind', 'image')->count();
         $videosCount = $assets->where('kind', 'video')->count();
         $audiosCount = $assets->where('kind', 'audio')->count();
+        $documentsCount = $assets->where('kind', 'document')->count();
+        $textsCount = $assets->where('kind', 'text')->count();
+        $linksCount = $assets->where('kind', 'link')->count();
+        $knowledgeAssetsCount = $documentsCount + $textsCount + $linksCount;
         $activeSocialAccounts = $socialAccounts->where('status', 'active');
         $connectedPlatforms = $activeSocialAccounts->pluck('platform')->filter()->unique()->values();
         $fineTuning = $tenantFineTuningService->previewStats($tenantId);
@@ -58,7 +62,7 @@ class SettingsController extends Controller
             [
                 'label' => 'Materiali brand',
                 'ready' => $logosCount > 0 && $imagesCount >= 3,
-                'hint' => 'Carica logo e almeno alcune immagini reali.',
+                'hint' => 'Carica logo, immagini reali e materiali di conoscenza utili.',
                 'href' => route('profile.brand') . '#brand-assets-section',
             ],
             [
@@ -94,6 +98,7 @@ class SettingsController extends Controller
             'imagesCount' => $imagesCount,
             'videosCount' => $videosCount,
             'audiosCount' => $audiosCount,
+            'knowledgeAssetsCount' => $knowledgeAssetsCount,
             'activeSocialAccounts' => $activeSocialAccounts,
             'connectedPlatforms' => $connectedPlatforms,
             'setupChecks' => $setupChecks,

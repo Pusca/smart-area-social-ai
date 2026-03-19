@@ -66,6 +66,9 @@ class TenantContentIntelligenceService
                 'images' => (int) ($assetCounts['image'] ?? 0),
                 'videos' => (int) ($assetCounts['video'] ?? 0),
                 'audios' => (int) ($assetCounts['audio'] ?? 0),
+                'documents' => (int) ($assetCounts['document'] ?? 0),
+                'texts' => (int) ($assetCounts['text'] ?? 0),
+                'links' => (int) ($assetCounts['link'] ?? 0),
             ],
             'asset_library' => $assetLibrary,
             'memory' => [
@@ -288,6 +291,9 @@ class TenantContentIntelligenceService
             'images' => $this->summarizeAssetGroup($grouped->get('image', collect()), $perKindLimit),
             'videos' => $this->summarizeAssetGroup($grouped->get('video', collect()), $perKindLimit),
             'audios' => $this->summarizeAssetGroup($grouped->get('audio', collect()), $perKindLimit),
+            'documents' => $this->summarizeAssetGroup($grouped->get('document', collect()), $perKindLimit),
+            'texts' => $this->summarizeAssetGroup($grouped->get('text', collect()), $perKindLimit),
+            'links' => $this->summarizeAssetGroup($grouped->get('link', collect()), $perKindLimit),
         ];
 
         $signals = $assets
@@ -306,7 +312,17 @@ class TenantContentIntelligenceService
             ->values()
             ->all();
 
+        $knowledgeSources = collect(array_merge(
+            $library['documents'],
+            $library['texts'],
+            $library['links']
+        ))
+            ->take($signalLimit)
+            ->values()
+            ->all();
+
         return $library + [
+            'knowledge_sources' => $knowledgeSources,
             'identity_signals' => $signals,
             'upload_notes' => $notes,
         ];
@@ -338,6 +354,10 @@ class TenantContentIntelligenceService
         $variableKind = trim((string) (data_get($meta, 'variable_kind', '') ?: data_get($meta, 'identity_kind', '')));
         $slot = trim((string) data_get($meta, 'slot', ''));
         $slotLabel = trim((string) data_get($meta, 'slot_label', ''));
+        $sourceLabel = trim((string) (data_get($meta, 'source_label', '') ?: data_get($meta, 'text_title', '')));
+        $sourceUrl = trim((string) data_get($meta, 'source_url', ''));
+        $contentOrigin = trim((string) data_get($meta, 'content_origin', ''));
+        $knowledgeText = trim((string) (data_get($meta, 'text_excerpt', '') ?: data_get($meta, 'knowledge_text', '')));
         $linkedVariables = collect((array) data_get($meta, 'linked_variable_slugs', []))
             ->map(fn ($value) => trim((string) $value))
             ->filter(fn (string $value) => $value !== '')
@@ -349,13 +369,17 @@ class TenantContentIntelligenceService
             $this->extractKeywords($label),
             $this->extractKeywords($notes),
             $this->extractKeywords($variableName),
-            $this->extractKeywords($slotLabel)
+            $this->extractKeywords($slotLabel),
+            $this->extractKeywords($sourceLabel),
+            $this->extractKeywords(Str::limit($knowledgeText, 180, ''))
         )), 0, 8)));
 
         $hintParts = array_values(array_filter([
             $variableName !== '' ? 'identita ' . $variableName : '',
             $slotLabel !== '' ? 'slot ' . $slotLabel : '',
+            $sourceLabel !== '' ? 'titolo ' . $sourceLabel : '',
             $notes !== '' ? $notes : '',
+            $knowledgeText !== '' ? Str::limit($knowledgeText, 120, '') : '',
             $source !== '' ? 'source ' . $source : '',
         ]));
 
@@ -370,6 +394,10 @@ class TenantContentIntelligenceService
             'slot' => $slot,
             'slot_label' => $slotLabel,
             'notes' => Str::limit($this->normalizeUtf8($notes), 180, ''),
+            'content_origin' => $contentOrigin,
+            'source_label' => Str::limit($this->normalizeUtf8($sourceLabel), 120, ''),
+            'source_url' => Str::limit($this->normalizeUtf8($sourceUrl), 220, ''),
+            'text_excerpt' => Str::limit($this->normalizeUtf8($knowledgeText), 240, ''),
             'training_priority' => trim((string) data_get($meta, 'training_priority', '')),
             'is_identity_anchor' => (bool) data_get($meta, 'is_canonical_for_identity', false),
             'linked_variables' => $linkedVariables,
@@ -387,13 +415,18 @@ class TenantContentIntelligenceService
             'image' => 'foto',
             'video' => 'video',
             'audio' => 'voce/audio',
+            'document' => 'documento',
+            'text' => 'nota',
+            'link' => 'link',
             default => 'asset',
         };
 
         $parts = [
             trim((string) data_get($meta, 'variable_name', '')),
             trim((string) data_get($meta, 'slot_label', '')),
+            trim((string) data_get($meta, 'source_label', '')),
             trim((string) data_get($meta, 'grounding_notes', '')),
+            trim((string) data_get($meta, 'text_excerpt', data_get($meta, 'knowledge_text', ''))),
         ];
 
         $parts = array_values(array_filter(array_map(

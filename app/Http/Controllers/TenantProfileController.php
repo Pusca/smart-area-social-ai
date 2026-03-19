@@ -17,6 +17,7 @@ use App\Support\GenerationExecution;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -175,7 +176,15 @@ class TenantProfileController extends Controller
             'videos.*' => 'file|mimes:mp4,mov,webm|max:51200',
             'audios' => 'nullable|array',
             'audios.*' => 'file|mimes:mp3,wav,m4a,ogg,webm|max:20480',
+            'documents' => 'nullable|array|max:12',
+            'documents.*' => 'file|mimetypes:application/pdf,text/plain,text/csv,text/html,text/markdown,application/json,application/xml,text/xml,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation|max:20480',
             'asset_upload_notes' => 'nullable|string|max:1200',
+            'knowledge_text_title' => 'nullable|string|max:160',
+            'knowledge_text_body' => 'nullable|string|max:6000',
+            'knowledge_text_notes' => 'nullable|string|max:1200',
+            'reference_link_label' => 'nullable|string|max:160',
+            'reference_link_url' => 'nullable|url|max:1500',
+            'reference_link_notes' => 'nullable|string|max:1200',
 
             'strategy_action' => 'nullable|string|in:save,regenerate',
             'strategy_locked' => 'nullable|boolean',
@@ -280,6 +289,33 @@ class TenantProfileController extends Controller
                     );
                 }
             }
+
+            if ($request->hasFile('documents')) {
+                foreach ((array) $request->file('documents') as $document) {
+                    $this->storeBrandAssetUpload(
+                        tenantId: $tenantId,
+                        file: $document,
+                        kind: 'document',
+                        directory: $baseDir . '/documents',
+                        notes: $assetUploadNotes,
+                        meta: $this->buildDocumentAssetMeta($document)
+                    );
+                }
+            }
+
+            $this->storeBrandKnowledgeText(
+                tenantId: $tenantId,
+                title: (string) ($data['knowledge_text_title'] ?? ''),
+                body: (string) ($data['knowledge_text_body'] ?? ''),
+                notes: (string) ($data['knowledge_text_notes'] ?? '')
+            );
+
+            $this->storeBrandLinkReference(
+                tenantId: $tenantId,
+                label: (string) ($data['reference_link_label'] ?? ''),
+                url: (string) ($data['reference_link_url'] ?? ''),
+                notes: (string) ($data['reference_link_notes'] ?? '')
+            );
 
             $strategyAction = (string) ($data['strategy_action'] ?? 'save');
             $currentStrategy = $this->editorialStrategyService->forTenant($tenantId);
@@ -525,17 +561,18 @@ class TenantProfileController extends Controller
         ?UploadedFile $file,
         string $kind,
         string $directory,
-        string $notes = ''
+        string $notes = '',
+        array $meta = []
     ): ?BrandAsset {
         if (!$file instanceof UploadedFile) {
             return null;
         }
 
         $path = $file->store($directory, 'public');
-        $meta = [
+        $meta = array_merge([
             'source' => 'brand_center',
             'ingestion_scope' => 'tenant_library',
-        ];
+        ], $meta);
 
         if ($notes !== '') {
             $meta['grounding_notes'] = $notes;
@@ -551,6 +588,168 @@ class TenantProfileController extends Controller
             'mime' => $file->getMimeType(),
             'meta' => $meta,
         ]);
+    }
+
+    private function storeBrandKnowledgeText(
+        int $tenantId,
+        string $title,
+        string $body,
+        string $notes = ''
+    ): ?BrandAsset {
+        $body = $this->normalizeInlineText($body);
+        if ($body === '') {
+            return null;
+        }
+
+        $title = trim($title);
+        $excerpt = $this->buildKnowledgeExcerpt($body, 420);
+        $meta = [
+            'source' => 'brand_center',
+            'ingestion_scope' => 'tenant_library',
+            'content_origin' => 'manual_text_entry',
+            'text_title' => $title,
+            'knowledge_text' => $this->buildKnowledgeExcerpt($body, 2400),
+            'text_excerpt' => $excerpt,
+        ];
+
+        if ($notes = $this->normalizeInlineText($notes)) {
+            $meta['grounding_notes'] = $notes;
+        }
+
+        return BrandAsset::query()->create([
+            'tenant_id' => $tenantId,
+            'content_plan_id' => null,
+            'kind' => 'text',
+            'path' => '',
+            'original_name' => Str::limit($title !== '' ? $title : $excerpt, 180, ''),
+            'size' => strlen($body),
+            'mime' => 'text/plain',
+            'meta' => $meta,
+        ]);
+    }
+
+    private function storeBrandLinkReference(
+        int $tenantId,
+        string $label,
+        string $url,
+        string $notes = ''
+    ): ?BrandAsset {
+        $url = trim($url);
+        if ($url === '') {
+            return null;
+        }
+
+        $label = trim($label);
+        if ($label === '') {
+            $host = parse_url($url, PHP_URL_HOST);
+            $label = is_string($host) && $host !== '' ? $host : $url;
+        }
+
+        $notes = $this->normalizeInlineText($notes);
+        $knowledgeText = $this->normalizeInlineText(implode("\n", array_filter([$label, $notes])));
+
+        $meta = [
+            'source' => 'brand_center',
+            'ingestion_scope' => 'tenant_library',
+            'content_origin' => 'reference_link',
+            'source_url' => $url,
+            'source_label' => $label,
+            'knowledge_text' => $this->buildKnowledgeExcerpt($knowledgeText !== '' ? $knowledgeText : $label, 1600),
+            'text_excerpt' => $this->buildKnowledgeExcerpt(trim(implode(' | ', array_filter([$label, $notes]))), 280),
+        ];
+
+        if ($notes !== '') {
+            $meta['grounding_notes'] = $notes;
+        }
+
+        return BrandAsset::query()->create([
+            'tenant_id' => $tenantId,
+            'content_plan_id' => null,
+            'kind' => 'link',
+            'path' => '',
+            'original_name' => Str::limit($label, 180, ''),
+            'size' => strlen($url . "\n" . $knowledgeText),
+            'mime' => 'text/uri-list',
+            'meta' => $meta,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildDocumentAssetMeta(UploadedFile $file): array
+    {
+        $extension = strtolower(trim((string) $file->getClientOriginalExtension()));
+        $mime = strtolower(trim((string) ($file->getMimeType() ?? '')));
+        $extractedText = $this->extractDocumentKnowledgeText($file, $extension, $mime);
+
+        $meta = [
+            'content_origin' => 'uploaded_document',
+            'document_extension' => $extension,
+            'document_mime' => $mime,
+            'text_extract_status' => $extractedText !== '' ? 'available' : 'metadata_only',
+        ];
+
+        if ($extractedText !== '') {
+            $meta['knowledge_text'] = $this->buildKnowledgeExcerpt($extractedText, 2400);
+            $meta['text_excerpt'] = $this->buildKnowledgeExcerpt($extractedText, 420);
+        }
+
+        return $meta;
+    }
+
+    private function extractDocumentKnowledgeText(UploadedFile $file, string $extension, string $mime): string
+    {
+        $textLikeExtensions = ['txt', 'md', 'csv', 'json', 'xml', 'html', 'htm'];
+        $textLikeMimes = [
+            'application/json',
+            'application/xml',
+            'application/xhtml+xml',
+            'text/plain',
+            'text/csv',
+            'text/html',
+            'text/markdown',
+            'text/xml',
+        ];
+
+        if (!in_array($extension, $textLikeExtensions, true) && !in_array($mime, $textLikeMimes, true) && !str_starts_with($mime, 'text/')) {
+            return '';
+        }
+
+        $path = $file->getRealPath();
+        if (!is_string($path) || $path === '' || !is_file($path)) {
+            return '';
+        }
+
+        $raw = @file_get_contents($path, false, null, 0, 512000);
+        if (!is_string($raw) || $raw === '') {
+            return '';
+        }
+
+        if (in_array($extension, ['html', 'htm'], true) || $mime === 'text/html' || $mime === 'application/xhtml+xml') {
+            $raw = strip_tags($raw);
+        }
+
+        return $this->normalizeInlineText($raw);
+    }
+
+    private function buildKnowledgeExcerpt(string $text, int $limit): string
+    {
+        return Str::limit($this->normalizeInlineText($text), $limit, '');
+    }
+
+    private function normalizeInlineText(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+
+        $text = preg_replace('/\r\n?/', "\n", $text) ?? $text;
+        $text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
+        $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
+
+        return trim($text);
     }
 
     public function storeGuidedPersonaVariable(Request $request)

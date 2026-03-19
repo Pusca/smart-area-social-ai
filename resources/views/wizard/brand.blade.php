@@ -27,6 +27,9 @@
     $images = $byKind['image'] ?? collect();
     $videos = $byKind['video'] ?? collect();
     $audios = $byKind['audio'] ?? collect();
+    $documents = $byKind['document'] ?? collect();
+    $texts = $byKind['text'] ?? collect();
+    $links = $byKind['link'] ?? collect();
     $variableCandidateAssets = $assets->whereIn('kind', ['image', 'logo', 'video', 'audio'])->values();
     $canonicalVariableAssets = $assets->whereIn('kind', ['image', 'logo', 'video'])->values();
     $selectedVariableAssetIds = old('asset_ids', []);
@@ -104,7 +107,7 @@
         [
             'label' => 'Materiali brand',
             'ready' => $images->count() >= 3 && $logos->count() >= 1,
-            'hint' => 'Foto, video e audio reali aiutano l output a restare coerente, credibile e piu aderente al cliente.',
+            'hint' => 'Foto, video, audio, documenti e note operative aiutano l output a restare coerente, credibile e piu aderente al cliente.',
             'href' => '#brand-assets-section',
         ],
         [
@@ -199,7 +202,24 @@
         'immutable_elements',
         'allowed_transforms',
     ];
-    $assetUploadFieldNames = ['logo', 'images', 'images.*', 'videos', 'videos.*', 'audios', 'audios.*', 'asset_upload_notes'];
+    $assetUploadFieldNames = [
+        'logo',
+        'images',
+        'images.*',
+        'videos',
+        'videos.*',
+        'audios',
+        'audios.*',
+        'documents',
+        'documents.*',
+        'asset_upload_notes',
+        'knowledge_text_title',
+        'knowledge_text_body',
+        'knowledge_text_notes',
+        'reference_link_label',
+        'reference_link_url',
+        'reference_link_notes',
+    ];
 
     $uploadSectionOpen = $assets->isEmpty() || $hasErrorFor($assetUploadFieldNames);
     $defaultsSectionOpen = $hasErrorFor($defaultsFieldNames) || !filled($profile?->default_goal);
@@ -281,6 +301,15 @@
                     </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
                         {{ $audios->count() }} audio
+                    </span>
+                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
+                        {{ $documents->count() }} documenti
+                    </span>
+                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
+                        {{ $texts->count() }} note
+                    </span>
+                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
+                        {{ $links->count() }} link
                     </span>
                     <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
                         Strategia {{ $strategyStatus }}
@@ -920,10 +949,11 @@
                     <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
                         <div>
                             <h2 class="text-lg font-semibold text-gray-900">Materiali brand</h2>
-                            <p class="mt-1 text-sm text-gray-600">Logo, foto, video e audio reali che l AI usera come patrimonio cliente per grounding, coerenza e riconoscibilita.</p>
+                            <p class="mt-1 text-sm text-gray-600">Logo, foto, video, audio, documenti, note e link che l AI usera come patrimonio cliente per grounding, coerenza e conoscenza operativa.</p>
                         </div>
                         <div class="text-right text-xs text-gray-600">
                             <p class="font-semibold text-gray-900">{{ $logos->count() }} logo / {{ $images->count() }} immagini / {{ $videos->count() }} video / {{ $audios->count() }} audio</p>
+                            <p class="mt-1">{{ $documents->count() }} documenti / {{ $texts->count() }} note / {{ $links->count() }} link</p>
                             <p class="mt-1">Apri solo quando devi caricare, aggiornare o arricchire il dossier brand.</p>
                         </div>
                     </summary>
@@ -951,9 +981,28 @@
                             <p class="mt-1 text-xs text-gray-500">Voice note, campioni voce, audio ambientali o materiali vocali utili a capire il cliente.</p>
                         </div>
                         <div>
+                            <label for="documents" class="{{ $labelClass }}">Documenti utili (multipli)</label>
+                            <input id="documents" type="file" name="documents[]" accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.htm,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple class="{{ $inputClass }}" />
+                            <p class="mt-1 text-xs text-gray-500">Listini, FAQ, brochure, menu, procedure, PDF o file testuali da cui estrarre informazioni operative utili.</p>
+                        </div>
+                        <div>
                             <label for="asset_upload_notes" class="{{ $labelClass }}">Note per questi materiali</label>
                             <textarea id="asset_upload_notes" name="asset_upload_notes" rows="3" class="{{ $inputClass }}" placeholder="Es. showroom principale, Ferrari in pronta consegna, voce della titolare, tono premium ma reale">{{ old('asset_upload_notes') }}</textarea>
                             <p class="mt-1 text-xs text-gray-500">Queste note entrano nel dossier cliente e aiutano l AI a usare meglio gli asset caricati.</p>
+                        </div>
+                        <div class="grid gap-4 lg:grid-cols-2">
+                            <div class="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+                                <label for="knowledge_text_title" class="{{ $labelClass }}">Nota di conoscenza</label>
+                                <input id="knowledge_text_title" type="text" name="knowledge_text_title" value="{{ old('knowledge_text_title') }}" placeholder="Es. Regole commerciali, FAQ showroom, USP reali" class="{{ $inputClass }}">
+                                <textarea id="knowledge_text_body" name="knowledge_text_body" rows="5" class="{{ $inputClass }} mt-3" placeholder="Incolla qui testo utile per l AI: punti di forza reali, limiti di servizio, informazioni operative, risposte alle domande frequenti, promesse da rispettare.">{{ old('knowledge_text_body') }}</textarea>
+                                <textarea id="knowledge_text_notes" name="knowledge_text_notes" rows="2" class="{{ $inputClass }} mt-3" placeholder="Come va usata questa nota nei contenuti?">{{ old('knowledge_text_notes') }}</textarea>
+                            </div>
+                            <div class="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+                                <label for="reference_link_label" class="{{ $labelClass }}">Link di riferimento</label>
+                                <input id="reference_link_label" type="text" name="reference_link_label" value="{{ old('reference_link_label') }}" placeholder="Es. Catalogo online, pagina prezzi, menu ufficiale" class="{{ $inputClass }}">
+                                <input id="reference_link_url" type="url" name="reference_link_url" value="{{ old('reference_link_url') }}" placeholder="https://..." class="{{ $inputClass }} mt-3">
+                                <textarea id="reference_link_notes" name="reference_link_notes" rows="4" class="{{ $inputClass }} mt-3" placeholder="Spiega cosa c e in questo link e come deve essere usato dall AI.">{{ old('reference_link_notes') }}</textarea>
+                            </div>
                         </div>
                     </div>
                     </div>
@@ -973,7 +1022,7 @@
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <h2 class="text-lg font-semibold text-gray-900">Libreria asset</h2>
-                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file gia caricati e riusati dal sistema come dossier cliente. Selezione multipla per logo e immagini, elimina singolo per video e audio.</p>
+                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file e delle conoscenze gia caricate e riusate dal sistema come dossier cliente. Qui controlli media, documenti, note operative e link di riferimento, con selezione multipla dove disponibile.</p>
                     </div>
 
                     @if($assets->count() > 0)
@@ -985,7 +1034,7 @@
                     @endif
                 </div>
 
-                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
                     <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Logo</p>
                         <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} file</p>
@@ -1001,6 +1050,18 @@
                     <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Audio</p>
                         <p class="mt-2 text-sm font-semibold text-gray-900">{{ $audios->count() }} file</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Documenti</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $documents->count() }} file</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Note</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $texts->count() }} entry</p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Link</p>
+                        <p class="mt-2 text-sm font-semibold text-gray-900">{{ $links->count() }} entry</p>
                     </div>
                 </div>
 
@@ -1165,6 +1226,160 @@
                                 @empty
                                     <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
                                         Nessun audio caricato.
+                                    </div>
+                                @endforelse
+                            </div>
+                            </div>
+                        </details>
+
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($documents->count() > 0 && $documents->count() <= 4) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Documenti</h3>
+                                    <p class="mt-1 text-xs text-gray-600">PDF, listini, brochure e file testuali da cui estrarre dettagli utili per il grounding.</p>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ $documents->count() }} file</span>
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                @forelse($documents as $a)
+                                    @php($meta = is_array($a->meta ?? null) ? $a->meta : [])
+                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                        <div class="border-b border-gray-200 bg-gray-50 p-3">
+                                            <label class="flex items-center gap-2 text-xs text-gray-600">
+                                                <input type="checkbox" class="asset-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" value="{{ $a->id }}" data-destroy-url="{{ route('profile.brand.asset.destroy', $a->id) }}">
+                                                Seleziona
+                                            </label>
+                                        </div>
+                                        <div class="space-y-3 p-4">
+                                            <div>
+                                                <p class="text-sm font-semibold text-gray-900">{{ $a->original_name ?: 'documento' }}</p>
+                                                <p class="mt-1 text-xs text-gray-500">{{ $a->mime ?: 'file generico' }}</p>
+                                            </div>
+                                            @if(filled(data_get($meta, 'grounding_notes')))
+                                                <div class="rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-800">
+                                                    {{ data_get($meta, 'grounding_notes') }}
+                                                </div>
+                                            @endif
+                                            @if(filled(data_get($meta, 'text_excerpt')))
+                                                <p class="text-xs leading-5 text-gray-600">{{ data_get($meta, 'text_excerpt') }}</p>
+                                            @endif
+                                        </div>
+                                        <div class="px-4 pb-4">
+                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questo documento?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
+                                            </form>
+                                        </div>
+                                    </article>
+                                @empty
+                                    <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
+                                        Nessun documento caricato.
+                                    </div>
+                                @endforelse
+                            </div>
+                            </div>
+                        </details>
+
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($texts->count() > 0 && $texts->count() <= 4) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Note di conoscenza</h3>
+                                    <p class="mt-1 text-xs text-gray-600">Appunti interni, FAQ, regole commerciali e istruzioni che devono restare nel contesto AI.</p>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ $texts->count() }} entry</span>
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                @forelse($texts as $a)
+                                    @php($meta = is_array($a->meta ?? null) ? $a->meta : [])
+                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                        <div class="border-b border-gray-200 bg-gray-50 p-3">
+                                            <label class="flex items-center gap-2 text-xs text-gray-600">
+                                                <input type="checkbox" class="asset-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" value="{{ $a->id }}" data-destroy-url="{{ route('profile.brand.asset.destroy', $a->id) }}">
+                                                Seleziona
+                                            </label>
+                                        </div>
+                                        <div class="space-y-3 p-4">
+                                            <div>
+                                                <p class="text-sm font-semibold text-gray-900">{{ $a->original_name ?: 'nota' }}</p>
+                                                <p class="mt-1 text-xs text-gray-500">Testo interno del Brand Center</p>
+                                            </div>
+                                            @if(filled(data_get($meta, 'grounding_notes')))
+                                                <div class="rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-800">
+                                                    {{ data_get($meta, 'grounding_notes') }}
+                                                </div>
+                                            @endif
+                                            @if(filled(data_get($meta, 'text_excerpt')))
+                                                <p class="text-xs leading-5 text-gray-600">{{ data_get($meta, 'text_excerpt') }}</p>
+                                            @endif
+                                        </div>
+                                        <div class="px-4 pb-4">
+                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questa nota?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
+                                            </form>
+                                        </div>
+                                    </article>
+                                @empty
+                                    <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
+                                        Nessuna nota di conoscenza salvata.
+                                    </div>
+                                @endforelse
+                            </div>
+                            </div>
+                        </details>
+
+                        <details class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/70" @if($links->count() > 0 && $links->count() <= 4) open @endif>
+                            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-gray-900">Link di riferimento</h3>
+                                    <p class="mt-1 text-xs text-gray-600">URL ufficiali da cui il sistema puo ricavare contesto, limiti e dettagli operativi.</p>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ $links->count() }} entry</span>
+                            </summary>
+                            <div class="border-t border-gray-200 px-4 py-4">
+                            <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                @forelse($links as $a)
+                                    @php($meta = is_array($a->meta ?? null) ? $a->meta : [])
+                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                        <div class="border-b border-gray-200 bg-gray-50 p-3">
+                                            <label class="flex items-center gap-2 text-xs text-gray-600">
+                                                <input type="checkbox" class="asset-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" value="{{ $a->id }}" data-destroy-url="{{ route('profile.brand.asset.destroy', $a->id) }}">
+                                                Seleziona
+                                            </label>
+                                        </div>
+                                        <div class="space-y-3 p-4">
+                                            <div>
+                                                <p class="text-sm font-semibold text-gray-900">{{ $a->original_name ?: 'link' }}</p>
+                                                @if(filled(data_get($meta, 'source_url')))
+                                                    <a href="{{ data_get($meta, 'source_url') }}" target="_blank" rel="noreferrer" class="mt-1 inline-flex text-xs font-semibold text-cyan-700 hover:text-cyan-900">
+                                                        {{ data_get($meta, 'source_url') }}
+                                                    </a>
+                                                @endif
+                                            </div>
+                                            @if(filled(data_get($meta, 'grounding_notes')))
+                                                <div class="rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-xs text-cyan-800">
+                                                    {{ data_get($meta, 'grounding_notes') }}
+                                                </div>
+                                            @endif
+                                            @if(filled(data_get($meta, 'text_excerpt')))
+                                                <p class="text-xs leading-5 text-gray-600">{{ data_get($meta, 'text_excerpt') }}</p>
+                                            @endif
+                                        </div>
+                                        <div class="px-4 pb-4">
+                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questo link di riferimento?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
+                                            </form>
+                                        </div>
+                                    </article>
+                                @empty
+                                    <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
+                                        Nessun link di riferimento salvato.
                                     </div>
                                 @endforelse
                             </div>
@@ -2017,4 +2232,3 @@
     })();
 </script>
 @endsection
-
