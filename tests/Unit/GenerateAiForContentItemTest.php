@@ -315,6 +315,21 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertNotEmpty($fallback['at']);
     }
 
+    public function test_it_normalizes_openai_video_seconds_to_supported_values(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'normalizeVideoOptionsForProvider');
+        $method->setAccessible(true);
+
+        $normalized = $method->invoke($job, 'openai', [
+            'model' => 'sora-2',
+            'seconds' => 10,
+            'size' => '720x1280',
+        ]);
+
+        $this->assertSame(12, $normalized['seconds']);
+    }
+
     public function test_it_marks_video_result_as_single_clip_fallback_when_extended_generation_is_downgraded(): void
     {
         $job = new GenerateAiForContentItem(1);
@@ -350,6 +365,32 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertSame(20, $result['target_total_seconds']);
         $this->assertSame([], $result['segments']);
         $this->assertSame('ffmpeg_unavailable', $result['extended_fallback']['reason']);
+    }
+
+    public function test_it_realigns_single_clip_fallback_duration_when_provider_falls_back_to_openai(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'applyExtendedVideoSingleClipFallback');
+        $method->setAccessible(true);
+
+        $result = $method->invoke(
+            $job,
+            [
+                'source' => 'sora_video_generation',
+                'provider' => 'openai',
+                'video_path' => 'ai/videos/2026/03/test.mp4',
+            ],
+            [
+                'reason' => 'ffmpeg_unavailable',
+                'requested_total_seconds' => 20,
+                'delivered_seconds' => 10,
+                'provider' => 'runway',
+            ]
+        );
+
+        $this->assertSame(12, $result['request_summary']['delivered_seconds']);
+        $this->assertSame('openai', $result['extended_fallback']['provider']);
+        $this->assertSame(12, $result['extended_fallback']['delivered_seconds']);
     }
 
     public function test_it_builds_a_moderation_safe_video_prompt_for_guided_person_wellness_content(): void

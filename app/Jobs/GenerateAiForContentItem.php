@@ -1900,19 +1900,30 @@ SVG;
             return $result;
         }
 
+        $resolvedProvider = strtolower(trim((string) ($result['provider'] ?? $extendedVideoFallback['provider'] ?? 'openai')));
+        $requestedTotalSeconds = (int) ($extendedVideoFallback['requested_total_seconds'] ?? 0);
+        $fallbackDeliveredSeconds = (int) ($extendedVideoFallback['delivered_seconds'] ?? 0);
+        $resolvedDeliveredSeconds = $this->normalizeVideoSecondsForProvider(
+            $resolvedProvider,
+            $fallbackDeliveredSeconds > 0 ? $fallbackDeliveredSeconds : $requestedTotalSeconds
+        );
+
         $requestSummary = is_array($result['request_summary'] ?? null) ? $result['request_summary'] : [];
         $requestSummary['mode'] = 'single_clip_fallback';
         $requestSummary['extended_requested'] = true;
         $requestSummary['fallback_reason'] = (string) ($extendedVideoFallback['reason'] ?? 'ffmpeg_unavailable');
-        $requestSummary['target_total_seconds'] = (int) ($extendedVideoFallback['requested_total_seconds'] ?? 0);
-        $requestSummary['delivered_seconds'] = (int) ($extendedVideoFallback['delivered_seconds'] ?? 0);
+        $requestSummary['target_total_seconds'] = $requestedTotalSeconds;
+        $requestSummary['delivered_seconds'] = $resolvedDeliveredSeconds;
 
         $result['request_summary'] = $requestSummary;
         $result['extended'] = false;
         $result['segment_count'] = 1;
-        $result['target_total_seconds'] = (int) ($extendedVideoFallback['requested_total_seconds'] ?? 0);
+        $result['target_total_seconds'] = $requestedTotalSeconds;
         $result['segments'] = [];
-        $result['extended_fallback'] = $extendedVideoFallback;
+        $result['extended_fallback'] = array_merge($extendedVideoFallback, [
+            'provider' => $resolvedProvider,
+            'delivered_seconds' => $resolvedDeliveredSeconds,
+        ]);
 
         return $result;
     }
@@ -2866,6 +2877,7 @@ SVG;
                 default => (int) (config('openai.video_seconds') ?: 8),
             };
         }
+        $seconds = $this->normalizeVideoSecondsForProvider($provider, $seconds);
 
         $size = trim((string) ($videoOptions['size'] ?? ''));
         if ($size === '') {
@@ -2884,6 +2896,18 @@ SVG;
         $videoOptions['size'] = $size;
 
         return $videoOptions;
+    }
+
+    private function normalizeVideoSecondsForProvider(string $provider, int $seconds): int
+    {
+        $provider = strtolower(trim($provider));
+        $seconds = max(1, $seconds);
+
+        return match ($provider) {
+            'runway' => max(3, min(10, $seconds)),
+            'kling' => $seconds >= 8 ? 10 : 5,
+            default => $seconds <= 4 ? 4 : ($seconds <= 8 ? 8 : 12),
+        };
     }
 
     private function normalizeOpenAiVideoModel(string $model): string
