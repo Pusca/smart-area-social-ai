@@ -128,6 +128,9 @@ class KlingService
         $pollEvery = max(2, min(30, $pollEvery));
         $timeout = (int) (config('kling.poll_timeout') ?: 420);
         $timeout = max(30, $timeout);
+        if ($this->isOfficialKlingEndpoint()) {
+            $timeout = max($timeout, 540);
+        }
         $deadline = microtime(true) + $timeout;
 
         do {
@@ -593,3 +596,4 @@ class KlingService
         ];
     }
 }
+

@@ -30,6 +30,7 @@ return [
     'connect_timeout' => (int) env('KLING_CONNECT_TIMEOUT', 15),
 
     'poll_interval' => (int) env('KLING_VIDEO_POLL_INTERVAL', 8),
-    'poll_timeout' => (int) env('KLING_VIDEO_POLL_TIMEOUT', 420),
+    'poll_timeout' => (int) env('KLING_VIDEO_POLL_TIMEOUT', 540),
 ];
+
 

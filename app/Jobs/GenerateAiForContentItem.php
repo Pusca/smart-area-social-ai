@@ -1422,6 +1422,93 @@ SVG;
                     activeFeedbackRequest: $activeFeedbackRequest,
                     locationSequenceMode: $locationSequenceMode
                 );
+            } catch (Throwable $klingError) {
+                if (!$this->shouldFallbackFromKlingToSecondaryProvider($klingError)) {
+                    throw $klingError;
+                }
+
+                $fallbackProviders = $this->secondaryVideoProvidersForKlingFailure();
+                $fallbackFailures = [];
+
+                foreach ($fallbackProviders as $fallbackProvider) {
+                    try {
+                        if ($fallbackProvider === 'runway') {
+                            $result = $this->generateVideoWithRunway(
+                                runway: $runway,
+                                openAi: $openAi,
+                                item: $item,
+                                briefRaw: $briefRaw,
+                                fallbackPrompt: $prompt,
+                                videoPrompt: $runwayExecutionPrompt,
+                                referenceAbs: $referenceAbs,
+                                referencePath: $referencePath,
+                                referencePaths: $referencePaths,
+                                referenceReason: $referenceReason . '_runway_fallback_after_kling_failure',
+                                generationReferenceAbsPool: $generationReferenceAbsPool,
+                                imageReferencePathPool: $imageReferencePathPool,
+                                validationReferenceAbsPool: $validationReferenceAbsPool,
+                                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                                compositionMeta: $compositionMeta,
+                                brandDecision: $brandDecision,
+                                videoOptions: $videoOptions
+                            );
+                        } else {
+                            $result = $this->generateVideoWithOpenAi(
+                                openAi: $openAi,
+                                briefRaw: $briefRaw,
+                                fallbackPrompt: $prompt,
+                                videoPrompt: $this->buildOpenAiVideoFallbackPrompt($openAiExecutionPrompt, $briefRaw, $referencePaths),
+                                referenceAbs: $referenceAbs,
+                                referencePath: $referencePath,
+                                referencePaths: $referencePaths,
+                                referenceReason: $referenceReason . '_openai_fallback_after_kling_failure',
+                                generationReferenceAbsPool: $generationReferenceAbsPool,
+                                imageReferencePathPool: $imageReferencePathPool,
+                                validationReferenceAbsPool: $validationReferenceAbsPool,
+                                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                                compositionMeta: $compositionMeta,
+                                brandDecision: $brandDecision,
+                                videoOptions: $videoOptions,
+                                assetVariables: $assetVariables,
+                                providerFallback: [
+                                    'from' => 'kling',
+                                    'to' => 'openai',
+                                    'reason' => Str::limit($klingError->getMessage(), 220, ''),
+                                    'at' => now()->toDateTimeString(),
+                                ]
+                            );
+                        }
+
+                        $result['provider_fallback'] = [
+                            'from' => 'kling',
+                            'to' => $fallbackProvider,
+                            'reason' => Str::limit($klingError->getMessage(), 220, ''),
+                            'at' => now()->toDateTimeString(),
+                            'nested' => $result['provider_fallback'] ?? null,
+                        ];
+
+                        return $result;
+                    } catch (Throwable $fallbackError) {
+                        $fallbackFailures[] = $fallbackProvider . ': ' . Str::limit($fallbackError->getMessage(), 220, '');
+
+                        Log::warning('GenerateAiForContentItem video fallback failed', [
+                            'content_item_id' => $item->id,
+                            'from_provider' => 'kling',
+                            'to_provider' => $fallbackProvider,
+                            'error' => $fallbackError->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (!empty($fallbackFailures)) {
+                    throw new \RuntimeException(
+                        $klingError->getMessage() . ' | VIDEO_PROVIDER_FALLBACKS_FAILED=' . implode(' || ', $fallbackFailures),
+                        0,
+                        $klingError
+                    );
+                }
+
+                throw $klingError;
             } finally {
                 foreach ($tempRefPaths as $tmpPath) {
                     if (is_string($tmpPath) && $tmpPath !== '' && is_file($tmpPath)) {
@@ -3377,6 +3464,52 @@ SVG;
             || str_contains($message, 'runway video generation timeout')
             || str_contains($message, 'curl error')
             || str_contains($message, 'failed to connect');
+    }
+
+    private function shouldFallbackFromKlingToSecondaryProvider(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+        if ($message === '') {
+            return false;
+        }
+
+        if (str_contains($message, 'missing kling_access_key') || str_contains($message, 'missing kling_secret_key')) {
+            return false;
+        }
+
+        if (str_contains($message, 'kling video create error (400)')) {
+            return false;
+        }
+
+        return str_contains($message, 'kling video generation timeout')
+            || str_contains($message, 'kling video retrieve error (500)')
+            || str_contains($message, 'kling video retrieve error (502)')
+            || str_contains($message, 'kling video retrieve error (503)')
+            || str_contains($message, 'kling video retrieve error (504)')
+            || str_contains($message, 'server error')
+            || str_contains($message, 'server_error')
+            || str_contains($message, 'temporarily unavailable')
+            || str_contains($message, 'gateway timeout')
+            || str_contains($message, 'processing')
+            || $this->isTransientNetworkError($error);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function secondaryVideoProvidersForKlingFailure(): array
+    {
+        $providers = [];
+
+        if ($this->isVideoProviderConfigured('runway')) {
+            $providers[] = 'runway';
+        }
+
+        if ($this->isVideoProviderConfigured('openai')) {
+            $providers[] = 'openai';
+        }
+
+        return $providers;
     }
 
     private function shouldFallbackFromOpenAiToSecondaryProvider(Throwable $error): bool
