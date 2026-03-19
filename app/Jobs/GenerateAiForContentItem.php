@@ -1929,7 +1929,7 @@ SVG;
     private function providerSingleClipMaxSeconds(string $provider): int
     {
         return match (strtolower(trim($provider))) {
-            'runway' => 15,
+            'runway' => 10,
             'kling' => 10,
             default => 12,
         };

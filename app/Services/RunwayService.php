@@ -79,7 +79,7 @@ class RunwayService
             $model = 'gen4.5';
         }
         $seconds = (int) ($options['seconds'] ?? config('runway.video_seconds') ?: 8);
-        $seconds = max(3, min(15, $seconds));
+        $seconds = max(3, min(10, $seconds));
         $size = trim((string) ($options['size'] ?? ''));
         $ratio = $this->normalizeRatio((string) (config('runway.video_ratio') ?: ''), $size);
         $safePrompt = $this->normalizePrompt($prompt);
