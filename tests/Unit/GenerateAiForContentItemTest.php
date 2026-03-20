@@ -22,6 +22,21 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertFalse($method->invoke($job, new RuntimeException('Runway video create error (400) BODY=validation error')));
     }
 
+    public function test_it_disables_cross_provider_video_fallback_when_provider_is_locked(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldAllowCrossProviderVideoFallback');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($job, [
+            'video_provider' => 'runway',
+            'video_provider_lock' => true,
+        ]));
+        $this->assertTrue($method->invoke($job, [
+            'video_provider' => 'runway',
+        ]));
+    }
+
     public function test_it_builds_a_safer_openai_fallback_prompt_for_multi_reference_videos(): void
     {
         $job = new GenerateAiForContentItem(1);

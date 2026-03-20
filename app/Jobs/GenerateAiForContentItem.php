@@ -1217,6 +1217,7 @@ SVG;
         $briefNorm = $this->normalizeText((string) data_get($meta, 'manual_brief', ''));
         $assetVariables = (array) data_get($meta, 'asset_variables', []);
         $videoProvider = $this->resolveVideoProvider($meta);
+        $allowCrossProviderFallback = $this->shouldAllowCrossProviderVideoFallback($meta);
         $explicitReferencePaths = array_values(array_filter(array_map(
             'strval',
             (array) data_get($meta, 'image_references.selected_paths', [])
@@ -1513,7 +1514,7 @@ SVG;
                     locationSequenceMode: $locationSequenceMode
                 ));
             } catch (Throwable $klingError) {
-                if (!$this->shouldFallbackFromKlingToSecondaryProvider($klingError)) {
+                if (!$allowCrossProviderFallback || !$this->shouldFallbackFromKlingToSecondaryProvider($klingError)) {
                     throw $klingError;
                 }
 
@@ -1630,7 +1631,7 @@ SVG;
                     videoOptions: $videoOptions
                 ));
             } catch (Throwable $runwayError) {
-                if (!$this->shouldFallbackFromRunwayToOpenAi($runwayError)) {
+                if (!$allowCrossProviderFallback || !$this->shouldFallbackFromRunwayToOpenAi($runwayError)) {
                     throw $runwayError;
                 }
 
@@ -1739,7 +1740,7 @@ SVG;
                 providerFallback: null
             ));
         } catch (Throwable $openAiError) {
-            if (!$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiError)) {
+            if (!$allowCrossProviderFallback || !$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiError)) {
                 throw $openAiError;
             }
 
@@ -2903,6 +2904,11 @@ SVG;
         }
 
         return VideoProviderResolver::default();
+    }
+
+    private function shouldAllowCrossProviderVideoFallback(array $meta): bool
+    {
+        return !(bool) data_get($meta, 'video_provider_lock', false);
     }
 
     /**

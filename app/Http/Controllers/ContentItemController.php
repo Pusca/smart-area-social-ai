@@ -379,6 +379,7 @@ class ContentItemController extends Controller
         $item->ai_meta = [
             'source' => 'manual_single_content',
             'video_provider' => $videoProvider,
+            'video_provider_lock' => true,
             'requested_video_duration_seconds' => $requestedVideoDurationSeconds > 0 ? $requestedVideoDurationSeconds : null,
             'image_provider' => $imageProvider,
             'tenant_profile' => $profileData,
@@ -494,6 +495,9 @@ class ContentItemController extends Controller
             ? (string) ($data['video_provider'] ?? '')
             : $existingVideoProvider;
         $meta['video_provider'] = VideoProviderResolver::resolve($videoProviderCandidate, $existingVideoProvider);
+        if (trim($videoProviderCandidate) !== '') {
+            $meta['video_provider_lock'] = true;
+        }
         $existingImageProvider = (string) data_get($meta, 'image_provider', '');
         $meta['image_provider'] = $this->allowsCustomImageProvider($contentItem)
             ? ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), $existingImageProvider)
@@ -1373,5 +1377,4 @@ class ContentItemController extends Controller
     }
 
 }
-
 

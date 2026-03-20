@@ -93,6 +93,9 @@ class AiGenerateController extends Controller
         $existingProvider = (string) data_get($meta, 'video_provider', '');
         $provider = VideoProviderResolver::resolve($requestedProvider, $existingProvider);
         $meta['video_provider'] = $provider;
+        if (trim($requestedProvider) !== '') {
+            $meta['video_provider_lock'] = true;
+        }
         $item->ai_meta = $meta;
 
         return $provider;
