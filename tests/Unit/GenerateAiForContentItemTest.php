@@ -414,6 +414,17 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertSame(12, $normalized['seconds']);
     }
 
+    public function test_it_defaults_reels_to_twenty_seconds_when_no_explicit_duration_is_present(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'targetVideoSecondsForFormat');
+        $method->setAccessible(true);
+
+        $seconds = $method->invoke($job, new \App\Models\ContentItem(['format' => 'reel']));
+
+        $this->assertSame('20', $seconds);
+    }
+
     public function test_it_normalizes_runway_veo_video_seconds_to_supported_values(): void
     {
         $job = new GenerateAiForContentItem(1);

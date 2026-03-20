@@ -51,6 +51,8 @@
         'kling' => 'Kling',
     ];
     $videoProviderFallback = data_get($contentItem->ai_meta, 'video_generation.provider_fallback');
+    $videoDurationSeconds = (int) old('video_duration_seconds_requested', (int) data_get($contentItem->ai_meta, 'requested_video_duration_seconds', strtolower(trim((string) $contentItem->format)) === 'reel' ? 20 : 0));
+    $isVideoFormat = in_array(strtolower(trim((string) $contentItem->format)), ['reel', 'story'], true);
     $feedbackEntries = $contentItem->feedbackEntries ?? collect();
     $latestFeedback = $feedbackEntries->first();
     $feedbackCategories = \App\Models\ContentFeedbackEntry::CATEGORY_LABELS;
@@ -434,6 +436,24 @@
                                 Se il formato e video, la rigenerazione usera questo provider.
                             </p>
                         </div>
+                        @if($isVideoFormat)
+                        <div>
+                            <label for="video_duration_seconds_requested" class="mb-1 block text-sm font-semibold text-gray-700">Durata video (secondi)</label>
+                            <input
+                                id="video_duration_seconds_requested"
+                                type="number"
+                                name="video_duration_seconds_requested"
+                                min="4"
+                                max="45"
+                                step="1"
+                                value="{{ $videoDurationSeconds > 0 ? $videoDurationSeconds : 20 }}"
+                                class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                            />
+                            <p class="mt-1 text-xs text-gray-500">
+                                Se supera il limite del provider, il reel viene spezzato in segmenti coerenti e ricucito automaticamente.
+                            </p>
+                        </div>
+                        @endif
 
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>

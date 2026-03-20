@@ -300,7 +300,7 @@
                                 @endforeach
                             </select>
                             <p class="mt-1 text-xs text-gray-500">
-                                Per i post immagine il provider video viene ignorato. Per reel da 20 secondi o piu usa OpenAI: se serve, il sistema genera piu segmenti coerenti e li unisce.
+                                Per i post immagine il provider video viene ignorato. Se la durata supera il limite del provider, il sistema genera piu segmenti coerenti e li unisce.
                             </p>
                         </div>
                         @if($isReelPreset)
@@ -763,5 +763,4 @@
     })();
 </script>
 @endsection
-
 

@@ -474,6 +474,7 @@ class ContentItemController extends Controller
             'platform' => 'required|string|max:50',
             'format' => 'required|string|max:50',
             'video_provider' => ['nullable', VideoProviderResolver::inRule()],
+            'video_duration_seconds_requested' => 'nullable|integer|min:4|max:45',
             'image_provider' => ['nullable', ImageProviderResolver::inRule()],
             'scheduled_at' => 'nullable|date',
             'title' => 'nullable|string|max:120',
@@ -498,6 +499,8 @@ class ContentItemController extends Controller
         if (trim($videoProviderCandidate) !== '') {
             $meta['video_provider_lock'] = true;
         }
+        $requestedVideoDurationSeconds = max(0, (int) ($data['video_duration_seconds_requested'] ?? 0));
+        $meta['requested_video_duration_seconds'] = $requestedVideoDurationSeconds > 0 ? $requestedVideoDurationSeconds : null;
         $existingImageProvider = (string) data_get($meta, 'image_provider', '');
         $meta['image_provider'] = $this->allowsCustomImageProvider($contentItem)
             ? ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), $existingImageProvider)
@@ -1377,4 +1380,3 @@ class ContentItemController extends Controller
     }
 
 }
-

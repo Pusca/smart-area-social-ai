@@ -5011,12 +5011,16 @@ SVG;
 
     private function targetVideoSecondsForFormat(ContentItem $item): string
     {
+        $format = strtolower(trim((string) ($item->format ?? '')));
+        if ($format === 'reel') {
+            return '20';
+        }
+
         $seconds = trim((string) (config('openai.video_seconds') ?: '8'));
         if (!in_array($seconds, ['4', '8', '12'], true)) {
             $seconds = '8';
         }
 
-        $format = strtolower(trim((string) ($item->format ?? '')));
         if ($format === 'story' && $seconds === '12') {
             return '8';
         }
