@@ -2926,6 +2926,10 @@ SVG;
         $hasReferences = !empty(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''));
         $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
 
+        if (str_starts_with($configured, 'veo3') && ($hasPersonVariable || $hasReferences)) {
+            return 'gen4.5';
+        }
+
         if ($hasPersonVariable || $hasReferences || $format === 'reel') {
             return $configured;
         }

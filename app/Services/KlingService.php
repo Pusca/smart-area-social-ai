@@ -54,7 +54,23 @@ class KlingService
         $payload = $this->buildCreatePayload($prompt, $referenceInputs, $options, $requestMode);
         $url = $this->createUrl($requestMode);
         $timeout = (int) (config('kling.timeout_create') ?: 60);
-        $res = $this->request($timeout)->retry(1, 350)->post($url, $payload);
+        $request = $this->request($timeout)->retry(1, 350);
+        $res = $request->post($url, $payload);
+
+        if (
+            !$res->successful()
+            && $res->status() === 400
+            && str_contains(strtolower($res->body()), 'model is not supported')
+        ) {
+            $fallbackModel = $this->defaultModelForRequestMode($requestMode);
+            if ($fallbackModel !== '' && $fallbackModel !== (string) ($payload['model_name'] ?? '')) {
+                $payload['model_name'] = $fallbackModel;
+                if (!$this->shouldSendModeForModel($fallbackModel)) {
+                    unset($payload['mode']);
+                }
+                $res = $request->post($url, $payload);
+            }
+        }
 
         if (!$res->successful()) {
             throw new RuntimeException("Kling video create error ({$res->status()}) URL={$url} BODY=" . $res->body());
@@ -277,13 +293,7 @@ class KlingService
         }
 
         $model = str_replace(['_', '.'], '-', $model);
-        $aliasesToRemap = [
-            'kling-v2-6',
-            'kling-v2-6-pro',
-            'kling-v2-6-std',
-        ];
-
-        if (in_array($model, $aliasesToRemap, true)) {
+        if (!$this->supportsModelForRequestMode($model, $requestMode)) {
             return $this->defaultModelForRequestMode($requestMode);
         }
 
@@ -292,7 +302,27 @@ class KlingService
 
     private function defaultModelForRequestMode(string $requestMode): string
     {
-        return 'kling-v2-6';
+        return match ($requestMode) {
+            'multi-image' => 'kling-v2',
+            'image' => 'kling-v2-1',
+            default => 'kling-v2-1-master',
+        };
+    }
+
+    private function supportsModelForRequestMode(string $model, string $requestMode): bool
+    {
+        $model = strtolower(trim($model));
+        $requestMode = strtolower(trim($requestMode));
+
+        if ($model === '') {
+            return false;
+        }
+
+        return match ($requestMode) {
+            'multi-image' => in_array($model, ['kling-v2'], true),
+            'image' => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master'], true),
+            default => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master'], true),
+        };
     }
 
     private function shouldSendModeForModel(string $modelName): bool

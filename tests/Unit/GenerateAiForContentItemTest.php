@@ -160,6 +160,32 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringContainsString('stessa in tutti gli shot', strtolower($prompt));
     }
 
+    public function test_it_prefers_gen45_over_veo_for_reference_heavy_runway_jobs(): void
+    {
+        config()->set('runway.model', 'veo3.1_fast');
+
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'resolveRunwayVideoModel');
+        $method->setAccessible(true);
+
+        $model = $method->invoke(
+            $job,
+            new \App\Models\ContentItem(['format' => 'reel']),
+            [],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            ['brand-assets/11/persona/front.jpg']
+        );
+
+        $this->assertSame('gen4.5', $model);
+    }
+
     public function test_it_builds_a_fallback_reel_blueprint_when_none_is_present(): void
     {
         $job = new GenerateAiForContentItem(1);
