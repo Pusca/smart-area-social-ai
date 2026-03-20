@@ -317,6 +317,16 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertFalse($method->invoke($job, new RuntimeException('Video generation timeout after 420s')));
     }
 
+    public function test_it_marks_openai_video_timeouts_as_secondary_fallback_candidates(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldFallbackFromOpenAiToSecondaryProvider');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, new RuntimeException('Video generation timeout after 420s (status=in_progress)')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('OpenAI video create error (400) BODY={"error":{"message":"input_reference invalid"}}')));
+    }
+
     public function test_it_builds_extended_video_single_clip_fallback_metadata(): void
     {
         $job = new GenerateAiForContentItem(1);

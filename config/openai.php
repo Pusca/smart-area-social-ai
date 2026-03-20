@@ -29,5 +29,5 @@ return [
     'video_size' => env('OPENAI_VIDEO_SIZE', '720x1280'),
     'video_seconds' => env('OPENAI_VIDEO_SECONDS', '8'),
     'video_poll_interval' => env('OPENAI_VIDEO_POLL_INTERVAL', 10),
-    'video_poll_timeout' => env('OPENAI_VIDEO_POLL_TIMEOUT', 420),
+    'video_poll_timeout' => env('OPENAI_VIDEO_POLL_TIMEOUT', 900),
 ];

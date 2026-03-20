@@ -4270,6 +4270,7 @@ SVG;
             || str_contains($message, 'server error')
             || str_contains($message, 'temporarily unavailable')
             || str_contains($message, 'gateway timeout')
+            || str_contains($message, 'video generation timeout after')
             || $this->isTransientNetworkError($error);
     }
 
