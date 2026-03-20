@@ -1444,7 +1444,7 @@ SVG;
             return $this->applyExtendedVideoSingleClipFallback($result, $extendedVideoFallback);
         };
 
-        if ($this->shouldGenerateExtendedVideo($item, $videoProvider, $targetTotalSeconds)) {
+        if ($this->shouldGenerateExtendedVideo($item, $videoProvider, $targetTotalSeconds, (string) ($videoOptions['model'] ?? ''))) {
             $ffmpeg = $this->resolveFfmpegBinary();
             if ($this->canRunBinary($ffmpeg)) {
                 return $this->generateExtendedVideoAsset(
@@ -1881,8 +1881,9 @@ SVG;
             'mode' => 'single_clip_fallback',
             'reason' => 'ffmpeg_unavailable',
             'provider' => strtolower(trim($provider)),
+            'model' => trim((string) ($videoOptions['model'] ?? '')),
             'requested_total_seconds' => $targetTotalSeconds,
-            'delivered_seconds' => $this->providerSingleClipMaxSeconds($provider),
+            'delivered_seconds' => $this->providerSingleClipMaxSeconds($provider, (string) ($videoOptions['model'] ?? '')),
             'size' => (string) ($videoOptions['size'] ?? ''),
             'ffmpeg_binary' => trim($ffmpegBinary) !== '' ? trim($ffmpegBinary) : null,
             'at' => now()->toDateTimeString(),
@@ -1903,9 +1904,11 @@ SVG;
         $resolvedProvider = strtolower(trim((string) ($result['provider'] ?? $extendedVideoFallback['provider'] ?? 'openai')));
         $requestedTotalSeconds = (int) ($extendedVideoFallback['requested_total_seconds'] ?? 0);
         $fallbackDeliveredSeconds = (int) ($extendedVideoFallback['delivered_seconds'] ?? 0);
+        $resolvedModel = trim((string) data_get($result, 'request_summary.model', (string) ($extendedVideoFallback['model'] ?? '')));
         $resolvedDeliveredSeconds = $this->normalizeVideoSecondsForProvider(
             $resolvedProvider,
-            $fallbackDeliveredSeconds > 0 ? $fallbackDeliveredSeconds : $requestedTotalSeconds
+            $fallbackDeliveredSeconds > 0 ? $fallbackDeliveredSeconds : $requestedTotalSeconds,
+            $resolvedModel
         );
 
         $requestSummary = is_array($result['request_summary'] ?? null) ? $result['request_summary'] : [];
@@ -1922,25 +1925,26 @@ SVG;
         $result['segments'] = [];
         $result['extended_fallback'] = array_merge($extendedVideoFallback, [
             'provider' => $resolvedProvider,
+            'model' => $resolvedModel !== '' ? $resolvedModel : ($extendedVideoFallback['model'] ?? null),
             'delivered_seconds' => $resolvedDeliveredSeconds,
         ]);
 
         return $result;
     }
 
-    private function shouldGenerateExtendedVideo(ContentItem $item, string $provider, int $targetTotalSeconds): bool
+    private function shouldGenerateExtendedVideo(ContentItem $item, string $provider, int $targetTotalSeconds, string $model = ''): bool
     {
         if (!$this->isVideoFormat($item)) {
             return false;
         }
 
-        return $targetTotalSeconds > $this->providerSingleClipMaxSeconds($provider);
+        return $targetTotalSeconds > $this->providerSingleClipMaxSeconds($provider, $model);
     }
 
-    private function providerSingleClipMaxSeconds(string $provider): int
+    private function providerSingleClipMaxSeconds(string $provider, string $model = ''): int
     {
         return match (strtolower(trim($provider))) {
-            'runway' => 10,
+            'runway' => $this->isRunwayVeoModel($model) ? 8 : 10,
             'kling' => 10,
             default => 12,
         };
@@ -1949,7 +1953,7 @@ SVG;
     /**
      * @return array<int, int>
      */
-    private function segmentDurationsForExtendedVideo(string $provider, int $targetTotalSeconds): array
+    private function segmentDurationsForExtendedVideo(string $provider, int $targetTotalSeconds, string $model = ''): array
     {
         $provider = strtolower(trim($provider));
 
@@ -1994,7 +1998,11 @@ SVG;
             return array_values(array_filter($durations, fn ($seconds) => in_array($seconds, [4, 8, 12], true)));
         }
 
-        $max = $this->providerSingleClipMaxSeconds($provider);
+        if ($provider === 'runway' && $this->isRunwayVeoModel($model)) {
+            return $this->discreteSegmentDurations([4, 6, 8], $targetTotalSeconds);
+        }
+
+        $max = $this->providerSingleClipMaxSeconds($provider, $model);
         $segmentCount = (int) ceil(max(1, $targetTotalSeconds) / max(1, $max));
         $segmentCount = max(2, $segmentCount);
         $base = intdiv($targetTotalSeconds, $segmentCount);
@@ -2007,6 +2015,69 @@ SVG;
         }
 
         return $durations;
+    }
+
+    /**
+     * @param  array<int, int>  $allowed
+     * @return array<int, int>
+     */
+    private function discreteSegmentDurations(array $allowed, int $targetTotalSeconds): array
+    {
+        $allowed = array_values(array_unique(array_filter(
+            array_map(fn ($value) => (int) $value, $allowed),
+            fn (int $value) => $value > 0
+        )));
+
+        if (empty($allowed)) {
+            return [];
+        }
+
+        sort($allowed);
+        $min = $allowed[0];
+        $max = $allowed[count($allowed) - 1];
+        $target = max($min, $targetTotalSeconds);
+        $limit = $target + $max;
+        $paths = array_fill(0, $limit + 1, null);
+        $paths[0] = [];
+
+        for ($sum = 0; $sum <= $limit; $sum++) {
+            if (!is_array($paths[$sum])) {
+                continue;
+            }
+
+            foreach ($allowed as $duration) {
+                $next = $sum + $duration;
+                if ($next > $limit) {
+                    continue;
+                }
+
+                $candidate = array_merge($paths[$sum], [$duration]);
+                if (!is_array($paths[$next]) || count($candidate) < count($paths[$next])) {
+                    $paths[$next] = $candidate;
+                }
+            }
+        }
+
+        $best = null;
+        $bestSum = null;
+        for ($sum = $target; $sum <= $limit; $sum++) {
+            if (!is_array($paths[$sum])) {
+                continue;
+            }
+
+            if ($best === null || $sum < $bestSum || ($sum === $bestSum && count($paths[$sum]) < count($best))) {
+                $best = $paths[$sum];
+                $bestSum = $sum;
+            }
+        }
+
+        if (!is_array($best)) {
+            return [$min];
+        }
+
+        rsort($best);
+
+        return array_values($best);
     }
 
     /**
@@ -2186,7 +2257,7 @@ SVG;
             throw new \RuntimeException('La durata richiesta supera il limite del provider ma FFmpeg non e disponibile per unire i segmenti.');
         }
 
-        $segmentDurations = $this->segmentDurationsForExtendedVideo($videoProvider, $targetTotalSeconds);
+        $segmentDurations = $this->segmentDurationsForExtendedVideo($videoProvider, $targetTotalSeconds, (string) ($videoOptions['model'] ?? ''));
         if (count($segmentDurations) < 2) {
             throw new \RuntimeException('Impossibile costruire un piano segmenti valido per il reel esteso richiesto.');
         }
@@ -2869,16 +2940,6 @@ SVG;
     private function normalizeVideoOptionsForProvider(string $provider, array $videoOptions): array
     {
         $provider = strtolower(trim($provider));
-        $seconds = (int) ($videoOptions['seconds'] ?? 0);
-        if ($seconds <= 0) {
-            $seconds = match ($provider) {
-                'runway' => (int) (config('runway.video_seconds') ?: 8),
-                'kling' => (int) (config('kling.video_seconds') ?: 5),
-                default => (int) (config('openai.video_seconds') ?: 8),
-            };
-        }
-        $seconds = $this->normalizeVideoSecondsForProvider($provider, $seconds);
-
         $size = trim((string) ($videoOptions['size'] ?? ''));
         if ($size === '') {
             $size = (string) (config('openai.video_size') ?: '720x1280');
@@ -2891,6 +2952,16 @@ SVG;
             default => $this->normalizeOpenAiVideoModel($model),
         };
 
+        $seconds = (int) ($videoOptions['seconds'] ?? 0);
+        if ($seconds <= 0) {
+            $seconds = match ($provider) {
+                'runway' => (int) (config('runway.video_seconds') ?: 8),
+                'kling' => (int) (config('kling.video_seconds') ?: 5),
+                default => (int) (config('openai.video_seconds') ?: 8),
+            };
+        }
+        $seconds = $this->normalizeVideoSecondsForProvider($provider, $seconds, $model);
+
         $videoOptions['model'] = $model;
         $videoOptions['seconds'] = $seconds;
         $videoOptions['size'] = $size;
@@ -2898,16 +2969,25 @@ SVG;
         return $videoOptions;
     }
 
-    private function normalizeVideoSecondsForProvider(string $provider, int $seconds): int
+    private function normalizeVideoSecondsForProvider(string $provider, int $seconds, string $model = ''): int
     {
         $provider = strtolower(trim($provider));
         $seconds = max(1, $seconds);
 
         return match ($provider) {
-            'runway' => max(3, min(10, $seconds)),
+            'runway' => $this->isRunwayVeoModel($model)
+                ? ($seconds < 6 ? 4 : ($seconds < 8 ? 6 : 8))
+                : max(3, min(10, $seconds)),
             'kling' => $seconds >= 8 ? 10 : 5,
             default => $seconds <= 4 ? 4 : ($seconds <= 8 ? 8 : 12),
         };
+    }
+
+    private function isRunwayVeoModel(string $model): bool
+    {
+        $normalized = $this->normalizeRunwayVideoModel($model);
+
+        return str_starts_with($normalized, 'veo3');
     }
 
     private function normalizeOpenAiVideoModel(string $model): string

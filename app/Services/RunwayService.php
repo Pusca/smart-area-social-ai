@@ -79,7 +79,7 @@ class RunwayService
             $model = 'gen4.5';
         }
         $seconds = (int) ($options['seconds'] ?? config('runway.video_seconds') ?: 8);
-        $seconds = max(3, min(10, $seconds));
+        $seconds = $this->normalizeDurationForModel($seconds, $model);
         $size = trim((string) ($options['size'] ?? ''));
         $ratio = $this->normalizeRatio((string) (config('runway.video_ratio') ?: ''), $size);
         $safePrompt = $this->normalizePrompt($prompt);
@@ -505,5 +505,17 @@ class RunwayService
         }
 
         return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    }
+
+    private function normalizeDurationForModel(int $seconds, string $model): int
+    {
+        $seconds = max(1, $seconds);
+        $model = strtolower(trim($model));
+
+        if (str_starts_with($model, 'veo3')) {
+            return $seconds < 6 ? 4 : ($seconds < 8 ? 6 : 8);
+        }
+
+        return max(3, min(10, $seconds));
     }
 }

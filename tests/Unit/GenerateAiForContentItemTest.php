@@ -301,13 +301,14 @@ class GenerateAiForContentItemTest extends TestCase
             $job,
             'openai',
             20,
-            ['size' => '720x1280'],
+            ['model' => 'sora-2', 'size' => '720x1280'],
             'ffmpeg.exe'
         );
 
         $this->assertSame('single_clip_fallback', $fallback['mode']);
         $this->assertSame('ffmpeg_unavailable', $fallback['reason']);
         $this->assertSame('openai', $fallback['provider']);
+        $this->assertSame('sora-2', $fallback['model']);
         $this->assertSame(20, $fallback['requested_total_seconds']);
         $this->assertSame(12, $fallback['delivered_seconds']);
         $this->assertSame('720x1280', $fallback['size']);
@@ -328,6 +329,21 @@ class GenerateAiForContentItemTest extends TestCase
         ]);
 
         $this->assertSame(12, $normalized['seconds']);
+    }
+
+    public function test_it_normalizes_runway_veo_video_seconds_to_supported_values(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'normalizeVideoOptionsForProvider');
+        $method->setAccessible(true);
+
+        $normalized = $method->invoke($job, 'runway', [
+            'model' => 'veo3.1_fast',
+            'seconds' => 10,
+            'size' => '720x1280',
+        ]);
+
+        $this->assertSame(8, $normalized['seconds']);
     }
 
     public function test_it_marks_video_result_as_single_clip_fallback_when_extended_generation_is_downgraded(): void
@@ -385,11 +401,13 @@ class GenerateAiForContentItemTest extends TestCase
                 'requested_total_seconds' => 20,
                 'delivered_seconds' => 10,
                 'provider' => 'runway',
+                'model' => 'veo3.1_fast',
             ]
         );
 
         $this->assertSame(12, $result['request_summary']['delivered_seconds']);
         $this->assertSame('openai', $result['extended_fallback']['provider']);
+        $this->assertSame('sora_video_generation', $result['source']);
         $this->assertSame(12, $result['extended_fallback']['delivered_seconds']);
     }
 
