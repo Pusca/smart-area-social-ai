@@ -3836,140 +3836,160 @@ SVG;
         $maxAttempts = $mustEnforceExplicitReferences ? 2 : 1;
         $lastValidation = null;
         $lastError = null;
+        $generationAttemptCounter = 0;
+        $runwayPlans = $this->buildRunwayRecoveryPlans($runwayOptions, $videoPrompt, $briefRaw);
 
-        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-            $attemptPrompt = $videoPrompt;
-            if ($attempt > 0) {
-                $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
-                $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
+        foreach ($runwayPlans as $planIndex => $runwayPlan) {
+            $planOptions = $runwayOptions;
+            $planOptions['model'] = (string) ($runwayPlan['model'] ?? $runwayOptions['model']);
+            $planPromptBase = (string) ($runwayPlan['prompt'] ?? $videoPrompt);
+            $planReason = trim((string) ($runwayPlan['reason'] ?? 'primary'));
+            $planError = null;
+
+            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                $generationAttemptCounter++;
+                $attemptPrompt = $planPromptBase;
+                if ($attempt > 0) {
+                    $attemptPrompt .= ' RIGENERAZIONE OBBLIGATORIA: il risultato precedente non rispettava tutti i riferimenti.';
+                    $attemptPrompt .= ' Includi chiaramente ogni soggetto richiesto nelle immagini di input.';
+                }
+
+                $attemptReferenceAbs = $referenceAbs;
+                $attemptReferencePath = $referencePath;
+                $attemptReferencePaths = $referencePaths;
+                $attemptReferenceReason = $referenceReason;
+                if ($planReason !== '' && $planReason !== 'primary') {
+                    $attemptReferenceReason .= '_' . $planReason;
+                }
+                $attemptTempPreparedPath = null;
+
+                try {
+                    try {
+                        $job = $runway->createVideoJob($attemptPrompt, $attemptReferenceAbs, $planOptions);
+                    } catch (Throwable $videoCreateError) {
+                        if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
+                            $fallbackAbs = $generationReferenceAbsPool[0];
+                            $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $planOptions['size']);
+                            if ($fallbackPrepared) {
+                                $attemptTempPreparedPath = $fallbackPrepared;
+                                $attemptReferenceAbs = $fallbackPrepared;
+                                $attemptReferenceReason = 'runway_retry_with_primary_reference_after_error_normalized';
+                            } else {
+                                $attemptReferenceAbs = $fallbackAbs;
+                                $attemptReferenceReason = 'runway_retry_with_primary_reference_after_error';
+                            }
+
+                            $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
+                            $attemptReferencePaths = array_values(array_filter(
+                                [$attemptReferencePath],
+                                fn ($v) => is_string($v) && $v !== ''
+                            ));
+                            $job = $runway->createVideoJob($attemptPrompt, $attemptReferenceAbs, $planOptions);
+                        } else {
+                            $attemptReferenceAbs = null;
+                            $attemptReferencePath = null;
+                            $attemptReferencePaths = [];
+                            $attemptReferenceReason = 'runway_retry_without_reference_after_error';
+                            $job = $runway->createVideoJob($attemptPrompt, null, $planOptions);
+                        }
+                    }
+
+                    $videoId = (string) ($job['id'] ?? '');
+                    $jobFinal = $runway->waitForVideoCompletion($videoId);
+                    $videoBytes = $runway->downloadVideoContent($jobFinal);
+                    $thumbBytes = $runway->downloadThumbnailContent($jobFinal);
+
+                    $validation = null;
+                    if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
+                        $tmpDir = storage_path('app/tmp');
+                        if (!is_dir($tmpDir)) {
+                            @mkdir($tmpDir, 0775, true);
+                        }
+
+                        $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-runway-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
+                        @file_put_contents($tmpThumbPath, $thumbBytes);
+                        if (is_file($tmpThumbPath)) {
+                            $validation = $openAi->validateVideoFrameWithReferences(
+                                brief: $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
+                                frameAbsolutePath: $tmpThumbPath,
+                                referenceAbsolutePaths: !empty($validationReferenceAbsPool)
+                                    ? $validationReferenceAbsPool
+                                    : array_slice($generationReferenceAbsPool, 0, 4)
+                            );
+                            @unlink($tmpThumbPath);
+                        }
+
+                        if (is_array($validation)) {
+                            $lastValidation = $validation;
+                            $allPresent = (bool) ($validation['all_present'] ?? false);
+                            if (!$allPresent && ($attempt + 1) < $maxAttempts) {
+                                continue;
+                            }
+                            if (!$allPresent) {
+                                $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
+                            }
+                        }
+                    }
+
+                    $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
+                    $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
+                    Storage::disk('public')->put($videoPath, $videoBytes);
+
+                    $thumbPath = null;
+                    if (is_string($thumbBytes) && $thumbBytes !== '') {
+                        $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
+                        $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
+                        Storage::disk('public')->put($thumbPath, $thumbBytes);
+                    }
+
+                    $reelBlueprintSummary = $this->compactReelBlueprintSummary(
+                        is_array(data_get($item->ai_meta, 'reel_blueprint', [])) ? (array) data_get($item->ai_meta, 'reel_blueprint', []) : []
+                    );
+
+                    return [
+                        'source' => 'runway_video_generation',
+                        'provider' => 'runway',
+                        'video_id' => $videoId,
+                        'video_path' => $videoPath,
+                        'thumbnail_path' => $thumbPath,
+                        'reference_path' => $attemptReferencePath,
+                        'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
+                        'reference_reason' => $attemptReferenceReason,
+                        'reference_validation' => $validation ?? $lastValidation,
+                        'composition_reference' => $compositionMeta,
+                        'generation_attempts' => $generationAttemptCounter,
+                        'job_status' => (string) ($jobFinal['status'] ?? data_get($jobFinal, 'task.status', 'completed')),
+                        'brand_selection' => $brandDecision,
+                        'request_summary' => [
+                            'mode' => 'image_to_video',
+                            'model' => (string) ($planOptions['model'] ?? ''),
+                            'seconds' => (string) ($planOptions['seconds'] ?? ''),
+                            'size' => (string) ($planOptions['size'] ?? ''),
+                            'has_prompt_image' => is_string($attemptReferenceAbs) && $attemptReferenceAbs !== '',
+                            'reel_blueprint' => $reelBlueprintSummary,
+                            'retry_plan' => $planReason,
+                        ],
+                        'reference_input_summary' => [
+                            'requested_reference_count' => count($imageReferencePathPool),
+                            'active_reference_count' => count(array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== ''))),
+                            'validation_reference_count' => count($validationReferenceAbsPool),
+                            'reference_reason' => $attemptReferenceReason,
+                        ],
+                    ];
+                } catch (Throwable $attemptError) {
+                    $lastError = $attemptError;
+                    $planError = $attemptError;
+                } finally {
+                    if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
+                        @unlink($attemptTempPreparedPath);
+                    }
+                }
             }
 
-            $attemptReferenceAbs = $referenceAbs;
-            $attemptReferencePath = $referencePath;
-            $attemptReferencePaths = $referencePaths;
-            $attemptReferenceReason = $referenceReason;
-            $attemptTempPreparedPath = null;
-
-            try {
-                try {
-                    $job = $runway->createVideoJob($attemptPrompt, $attemptReferenceAbs, $runwayOptions);
-                } catch (Throwable $videoCreateError) {
-                    if ($mustEnforceExplicitReferences && !empty($generationReferenceAbsPool)) {
-                        $fallbackAbs = $generationReferenceAbsPool[0];
-                        $fallbackPrepared = $this->prepareVideoReferenceForSize($fallbackAbs, (string) $runwayOptions['size']);
-                        if ($fallbackPrepared) {
-                            $attemptTempPreparedPath = $fallbackPrepared;
-                            $attemptReferenceAbs = $fallbackPrepared;
-                            $attemptReferenceReason = 'runway_retry_with_primary_reference_after_error_normalized';
-                        } else {
-                            $attemptReferenceAbs = $fallbackAbs;
-                            $attemptReferenceReason = 'runway_retry_with_primary_reference_after_error';
-                        }
-
-                        $attemptReferencePath = $imageReferencePathPool[0] ?? $attemptReferencePath;
-                        $attemptReferencePaths = array_values(array_filter(
-                            [$attemptReferencePath],
-                            fn ($v) => is_string($v) && $v !== ''
-                        ));
-                        $job = $runway->createVideoJob($attemptPrompt, $attemptReferenceAbs, $runwayOptions);
-                    } else {
-                        $attemptReferenceAbs = null;
-                        $attemptReferencePath = null;
-                        $attemptReferencePaths = [];
-                        $attemptReferenceReason = 'runway_retry_without_reference_after_error';
-                        $job = $runway->createVideoJob($attemptPrompt, null, $runwayOptions);
-                    }
-                }
-
-                $videoId = (string) ($job['id'] ?? '');
-                $jobFinal = $runway->waitForVideoCompletion($videoId);
-                $videoBytes = $runway->downloadVideoContent($jobFinal);
-                $thumbBytes = $runway->downloadThumbnailContent($jobFinal);
-
-                $validation = null;
-                if ($mustEnforceExplicitReferences && is_string($thumbBytes) && $thumbBytes !== '') {
-                    $tmpDir = storage_path('app/tmp');
-                    if (!is_dir($tmpDir)) {
-                        @mkdir($tmpDir, 0775, true);
-                    }
-
-                    $tmpThumbPath = $tmpDir . DIRECTORY_SEPARATOR . 'video-validate-runway-' . Str::uuid()->toString() . '.' . $this->detectImageExtensionFromBytes($thumbBytes);
-                    @file_put_contents($tmpThumbPath, $thumbBytes);
-                    if (is_file($tmpThumbPath)) {
-                        $validation = $openAi->validateVideoFrameWithReferences(
-                            brief: $briefRaw !== '' ? $briefRaw : $fallbackPrompt,
-                            frameAbsolutePath: $tmpThumbPath,
-                            referenceAbsolutePaths: !empty($validationReferenceAbsPool)
-                                ? $validationReferenceAbsPool
-                                : array_slice($generationReferenceAbsPool, 0, 4)
-                        );
-                        @unlink($tmpThumbPath);
-                    }
-
-                    if (is_array($validation)) {
-                        $lastValidation = $validation;
-                        $allPresent = (bool) ($validation['all_present'] ?? false);
-                        if (!$allPresent && ($attempt + 1) < $maxAttempts) {
-                            continue;
-                        }
-                        if (!$allPresent) {
-                            $attemptReferenceReason .= '_validation_failed_accept_last_attempt';
-                        }
-                    }
-                }
-
-                $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
-                $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
-                Storage::disk('public')->put($videoPath, $videoBytes);
-
-                $thumbPath = null;
-                if (is_string($thumbBytes) && $thumbBytes !== '') {
-                    $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
-                    $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
-                    Storage::disk('public')->put($thumbPath, $thumbBytes);
-                }
-
-                $reelBlueprintSummary = $this->compactReelBlueprintSummary(
-                    is_array(data_get($item->ai_meta, 'reel_blueprint', [])) ? (array) data_get($item->ai_meta, 'reel_blueprint', []) : []
-                );
-
-                return [
-                    'source' => 'runway_video_generation',
-                    'provider' => 'runway',
-                    'video_id' => $videoId,
-                    'video_path' => $videoPath,
-                    'thumbnail_path' => $thumbPath,
-                    'reference_path' => $attemptReferencePath,
-                    'reference_paths' => array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== '')),
-                    'reference_reason' => $attemptReferenceReason,
-                    'reference_validation' => $validation ?? $lastValidation,
-                    'composition_reference' => $compositionMeta,
-                    'generation_attempts' => $attempt + 1,
-                    'job_status' => (string) ($jobFinal['status'] ?? data_get($jobFinal, 'task.status', 'completed')),
-                    'brand_selection' => $brandDecision,
-                    'request_summary' => [
-                        'mode' => 'image_to_video',
-                        'model' => (string) ($runwayOptions['model'] ?? ''),
-                        'seconds' => (string) ($runwayOptions['seconds'] ?? ''),
-                        'size' => (string) ($runwayOptions['size'] ?? ''),
-                        'has_prompt_image' => is_string($attemptReferenceAbs) && $attemptReferenceAbs !== '',
-                        'reel_blueprint' => $reelBlueprintSummary,
-                    ],
-                    'reference_input_summary' => [
-                        'requested_reference_count' => count($imageReferencePathPool),
-                        'active_reference_count' => count(array_values(array_filter($attemptReferencePaths, fn ($v) => is_string($v) && $v !== ''))),
-                        'validation_reference_count' => count($validationReferenceAbsPool),
-                        'reference_reason' => $attemptReferenceReason,
-                    ],
-                ];
-            } catch (Throwable $attemptError) {
-                $lastError = $attemptError;
-                if (($attempt + 1) >= $maxAttempts) {
-                    throw $attemptError;
-                }
-            } finally {
-                if (is_string($attemptTempPreparedPath) && $attemptTempPreparedPath !== '' && is_file($attemptTempPreparedPath)) {
-                    @unlink($attemptTempPreparedPath);
+            if ($planError instanceof Throwable) {
+                $hasMorePlans = ($planIndex + 1) < count($runwayPlans);
+                if (!$hasMorePlans || !$this->shouldRetryRunwayInsideProvider($planError)) {
+                    throw $planError;
                 }
             }
         }
@@ -4199,6 +4219,98 @@ SVG;
             || str_contains($message, 'runway video generation timeout')
             || str_contains($message, 'curl error')
             || str_contains($message, 'failed to connect');
+    }
+
+    private function shouldRetryRunwayInsideProvider(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+
+        if ($message === '') {
+            return false;
+        }
+
+        if (str_contains($message, 'missing runway_api_key')) {
+            return false;
+        }
+
+        if (str_contains($message, 'runway video create error (400)')) {
+            return false;
+        }
+
+        if (str_contains($message, 'safety_rejected')) {
+            return false;
+        }
+
+        return str_contains($message, 'runway video generation failed: video_generation_failed')
+            || str_contains($message, 'runway video generation failed: video_generation_failed (status=')
+            || str_contains($message, 'runway video generation timeout')
+            || str_contains($message, 'runway asset download error')
+            || str_contains($message, 'runway completed payload missing downloadable video url')
+            || $this->isTransientNetworkError($error);
+    }
+
+    /**
+     * @param  array<string, mixed>  $runwayOptions
+     * @return array<int, array{model:string,prompt:string,reason:string}>
+     */
+    private function buildRunwayRecoveryPlans(array $runwayOptions, string $videoPrompt, string $briefRaw): array
+    {
+        $plans = [];
+        $baseModel = $this->normalizeRunwayVideoModel((string) ($runwayOptions['model'] ?? 'gen4.5'));
+        $basePrompt = trim($videoPrompt);
+        $stabilityPrompt = $this->buildRunwayStabilityRetryPrompt($videoPrompt, $briefRaw);
+
+        $pushPlan = function (string $model, string $prompt, string $reason) use (&$plans): void {
+            $model = $this->normalizeRunwayVideoModel($model);
+            $prompt = trim($prompt);
+            if ($model === '' || $prompt === '') {
+                return;
+            }
+
+            $key = strtolower($model) . '|' . sha1($prompt);
+            if (isset($plans[$key])) {
+                return;
+            }
+
+            $plans[$key] = [
+                'model' => $model,
+                'prompt' => $prompt,
+                'reason' => $reason,
+            ];
+        };
+
+        $pushPlan($baseModel, $basePrompt, 'primary');
+
+        if ($baseModel !== 'gen4.5') {
+            $pushPlan('gen4.5', $basePrompt, 'gen45_model_retry');
+        }
+
+        if ($stabilityPrompt !== '' && $stabilityPrompt !== $basePrompt) {
+            $pushPlan('gen4.5', $stabilityPrompt, 'gen45_stability_retry');
+        }
+
+        return array_values($plans);
+    }
+
+    private function buildRunwayStabilityRetryPrompt(string $videoPrompt, string $briefRaw): string
+    {
+        $source = trim($briefRaw !== '' ? $briefRaw : $videoPrompt);
+        $parts = [
+            'Create one coherent vertical 9:16 social video with one clear subject and one real environment.',
+            'Keep identity, styling, location and camera logic stable from start to end.',
+            'Use a simple premium commercial action with realistic motion and natural light.',
+            'Avoid scene morphing, architecture changes, extra subjects, heavy transitions, text and watermark.',
+        ];
+
+        if ($source !== '') {
+            $parts[] = 'Priority brief: ' . Str::limit($source, 180, '');
+        }
+
+        return Str::limit(
+            trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))),
+            max(300, min(900, (int) (config('runway.max_prompt_chars') ?: 980))),
+            ''
+        );
     }
 
     private function shouldFallbackFromKlingToSecondaryProvider(Throwable $error): bool

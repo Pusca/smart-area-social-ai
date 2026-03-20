@@ -22,6 +22,38 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertFalse($method->invoke($job, new RuntimeException('Runway video create error (400) BODY=validation error')));
     }
 
+    public function test_it_marks_generic_runway_failures_as_intra_provider_retry_candidates(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldRetryRunwayInsideProvider');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, new RuntimeException('Runway video generation failed: video_generation_failed (status=FAILED)')));
+        $this->assertTrue($method->invoke($job, new RuntimeException('Runway video generation timeout after 420s (status=in_progress)')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('Runway video generation failed: safety_rejected: video_generation_failed')));
+    }
+
+    public function test_it_builds_runway_recovery_plans_with_gen45_retry_and_stability_prompt(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildRunwayRecoveryPlans');
+        $method->setAccessible(true);
+
+        $plans = $method->invoke($job, [
+            'model' => 'veo3.1_fast',
+            'seconds' => 8,
+            'size' => '720x1280',
+        ], 'Create a premium branded reel with the provided references.', 'Mostra la persona reale del brand nel locale.');
+
+        $this->assertCount(3, $plans);
+        $this->assertSame('veo3.1_fast', $plans[0]['model']);
+        $this->assertSame('primary', $plans[0]['reason']);
+        $this->assertSame('gen4.5', $plans[1]['model']);
+        $this->assertSame('gen45_model_retry', $plans[1]['reason']);
+        $this->assertSame('gen4.5', $plans[2]['model']);
+        $this->assertSame('gen45_stability_retry', $plans[2]['reason']);
+    }
+
     public function test_it_disables_cross_provider_video_fallback_when_provider_is_locked(): void
     {
         $job = new GenerateAiForContentItem(1);
