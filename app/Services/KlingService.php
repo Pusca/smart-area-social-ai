@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -51,32 +52,42 @@ class KlingService
     public function createVideoJob(string $prompt, array $referenceInputs = [], array $options = []): array
     {
         $requestMode = $this->resolveRequestMode($referenceInputs, (string) ($options['request_mode'] ?? ''));
-        $payload = $this->buildCreatePayload($prompt, $referenceInputs, $options, $requestMode);
-        $url = $this->createUrl($requestMode);
         $timeout = (int) (config('kling.timeout_create') ?: 60);
         $request = $this->request($timeout)->retry(1, 350);
-        $res = $request->post($url, $payload);
 
-        if (
-            !$res->successful()
-            && $res->status() === 400
-            && str_contains(strtolower($res->body()), 'model is not supported')
-        ) {
-            $fallbackModel = $this->defaultModelForRequestMode($requestMode);
-            if ($fallbackModel !== '' && $fallbackModel !== (string) ($payload['model_name'] ?? '')) {
-                $payload['model_name'] = $fallbackModel;
-                if (!$this->shouldSendModeForModel($fallbackModel)) {
-                    unset($payload['mode']);
-                }
-                $res = $request->post($url, $payload);
+        $attemptErrors = [];
+        $successfulPayload = null;
+        $successfulRequestMode = $requestMode;
+        $successfulUrl = '';
+        $successfulResponse = null;
+        $attemptCount = 0;
+
+        foreach ($this->buildCreateAttempts($prompt, $referenceInputs, $options, $requestMode) as $attempt) {
+            $attemptCount++;
+            $attemptUrl = (string) ($attempt['url'] ?? '');
+            $attemptPayload = is_array($attempt['payload'] ?? null) ? $attempt['payload'] : [];
+            $attemptRequestMode = (string) ($attempt['request_mode'] ?? $requestMode);
+            $res = $request->post($attemptUrl, $attemptPayload);
+
+            if ($res->successful()) {
+                $successfulPayload = $attemptPayload;
+                $successfulRequestMode = $attemptRequestMode;
+                $successfulUrl = $attemptUrl;
+                $successfulResponse = $res;
+                break;
+            }
+
+            $attemptErrors[] = $this->formatCreateError($res, $attemptUrl);
+            if (!$this->isUnsupportedModelResponse($res)) {
+                throw new RuntimeException('Kling video create error ' . implode(' | ', $attemptErrors));
             }
         }
 
-        if (!$res->successful()) {
-            throw new RuntimeException("Kling video create error ({$res->status()}) URL={$url} BODY=" . $res->body());
+        if (!is_array($successfulPayload) || !$successfulResponse instanceof Response) {
+            throw new RuntimeException('Kling video create error ' . implode(' | ', $attemptErrors));
         }
 
-        $data = $res->json();
+        $data = $successfulResponse->json();
         if (!is_array($data)) {
             throw new RuntimeException('Invalid Kling create response payload.');
         }
@@ -91,16 +102,18 @@ class KlingService
             throw new RuntimeException('Missing Kling task id in create response.');
         }
 
-        $summary = $this->buildRequestSummary($payload, $requestMode);
+        $summary = $this->buildRequestSummary($successfulPayload, $successfulRequestMode);
+        $summary['attempt_count'] = $attemptCount;
+        $summary['fallback_applied'] = $attemptCount > 1;
         Log::info('KlingService createVideoJob', $summary + [
             'task_id' => $taskId,
-            'url' => $url,
+            'url' => $successfulUrl,
         ]);
 
         return [
             'id' => $taskId,
             'raw' => $data,
-            'request_mode' => $requestMode,
+            'request_mode' => $successfulRequestMode,
             'request_summary' => $summary,
         ];
     }
@@ -300,6 +313,117 @@ class KlingService
         return $model;
     }
 
+    /**
+     * @param  array<int, string>  $referenceInputs
+     * @param  array<string, mixed>  $options
+     * @return array<int, array{request_mode:string,url:string,payload:array<string,mixed>}>
+     */
+    private function buildCreateAttempts(string $prompt, array $referenceInputs, array $options, string $requestMode): array
+    {
+        $attempts = [];
+        $configuredModel = (string) ($options['model'] ?? config('kling.model') ?: '');
+
+        $this->appendCreateAttempts(
+            $attempts,
+            $prompt,
+            $referenceInputs,
+            $options,
+            $requestMode,
+            $this->modelCandidatesForRequestMode($requestMode, $configuredModel)
+        );
+
+        if ($requestMode === 'multi-image' && count($referenceInputs) > 1) {
+            $fallbackOptions = $options;
+            $fallbackOptions['request_mode'] = 'image';
+
+            $this->appendCreateAttempts(
+                $attempts,
+                $prompt,
+                array_values(array_slice($referenceInputs, 0, 1)),
+                $fallbackOptions,
+                'image',
+                $this->modelCandidatesForRequestMode('image', $configuredModel)
+            );
+        }
+
+        return array_values($attempts);
+    }
+
+    /**
+     * @param  array<string, array{request_mode:string,url:string,payload:array<string,mixed>}>  $attempts
+     * @param  array<int, string>  $referenceInputs
+     * @param  array<string, mixed>  $options
+     * @param  array<int, string>  $modelCandidates
+     */
+    private function appendCreateAttempts(
+        array &$attempts,
+        string $prompt,
+        array $referenceInputs,
+        array $options,
+        string $requestMode,
+        array $modelCandidates
+    ): void {
+        foreach ($modelCandidates as $modelCandidate) {
+            $attemptOptions = $options;
+            $attemptOptions['model'] = $modelCandidate;
+            $payload = $this->buildCreatePayload($prompt, $referenceInputs, $attemptOptions, $requestMode);
+            $url = $this->createUrl($requestMode);
+            $key = implode('|', [
+                $requestMode,
+                $url,
+                (string) ($payload['model_name'] ?? ''),
+                !empty($payload['image']) ? '1' : '0',
+                (string) count((array) ($payload['image_list'] ?? [])),
+            ]);
+
+            if (!isset($attempts[$key])) {
+                $attempts[$key] = [
+                    'request_mode' => $requestMode,
+                    'url' => $url,
+                    'payload' => $payload,
+                ];
+            }
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function modelCandidatesForRequestMode(string $requestMode, string $configuredModel): array
+    {
+        $configuredModel = strtolower(trim(str_replace(['_', '.'], '-', $configuredModel)));
+        $candidates = [];
+
+        if ($configuredModel !== '') {
+            $candidates[] = $configuredModel;
+        }
+
+        $fallbacks = match ($requestMode) {
+            'multi-image' => ['kling-v2'],
+            'image' => ['kling-v2-1', 'kling-v2', 'kling-v1-6'],
+            default => ['kling-v2-1-master', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
+        };
+
+        foreach ($fallbacks as $fallback) {
+            $candidates[] = $fallback;
+        }
+
+        $candidates = array_values(array_filter(array_map(function ($model) use ($requestMode) {
+            $normalized = strtolower(trim(str_replace(['_', '.'], '-', (string) $model)));
+            if ($normalized === '') {
+                return null;
+            }
+
+            if ($this->isOfficialKlingEndpoint() && !$this->supportsModelForRequestMode($normalized, $requestMode)) {
+                return null;
+            }
+
+            return $normalized;
+        }, $candidates)));
+
+        return array_values(array_unique($candidates));
+    }
+
     private function defaultModelForRequestMode(string $requestMode): string
     {
         return match ($requestMode) {
@@ -320,8 +444,8 @@ class KlingService
 
         return match ($requestMode) {
             'multi-image' => in_array($model, ['kling-v2'], true),
-            'image' => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master'], true),
-            default => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master'], true),
+            'image' => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
+            default => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
         };
     }
 
@@ -612,6 +736,17 @@ class KlingService
                 ? count((array) $payload['image_list'])
                 : (!empty($payload['image']) ? 1 : 0),
         ];
+    }
+
+    private function isUnsupportedModelResponse(Response $response): bool
+    {
+        return $response->status() === 400
+            && str_contains(strtolower($response->body()), 'model is not supported');
+    }
+
+    private function formatCreateError(Response $response, string $url): string
+    {
+        return "({$response->status()}) URL={$url} BODY=" . $response->body();
     }
 }
 
