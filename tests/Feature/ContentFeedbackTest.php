@@ -36,6 +36,8 @@ class ContentFeedbackTest extends TestCase
         $this->assertNotNull($entry);
         $this->assertSame('dislike', $entry->sentiment);
         $this->assertSame('realism', $entry->category);
+        $this->assertSame('person_not_consistent', $entry->normalized_category);
+        $this->assertSame('high', $entry->severity);
         $this->assertSame('visual_first', $entry->scope);
         $this->assertSame('regenerate', $entry->action);
 
@@ -44,16 +46,19 @@ class ContentFeedbackTest extends TestCase
         $this->assertSame('queued', $item->ai_status);
         $this->assertSame((int) $entry->id, (int) data_get($item->ai_meta, 'feedback_loop.active_request.feedback_id'));
         $this->assertSame('realism', data_get($item->ai_meta, 'feedback_loop.active_request.category'));
+        $this->assertSame('person_not_consistent', data_get($item->ai_meta, 'feedback_loop.active_request.normalized_category'));
+        $this->assertSame('high', data_get($item->ai_meta, 'feedback_loop.active_request.severity'));
         $this->assertStringContainsString('persone sembrano finte', (string) data_get($item->ai_meta, 'feedback_loop.active_request.reason'));
         $this->assertSame(1, (int) data_get($item->ai_meta, 'memory_summary.feedback_summary.total_count'));
         $this->assertSame(1, (int) data_get($item->ai_meta, 'memory_summary.feedback_summary.dislikes_count'));
+        $this->assertContains('person_not_consistent', data_get($item->ai_meta, 'memory_summary.feedback_summary.priority_categories', []));
 
         Queue::assertPushed(GenerateAiForContentItem::class, function (GenerateAiForContentItem $job) use ($item) {
             return $job->contentItemId === (int) $item->id;
         });
     }
 
-    public function test_memory_builder_includes_feedback_preferences_and_objections(): void
+    public function test_memory_builder_includes_structured_feedback_preferences_and_objections(): void
     {
         [$tenant, $user, $itemA] = $this->makeTenantUserAndItem();
 
@@ -82,6 +87,8 @@ class ContentFeedbackTest extends TestCase
             'user_id' => $user->id,
             'sentiment' => 'like',
             'category' => null,
+            'normalized_category' => null,
+            'severity' => 'low',
             'scope' => 'full',
             'reason' => 'Molto realistico e in linea con il brand.',
             'action' => 'record_only',
@@ -94,9 +101,15 @@ class ContentFeedbackTest extends TestCase
             'user_id' => $user->id,
             'sentiment' => 'dislike',
             'category' => 'tone_of_voice',
+            'normalized_category' => null,
+            'severity' => null,
             'scope' => 'copy_first',
             'reason' => 'Il tono e troppo freddo, deve sembrare piu vicino e piu umano.',
             'action' => 'record_only',
+            'scores' => [
+                'brand_fit_score' => 2,
+                'quality_score' => 3,
+            ],
             'meta' => [],
         ]);
 
@@ -106,9 +119,14 @@ class ContentFeedbackTest extends TestCase
         $this->assertSame(1, (int) data_get($memory, 'feedback_summary.likes_count'));
         $this->assertSame(1, (int) data_get($memory, 'feedback_summary.dislikes_count'));
         $this->assertContains('post', data_get($memory, 'feedback_summary.preferred_formats', []));
-        $this->assertContains('tone_of_voice', data_get($memory, 'feedback_summary.priority_categories', []));
+        $this->assertContains('off_brand', data_get($memory, 'feedback_summary.priority_categories', []));
+        $this->assertSame(1, (int) data_get($memory, 'feedback_summary.category_breakdown.off_brand'));
+        $this->assertSame(1, (int) data_get($memory, 'feedback_summary.severity_breakdown.high'));
+        $this->assertSame(2.0, (float) data_get($memory, 'feedback_summary.score_averages.brand_fit_score'));
         $this->assertNotEmpty(data_get($memory, 'feedback_summary.positive_signals', []));
         $this->assertNotEmpty(data_get($memory, 'feedback_summary.hard_avoid_rules', []));
+        $this->assertContains('off_brand', data_get($memory, 'feedback_summary.retrieval_hints.high_severity_categories', []));
+        $this->assertSame('off_brand', data_get($memory, 'feedback_summary.recent_objections.0.normalized_category'));
     }
 
     /**

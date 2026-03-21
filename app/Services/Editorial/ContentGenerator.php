@@ -335,6 +335,7 @@ class ContentGenerator
                 'kind' => (string) ($ref['kind'] ?? 'custom'),
                 'description' => (string) ($ref['description'] ?? ''),
                 'profile' => is_array($ref['profile'] ?? null) ? $ref['profile'] : [],
+                'identity_pack' => is_array($ref['identity_pack'] ?? null) ? $ref['identity_pack'] : [],
                 'asset_ids' => array_values(array_filter(array_map(
                     fn ($id) => (int) $id,
                     (array) ($ref['asset_ids'] ?? [])
@@ -368,3 +369,4 @@ class ContentGenerator
         ];
     }
 }
+

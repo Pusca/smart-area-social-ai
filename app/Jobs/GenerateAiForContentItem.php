@@ -6,8 +6,22 @@ use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Services\AI\AiProviderMatrixService;
+use App\Services\AssetIdentityService;
+use App\Services\AssetVariableService;
 use App\Services\AI\ContentAlignmentService;
+use App\Services\AI\GenerationQualityScorecardService;
+use App\Services\AI\GenerationVersionRegistry;
+use App\Services\AI\Pipeline\BuildGenerationContextStep;
+use App\Services\AI\Pipeline\BuildVisualPromptStep;
+use App\Services\AI\Pipeline\GenerateBaseTextStep;
+use App\Services\AI\Pipeline\GenerateVisualAssetStep;
+use App\Services\AI\Pipeline\GenerationPipelineState;
+use App\Services\AI\Pipeline\PersistGenerationOutputsStep;
+use App\Services\AI\Pipeline\ResolveProviderMatrixStep;
+use App\Services\AI\ProviderCapabilityRegistry;
 use App\Services\AI\TenantContentIntelligenceService;
+use App\Services\GenerationAuditService;
+use App\Services\GenerationMetricsService;
 use App\Services\MemoryBuilderService;
 use App\Support\ImagePromptRealismGuard;
 use App\Services\KlingService;
@@ -36,799 +50,94 @@ class GenerateAiForContentItem implements ShouldQueue
 
     public int $timeout = 180;
     public int $tries = 1;
+    public string $runKey;
 
-    public function __construct(public int $contentItemId)
+    public function __construct(public int $contentItemId, ?string $runKey = null)
     {
+        $this->runKey = trim((string) $runKey) !== ''
+            ? trim((string) $runKey)
+            : Str::uuid()->toString();
     }
 
     public function handle(
-        OpenAiService $openAi,
-        RunwayService $runway,
-        KlingService $kling,
-        NanoBananaService $nanoBanana,
-        MemoryBuilderService $memoryBuilder,
-        TenantContentIntelligenceService $tenantContentIntelligence,
-        AiProviderMatrixService $aiProviderMatrixService,
-        ContentAlignmentService $contentAlignment,
+        BuildGenerationContextStep $buildGenerationContext,
+        ResolveProviderMatrixStep $resolveProviderMatrix,
+        GenerateBaseTextStep $generateBaseText,
+        BuildVisualPromptStep $buildVisualPrompt,
+        GenerateVisualAssetStep $generateVisualAsset,
+        PersistGenerationOutputsStep $persistGenerationOutputs,
         WorkspaceNotificationService $workspaceNotifications,
-        SpeechSynthesisService $speechSynthesis
+        GenerationAuditService $generationAudit,
+        GenerationMetricsService $generationMetrics,
+        GenerationQualityScorecardService $qualityScorecard
     ): void
     {
         $item = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
-        $strictAssetMode = (bool) config('generation.strict_asset_mode', true);
-
-        $item->ai_status = 'pending';
-        $item->ai_error = null;
-        $item->save();
-
-        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
-        $liveBrandAssets = $this->loadBrandAssetsFromDb((int) $item->tenant_id);
-        $meta['brand_assets'] = $this->mergeBrandAssets((array) data_get($meta, 'brand_assets', []), $liveBrandAssets);
-        $strategy = data_get($meta, 'strategy', $item->plan?->strategy ?? []);
-        $itemBrain = data_get($meta, 'item_brain', []);
-        $tenantProfile = data_get($meta, 'tenant_profile', data_get($meta, 'brand', []));
-        $memorySummary = $memoryBuilder->buildForTenant((int) $item->tenant_id, 40);
-        $activeFeedbackRequest = $this->normalizeFeedbackRequest((array) data_get($meta, 'feedback_loop.active_request', []));
-        $assetVariables = $this->resolveAssetVariableContext((int) $item->tenant_id, $meta, $strategy);
-        $assetIdentity = $this->resolveAssetIdentityContext($meta, $assetVariables);
-        $briefSeed = trim((string) ($item->caption ?: data_get($meta, 'manual_brief', $item->title ?: '')));
-        $tenantIntelligence = $tenantContentIntelligence->buildForGeneration(
-            (int) $item->tenant_id,
-            $briefSeed,
-            (string) $item->format,
-            $item->platforms()
+        $state = GenerationPipelineState::fromItem(
+            $item,
+            (bool) config('generation.strict_asset_mode', true)
         );
-        $providerMatrix = $aiProviderMatrixService->resolve($meta, (int) $item->tenant_id);
-        $meta['memory_summary'] = $memorySummary;
-        $meta['image_provider'] = $this->resolveImageProvider($meta);
-        $meta['asset_variables'] = $assetVariables;
-        $meta['asset_variables_catalog'] = (array) ($assetVariables['catalog'] ?? []);
-        $meta['asset_identity'] = $assetIdentity;
-        $meta['knowledge_pack'] = (array) ($tenantIntelligence['knowledge_pack'] ?? []);
-        $meta['examples'] = (array) ($tenantIntelligence['examples'] ?? []);
-        $meta['negative_examples'] = (array) ($tenantIntelligence['negative_examples'] ?? []);
-        $meta['feedback_signals'] = (array) ($tenantIntelligence['feedback_signals'] ?? []);
-        $meta['provider_matrix'] = $providerMatrix;
-        $meta['strategy_snapshot'] = [
-            'strategy_id' => data_get($strategy, 'strategy_id'),
-            'strategy_updated_at' => data_get($strategy, 'strategy_updated_at'),
-            'strategy_locked' => (bool) data_get($strategy, 'strategy_locked', false),
-            'analysis_framework' => (array) data_get($strategy, 'analysis_framework', []),
-            'visual_system' => (array) data_get($strategy, 'visual_system', []),
-            'publishing_system' => (array) data_get($strategy, 'publishing_system', []),
-            'strategy_notes' => (string) data_get($strategy, 'strategy_notes', ''),
-            'captured_at' => now()->toDateTimeString(),
-        ];
-        $item->ai_meta = $meta;
-        $item->save();
+
+        $state = $buildGenerationContext->handle($this, $state);
+        $state = $resolveProviderMatrix->handle($this, $state);
 
         if ($this->isDemoMode()) {
-            $this->applyDemoPreset($item, $tenantProfile, $itemBrain, $meta);
-            $this->notifyAiSuccess($item, $workspaceNotifications);
-            return;
-        }
-
-        $recentCaptions = ContentItem::query()
-            ->where('tenant_id', $item->tenant_id)
-            ->where('id', '!=', $item->id)
-            ->whereNotNull('ai_caption')
-            ->whereIn('ai_status', ['done', 'pending'])
-            ->orderByDesc('ai_generated_at')
-            ->orderByDesc('id')
-            ->limit(8)
-            ->pluck('ai_caption')
-            ->map(fn ($caption) => Str::limit((string) $caption, 200, ''))
-            ->values()
-            ->all();
-
-        $planContext = ContentItem::query()
-            ->where('tenant_id', $item->tenant_id)
-            ->where('content_plan_id', $item->content_plan_id)
-            ->where('id', '!=', $item->id)
-            ->orderBy('scheduled_at')
-            ->orderBy('id')
-            ->get(['title', 'ai_caption']);
-
-        $planTitles = $planContext
-            ->pluck('title')
-            ->filter()
-            ->map(fn ($title) => Str::limit((string) $title, 120, ''))
-            ->values()
-            ->all();
-
-        $planCaptions = $planContext
-            ->pluck('ai_caption')
-            ->filter()
-            ->map(fn ($caption) => Str::limit((string) $caption, 200, ''))
-            ->values()
-            ->all();
-
-        try {
-            $context = [
-                'brand' => $tenantProfile,
-                'plan' => data_get($meta, 'plan', []),
-                'strategy' => $strategy,
-                'strategy_blueprint' => [
-                    'analysis_framework' => (array) data_get($strategy, 'analysis_framework', []),
-                    'visual_system' => (array) data_get($strategy, 'visual_system', []),
-                    'publishing_system' => (array) data_get($strategy, 'publishing_system', []),
-                    'notes' => (string) data_get($strategy, 'strategy_notes', ''),
+            $demoAttempt = $generationAudit->startAttempt($state->run, 'demo_preset', [
+                'type' => 'system',
+                'stage' => 'demo_preset',
+                'provider_requested' => 'local_demo',
+                'provider_effective' => 'local_demo',
+                'model_requested' => 'demo_preset_v1',
+                'model_effective' => 'demo_preset_v1',
+                'input_summary' => [
+                    'format' => (string) $item->format,
+                    'platform' => (string) $item->platform,
                 ],
-                'item_brain' => $itemBrain,
-                'manual_brief' => $briefSeed,
-                'memory_summary' => $memorySummary,
-                'knowledge_pack' => (array) data_get($meta, 'knowledge_pack', []),
-                'examples' => (array) data_get($meta, 'examples', []),
-                'negative_examples' => (array) data_get($meta, 'negative_examples', []),
-                'feedback_signals' => (array) data_get($meta, 'feedback_signals', []),
-                'provider_matrix' => $providerMatrix,
-                'feedback_loop' => [
-                    'active_request' => $activeFeedbackRequest,
-                    'latest_feedback' => (array) data_get($meta, 'feedback_loop.latest_feedback', []),
-                    'tenant_feedback' => (array) data_get($memorySummary, 'feedback_summary', []),
-                ],
-                'social_publication_context' => $this->buildSocialPublicationContext(
-                    $item,
-                    $itemBrain,
-                    $planTitles,
-                    $planCaptions
-                ),
-                'asset_variables' => $assetVariables,
-                'asset_identity' => $assetIdentity,
-                'repetition_rules' => [
-                    'avoid_list' => array_values(array_unique(array_filter(array_merge(
-                        (array) data_get($itemBrain, 'avoid_list', []),
-                        (array) data_get($strategy, 'repetition_guard.avoid_terms', []),
-                        (array) data_get($memorySummary, 'avoid_repetition', [])
-                    )))),
-                    'recent_captions' => $recentCaptions,
-                    'plan_titles' => $planTitles,
-                    'plan_captions' => $planCaptions,
-                ],
-                'item' => [
-                    'platform' => $item->platform,
-                    'format' => $item->format,
-                    'title' => $item->title,
-                    'scheduled_at' => optional($item->scheduled_at)->toDateTimeString(),
-                ],
-            ];
-
-            $comparisonTexts = array_values(array_unique(array_filter(array_merge(
-                $recentCaptions,
-                $planCaptions,
-                $planTitles
-            ))));
-
-            $bestGen = null;
-            $bestScore = 1.0;
-            $bestAlignmentScore = 0.0;
-            $bestCombinedScore = -1.0;
-            $bestAlignmentReview = null;
-            $similarityFeedback = null;
-            $alignmentFeedback = null;
-
-            for ($attempt = 0; $attempt < 3; $attempt++) {
-                $iterContext = $context;
-                $generationGuard = [];
-
-                if ($similarityFeedback !== null) {
-                    $generationGuard['similarity'] = [
-                        'retry' => $attempt + 1,
-                        'reason' => 'La caption precedente era troppo simile a contenuti esistenti.',
-                        'most_similar_caption' => $similarityFeedback['text'],
-                        'similarity_score' => $similarityFeedback['score'],
-                        'instruction' => 'Crea hook, angolo narrativo e CTA chiaramente diversi, restando coerente con la strategia.',
-                    ];
-                }
-
-                if ($alignmentFeedback !== null) {
-                    $generationGuard['alignment'] = array_merge($alignmentFeedback, [
-                        'retry' => $attempt + 1,
-                    ]);
-                }
-
-                if (!empty($generationGuard)) {
-                    $iterContext['generation_guard'] = $generationGuard;
-                }
-
-                $gen = $openAi->generateContent($iterContext);
-                $caption = trim((string) ($gen['caption'] ?? ''));
-                $score = $this->maxTextSimilarity($caption, $comparisonTexts);
-                $alignmentReview = null;
-                $alignmentScore = 1.0;
-
-                if ((bool) config('generation.alignment_enabled', true)) {
-                    $alignmentReview = $contentAlignment->gradeTextDraft($iterContext, $gen, $providerMatrix);
-                    $alignmentScore = max(0.0, min(1.0, (float) ($alignmentReview['overall_score'] ?? 0.0)));
-                }
-
-                $combinedScore = round(((1 - min(1.0, $score)) * 0.38) + ($alignmentScore * 0.62), 4);
-                if ($combinedScore > $bestCombinedScore) {
-                    $bestCombinedScore = $combinedScore;
-                    $bestScore = $score;
-                    $bestAlignmentScore = $alignmentScore;
-                    $bestGen = $gen;
-                    $bestAlignmentReview = $alignmentReview;
-                }
-
-                if ($score < 0.72 && !((bool) ($alignmentReview['should_retry'] ?? false))) {
-                    $bestGen = $gen;
-                    $bestScore = $score;
-                    $bestAlignmentScore = $alignmentScore;
-                    $bestAlignmentReview = $alignmentReview;
-                    break;
-                }
-
-                $similarityFeedback = $score >= 0.72 ? [
-                    'score' => $score,
-                    'text' => $this->closestText($caption, $comparisonTexts),
-                ] : null;
-                $alignmentFeedback = is_array($alignmentReview) && !empty($alignmentReview['feedback'])
-                    ? (array) $alignmentReview['feedback']
-                    : null;
-            }
-
-            $gen = $bestGen ?? [];
-            $textAlignmentReview = is_array($bestAlignmentReview) ? $bestAlignmentReview : null;
-
-            $item->ai_caption = $gen['caption'] ?? $item->ai_caption;
-            $item->ai_hashtags = $gen['hashtags'] ?? [];
-            $item->ai_cta = $gen['cta'] ?? ($itemBrain['cta'] ?? $item->ai_cta);
-            $item->ai_image_prompt = $gen['image_prompt'] ?? $item->ai_image_prompt;
-            $nextMeta = array_merge($meta, [
-                'text_similarity_score' => round($bestScore, 4),
-                'text_alignment_score' => round($bestAlignmentScore, 4),
-                'text_alignment_review' => $textAlignmentReview,
-                'text_uniqueness_checked_at' => now()->toDateTimeString(),
-                'text_provider_last_used' => (string) data_get($providerMatrix, 'text.provider', 'openai'),
-                'grader_provider_last_used' => (string) data_get($providerMatrix, 'grader.provider', 'openai'),
-                'provider_matrix' => $providerMatrix,
             ]);
-            $generatedVideoPrompt = trim((string) ($gen['video_prompt'] ?? ''));
-            if ($generatedVideoPrompt !== '') {
-                $nextMeta['video_prompt'] = $generatedVideoPrompt;
-            }
-            $generatedVoiceover = trim((string) ($gen['voiceover'] ?? ''));
-            if ($generatedVoiceover !== '') {
-                $nextMeta['video_voiceover'] = $generatedVoiceover;
-            }
-            $normalizedReelBlueprint = $this->normalizeReelBlueprint(
-                blueprint: is_array($gen['reel_blueprint'] ?? null) ? $gen['reel_blueprint'] : [],
-                item: $item,
-                meta: $meta,
-                assetVariables: $assetVariables,
-                videoPrompt: $generatedVideoPrompt !== '' ? $generatedVideoPrompt : trim((string) ($gen['image_prompt'] ?? ''))
-            );
-            if (!empty($normalizedReelBlueprint)) {
-                $nextMeta['reel_blueprint'] = $normalizedReelBlueprint;
-            }
-            $item->ai_meta = $nextMeta;
-            $item->save();
-        } catch (Throwable $e) {
-            if ($this->isQuotaOrRateLimitError($e) || $this->isTransientNetworkError($e)) {
-                $reason = $this->isQuotaOrRateLimitError($e)
-                    ? 'OpenAI quota/rate-limit'
-                    : 'OpenAI rete/DNS non raggiungibile';
 
-                $fallback = $this->fallbackText($item, $tenantProfile, $itemBrain);
-                $item->ai_caption = $fallback['caption'];
-                $item->ai_hashtags = $fallback['hashtags'];
-                $item->ai_cta = $fallback['cta'];
-                $item->ai_image_prompt = $fallback['image_prompt'];
-                $item->ai_error = 'TEXT fallback: ' . $reason;
-                $item->ai_meta = array_merge($meta, [
-                    'text_fallback' => true,
-                    'text_fallback_reason' => $reason,
-                    'text_fallback_at' => now()->toDateTimeString(),
-                ]);
-                $item->save();
-            } else {
-                $item->ai_status = 'error';
-                $item->ai_error = 'TEXT: ' . $e->getMessage();
-                $item->save();
-
-                Log::error('GenerateAiForContentItem text failed', [
-                    'content_item_id' => $item->id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                throw $e;
-            }
-        }
-
-        try {
-            $prompt = trim((string) ($item->ai_image_prompt ?? ''));
-            $brandImageSources = $this->resolveBrandImageSources($strategy, $meta, (int) $item->tenant_id);
-            $brandDecision = $this->decideBrandImageUsage($item, $brandImageSources, $openAi);
-            if ($strictAssetMode && !((bool) ($brandDecision['use_brand'] ?? false))) {
-                throw new \RuntimeException('Strict mode: nessuna immagine brand valida trovata per avviare la generazione.');
-            }
-            $selectedBrandImage = $brandDecision['path'] ?? null;
-            $selectedBrandImagePaths = array_values(array_filter(array_map(
-                'strval',
-                (array) ($brandDecision['paths'] ?? ($selectedBrandImage ? [$selectedBrandImage] : []))
-            )));
-            if (is_string($selectedBrandImage) && $selectedBrandImage !== '' && !in_array($selectedBrandImage, $selectedBrandImagePaths, true)) {
-                array_unshift($selectedBrandImagePaths, $selectedBrandImage);
-            }
-            $selectedBrandImagePaths = $this->filterReferenceImagePaths(array_values(array_unique($selectedBrandImagePaths)));
-            $selectedBrandImagePaths = $this->stabilizeReferencePathsForFeedback(
-                $selectedBrandImagePaths,
-                $activeFeedbackRequest,
-                $assetVariables
-            );
-            $selectedBrandImage = $selectedBrandImagePaths[0] ?? $selectedBrandImage;
-
-            if ($prompt === '') {
-                $brandName = data_get($tenantProfile, 'business_name', 'Brand');
-                $industry = data_get($tenantProfile, 'industry', '');
-                $palette = data_get($strategy, 'brand_references.palette', '');
-                $logoPath = data_get($strategy, 'brand_references.logo_path', '');
-                $visualRules = data_get($itemBrain, 'image_direction', 'Visual coerente con il brand.');
-                $visualStyle = (string) data_get($strategy, 'visual_system.style', '');
-                $visualMood = (string) data_get($strategy, 'visual_system.mood', '');
-                $visualDo = (string) data_get($strategy, 'visual_system.visual_do', '');
-                $visualDont = (string) data_get($strategy, 'visual_system.visual_dont', '');
-                $logoRule = (string) data_get($strategy, 'visual_system.logo_rule', '');
-                $analysisGoal = (string) data_get($strategy, 'analysis_framework.primary_goal', '');
-                $publishingCadence = (string) data_get($strategy, 'publishing_system.cadence_rule', '');
-                $strategyNotes = (string) data_get($strategy, 'strategy_notes', '');
-                $assetVariableHint = $this->buildAssetVariablePromptHint($assetVariables);
-                $assetIdentityHint = $this->buildAssetIdentityPromptHint($assetIdentity);
-                $locationEnvelopeHint = $this->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
-                $feedbackVisualHint = $this->feedbackDrivenImageInstruction(
-                    $activeFeedbackRequest,
-                    $selectedBrandImagePaths,
-                    $assetVariables
-                );
-                $socialPublicationHint = $this->socialGraphicSystemInstruction($item, $itemBrain);
-
-                $prompt = "Crea un'immagine social premium pronta per Instagram feed per {$brandName}. "
-                    . "Settore: {$industry}. "
-                    . "Direzione visiva: {$visualRules}. "
-                    . "Palette colore suggerita: {$palette}. "
-                    . ($analysisGoal !== '' ? "Obiettivo strategico principale: {$analysisGoal}. " : '')
-                    . ($visualStyle !== '' ? "Stile visual: {$visualStyle}. " : '')
-                    . ($visualMood !== '' ? "Mood visual: {$visualMood}. " : '')
-                    . ($visualDo !== '' ? "Regola visual da fare: {$visualDo}. " : '')
-                    . ($visualDont !== '' ? "Regola visual da evitare: {$visualDont}. " : '')
-                    . ($logoRule !== '' ? "Regola logo: {$logoRule}. " : '')
-                    . ($publishingCadence !== '' ? "Coerenza publishing: {$publishingCadence}. " : '')
-                    . ($strategyNotes !== '' ? "Note strategiche: {$strategyNotes}. " : '')
-                    . ($assetVariableHint !== '' ? "Variabili asset obbligatorie: {$assetVariableHint}. " : '')
-                    . ($assetIdentityHint !== '' ? "Regole identitarie del contenuto: {$assetIdentityHint}. " : '')
-                    . ($locationEnvelopeHint !== '' ? $locationEnvelopeHint . ' ' : '')
-                    . ($feedbackVisualHint !== '' ? $feedbackVisualHint . ' ' : '')
-                    . ($socialPublicationHint !== '' ? $socialPublicationHint . ' ' : '')
-                    . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
-                    . ($selectedBrandImage ? "Parti dai riferimenti brand forniti e trasformali in un visual editoriale strategico, non in una semplice copia della foto originale. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
-                    . "Non generare loghi finti, nome brand scritto, watermark o testo sovraimpresso nell'immagine. "
-                    . "Se è necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
-                    . "Stile professionale, coerente con il brand e totalmente in italiano.";
-
-                $item->ai_image_prompt = $prompt;
-                $item->save();
-            }
-
-            $prompt = $this->augmentPromptForInstagramImageExecution(
+            $this->applyDemoPreset(
                 $item,
-                $prompt,
-                $selectedBrandImagePaths,
-                $assetVariables,
-                $activeFeedbackRequest
+                (array) $state->get('tenant_profile', []),
+                (array) $state->get('item_brain', []),
+                $state->meta
             );
-            if ($prompt !== (string) ($item->ai_image_prompt ?? '')) {
-                $item->ai_image_prompt = $prompt;
-                $item->save();
-            }
 
-            $recentImageHashes = $this->loadRecentImageHashes($item->tenant_id, $item->id, 24);
-            $bytes = null;
-            $finalHash = null;
-            $imageSourceMode = 'text_to_image';
-            $brandSourceUsed = null;
-            $brandSourcesUsed = [];
-            $imageSourceFallback = null;
-            $publicDisk = Storage::disk('public');
-            $selectedBrandImageAbsList = [];
-            $lastImageAlignmentReview = null;
-            foreach ($selectedBrandImagePaths as $brandPath) {
-                if (!is_string($brandPath) || $brandPath === '' || !$publicDisk->exists($brandPath)) {
-                    continue;
-                }
-                $selectedBrandImageAbsList[] = $publicDisk->path($brandPath);
-            }
-            $selectedBrandImageAbs = $selectedBrandImageAbsList[0] ?? null;
-            $logoRuntime = $this->resolveLogoRuntime($item, $strategy, $meta, $selectedBrandImageAbs);
-            $logoSceneAbs = isset($logoRuntime['abs']) && is_string($logoRuntime['abs']) ? $logoRuntime['abs'] : null;
-            $logoScenePath = isset($logoRuntime['path']) && is_string($logoRuntime['path']) ? $logoRuntime['path'] : null;
-            $logoRequested = (bool) ($logoRuntime['requested'] ?? false);
-            $logoMode = (string) ($logoRuntime['mode'] ?? 'scene');
-            $embedLogoInScene = $logoRequested
-                ? (bool) $logoSceneAbs
-                : $this->shouldEmbedLogoInScene($item, $selectedBrandImageAbs, $logoSceneAbs);
-
-            $isVideoFormat = $this->isVideoFormat($item);
-            if ($isVideoFormat) {
-                $videoResult = $this->generateVideoAsset(
-                    openAi: $openAi,
-                    nanoBanana: $nanoBanana,
-                    runway: $runway,
-                    kling: $kling,
-                    item: $item,
-                    prompt: $prompt,
-                    selectedBrandImageAbs: $selectedBrandImageAbs,
-                    selectedBrandImageAbsList: $selectedBrandImageAbsList,
-                    selectedBrandImagePath: $selectedBrandImage,
-                    selectedBrandImagePaths: $selectedBrandImagePaths,
-                    logoRuntime: $logoRuntime,
-                    activeFeedbackRequest: $activeFeedbackRequest,
-                    brandDecision: $brandDecision
-                );
-
-                $videoPath = trim((string) ($videoResult['video_path'] ?? ''));
-                $thumbPath = trim((string) ($videoResult['thumbnail_path'] ?? ''));
-
-                if ($videoPath !== '') {
-                    $skipPlaybackPostprocess = (bool) ($videoResult['skip_playback_postprocess'] ?? false);
-                    if ($skipPlaybackPostprocess) {
-                        $videoPlaybackPostprocess = [
-                            'applied' => false,
-                            'reason' => 'already_playback_ready',
-                            'provider' => (string) ($videoResult['provider'] ?? data_get($item->ai_meta, 'video_provider', '')),
-                            'input_video_path' => $videoPath,
-                            'video_path' => $videoPath,
-                            'error' => null,
-                        ];
-                    } else {
-                        $videoPlaybackPostprocess = $this->postProcessGeneratedVideoForPlayback(
-                            item: $item,
-                            videoPath: $videoPath,
-                            provider: (string) ($videoResult['provider'] ?? data_get($item->ai_meta, 'video_provider', ''))
-                        );
-                        if (!empty($videoPlaybackPostprocess['video_path']) && is_string($videoPlaybackPostprocess['video_path'])) {
-                            $videoPath = (string) $videoPlaybackPostprocess['video_path'];
-                        }
-                    }
-
-                    $audioAttach = $this->maybeAttachAudioTrackToVideo(
-                        item: $item,
-                        videoPath: $videoPath,
-                        speechSynthesis: $speechSynthesis
-                    );
-                    $audioAttach['input_video_path'] = $videoPlaybackPostprocess['input_video_path'] ?? $videoPath;
-                    $audioAttach['postprocess'] = $videoPlaybackPostprocess;
-                    if ((bool) ($audioAttach['applied'] ?? false) && !empty($audioAttach['video_path'])) {
-                        $videoPath = (string) $audioAttach['video_path'];
-                    }
-                    $this->logVideoAudioOutcome($item, $audioAttach);
-
-                    $gridPreviewPath = $this->createLocalImagePlaceholder($item, $tenantProfile);
-                    if (is_string($gridPreviewPath) && trim($gridPreviewPath) !== '') {
-                        $item->ai_image_path = $gridPreviewPath;
-                    } elseif ($thumbPath !== '') {
-                        $item->ai_image_path = $thumbPath;
-                    }
-
-                    $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
-                    $metaNow['video_generation'] = [
-                        'source' => (string) ($videoResult['source'] ?? 'sora_video'),
-                        'provider' => (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai')),
-                        'video_id' => (string) ($videoResult['video_id'] ?? ''),
-                        'video_path' => $videoPath,
-                        'thumbnail_path' => $thumbPath,
-                        'grid_preview_path' => (string) ($item->ai_image_path ?? ''),
-                        'reference_path' => (string) ($videoResult['reference_path'] ?? ''),
-                        'reference_paths' => (array) ($videoResult['reference_paths'] ?? []),
-                        'reference_reason' => (string) ($videoResult['reference_reason'] ?? ''),
-                        'brand_source_paths' => $selectedBrandImagePaths,
-                        'logo_requested' => $logoRequested,
-                        'logo_source_path' => $logoScenePath,
-                        'logo_mode' => $logoMode,
-                        'logo_variant' => (string) ($logoRuntime['variant'] ?? 'auto'),
-                        'logo_selection_reason' => (string) ($logoRuntime['reason'] ?? ''),
-                        'brand_selection' => $brandDecision,
-                        'reference_validation' => $videoResult['reference_validation'] ?? null,
-                        'alignment_review' => $videoResult['reference_validation'] ?? null,
-                        'composition_reference' => $videoResult['composition_reference'] ?? null,
-                        'generation_attempts' => (int) ($videoResult['generation_attempts'] ?? 1),
-                        'request_summary' => $videoResult['request_summary'] ?? null,
-                        'reference_input_summary' => $videoResult['reference_input_summary'] ?? null,
-                        'extended' => $videoResult['extended'] ?? null,
-                        'segment_count' => (int) ($videoResult['segment_count'] ?? count((array) ($videoResult['segments'] ?? []))),
-                        'target_total_seconds' => (int) ($videoResult['target_total_seconds'] ?? 0),
-                        'segments' => (array) ($videoResult['segments'] ?? []),
-                        'extended_fallback' => $videoResult['extended_fallback'] ?? null,
-                        'audio' => $audioAttach,
-                        'playback_postprocess' => $videoPlaybackPostprocess,
-                        'fallback' => $imageSourceFallback,
-                        'provider_fallback' => $videoResult['provider_fallback'] ?? null,
-                        'generated_at' => now()->toDateTimeString(),
-                    ];
-                    $metaNow['video_provider_requested'] = VideoProviderResolver::normalize((string) data_get($metaNow, 'video_provider', ''));
-                    $metaNow['video_provider_last_used'] = (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai'));
-                    $item->ai_meta = $metaNow;
-
-                    $assets = array_values(array_filter(
-                        is_array($item->assets) ? $item->assets : [],
-                        fn ($asset) => !is_array($asset)
-                            || !in_array(strtolower(trim((string) ($asset['type'] ?? ''))), ['ai_generated_video', 'ai_generated_audio', 'ai_generated_thumbnail'], true)
-                    ));
-                    foreach ($selectedBrandImagePaths as $brandPath) {
-                        $assets[] = ['type' => 'brand_source', 'path' => $brandPath];
-                    }
-                    if ($logoRequested && $logoScenePath) {
-                        $assets[] = ['type' => 'brand_logo', 'path' => $logoScenePath];
-                    }
-                    $assets[] = ['type' => 'ai_generated_video', 'path' => $videoPath];
-                    if (!empty($audioAttach['audio_path']) && is_string($audioAttach['audio_path'])) {
-                        $assets[] = ['type' => 'ai_generated_audio', 'path' => (string) $audioAttach['audio_path']];
-                    }
-                    if ($thumbPath !== '') {
-                        $assets[] = ['type' => 'ai_generated_thumbnail', 'path' => $thumbPath];
-                    }
-                    $item->assets = $this->uniqueAssets($assets);
-                    $item->save();
-                }
-            } else {
-                for ($imgAttempt = 0; $imgAttempt < 2; $imgAttempt++) {
-                    $attemptPrompt = $prompt;
-                    if ($imgAttempt > 0) {
-                        $attemptPrompt .= ' Crea una composizione visibilmente diversa dai post brand precedenti (nuovo layout, inquadratura e gerarchia visiva).';
-                    }
-                    $attemptPrompt .= ' Se compaiono scritte visibili nell immagine, devono essere in italiano naturale e corretto.';
-                    $attemptPrompt .= ' ' . $this->instagramVisualOutputInstruction($item);
-                    $attemptPrompt .= ' ' . $this->multiReferenceBlendInstruction($selectedBrandImagePaths);
-                    $attemptPrompt .= ' ' . $this->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
-
-                    if (!empty($selectedBrandImageAbsList) || ($logoRequested && $logoSceneAbs)) {
-                        try {
-                            $editPaths = [];
-                            foreach (array_slice($selectedBrandImageAbsList, 0, 4) as $referenceAbs) {
-                                if (is_string($referenceAbs) && $referenceAbs !== '') {
-                                    $editPaths[] = $referenceAbs;
-                                }
-                            }
-                            if ($embedLogoInScene && $logoSceneAbs && count($editPaths) < 4) {
-                                $editPaths[] = $logoSceneAbs;
-                            }
-                            if (empty($editPaths) && $logoSceneAbs) {
-                                $editPaths[] = $logoSceneAbs;
-                            }
-
-                            if ($logoRequested && $logoSceneAbs) {
-                                if ($logoMode === 'background') {
-                                    $attemptPrompt .= ' Usa esclusivamente il logo reale fornito come immagine di input. ';
-                                    $attemptPrompt .= 'Posizionalo nello sfondo/dietro i soggetti come watermark grande e semi-trasparente, senza deformarlo. ';
-                                    $attemptPrompt .= 'NON sostituire il logo con testo: non scrivere mai il nome dell azienda nell immagine.';
-                                } else {
-                                    $attemptPrompt .= ' Inserisci il logo reale fornito in modo naturale nella scena (es. supporto fisico, insegna, packaging), senza distorcerlo. ';
-                                    $attemptPrompt .= 'NON sostituire il logo con testo: non scrivere mai il nome dell azienda nell immagine.';
-                                }
-                            } else {
-                                $attemptPrompt .= ' Non aggiungere loghi o testo brand generati dal modello.';
-                            }
-
-                            if (!empty($selectedBrandImageAbsList)) {
-                                if (count($selectedBrandImageAbsList) > 1) {
-                                    $attemptPrompt .= ' Unifica i riferimenti multipli in un unica scena plausibile da shooting editoriale o campagna social, senza collage o split-screen.';
-                                } else {
-                                    $attemptPrompt .= ' Mantieni il DNA visivo riconoscibile dell immagine brand fornita (scena, oggetti, inquadratura) adattandola alla strategia del post.';
-                                }
-                            } else {
-                                $attemptPrompt .= ' Crea una scena completa da zero, coerente con il brief e con il brand.';
-                            }
-
-                            $img = $this->generateImageEditWithProvider(
-                                provider: $this->resolveImageProvider((array) ($item->ai_meta ?? [])),
-                                prompt: $attemptPrompt,
-                                editPaths: $editPaths,
-                                openAi: $openAi,
-                                nanoBanana: $nanoBanana
-                            );
-                            if (!empty($selectedBrandImageAbsList)) {
-                                $imageSourceMode = count($selectedBrandImageAbsList) > 1 ? 'brand_multi_image_edit' : 'brand_image_edit';
-                                $brandSourcesUsed = array_values(array_slice($selectedBrandImagePaths, 0, 4));
-                                $brandSourceUsed = $brandSourcesUsed[0] ?? null;
-                            } else {
-                                $imageSourceMode = 'logo_guided_edit';
-                                $brandSourcesUsed = [];
-                                $brandSourceUsed = null;
-                            }
-                        } catch (Throwable $editError) {
-                            $imageSourceFallback = 'edit_failed_fallback_to_text_to_image';
-                            $img = $this->generateImageTextWithProvider(
-                                provider: $this->resolveImageProvider((array) ($item->ai_meta ?? [])),
-                                prompt: $attemptPrompt,
-                                openAi: $openAi,
-                                nanoBanana: $nanoBanana
-                            );
-                            $imageSourceMode = 'text_to_image';
-                            $brandSourcesUsed = [];
-                            $brandSourceUsed = null;
-                            $metaFallback = is_array($item->ai_meta) ? $item->ai_meta : [];
-                            $metaFallback['image_edit_error'] = Str::limit($editError->getMessage(), 240, '');
-                            $metaFallback['image_edit_error_at'] = now()->toDateTimeString();
-                            $metaFallback['image_provider'] = $this->resolveImageProvider($metaFallback);
-                            $item->ai_meta = $metaFallback;
-                            $item->save();
-                        }
-                    } else {
-                        $img = $this->generateImageTextWithProvider(
-                            provider: $this->resolveImageProvider((array) ($item->ai_meta ?? [])),
-                            prompt: $attemptPrompt,
-                            openAi: $openAi,
-                            nanoBanana: $nanoBanana
-                        );
-                        $imageSourceMode = 'text_to_image';
-                        $brandSourcesUsed = [];
-                        $brandSourceUsed = null;
-                    }
-                    $candidateBytes = base64_decode((string) ($img['b64'] ?? ''), true);
-
-                    if ($candidateBytes === false || $candidateBytes === '') {
-                        continue;
-                    }
-
-                    $currentImageAlignmentReview = null;
-                    if ((bool) config('generation.alignment_image_reference_validation', true) && !empty($selectedBrandImageAbsList)) {
-                        $tmpImagePath = tempnam(sys_get_temp_dir(), 'align-img-');
-                        if (is_string($tmpImagePath) && $tmpImagePath !== '') {
-                            @file_put_contents($tmpImagePath, $candidateBytes);
-                            $currentImageAlignmentReview = $contentAlignment->validateGeneratedImageCandidate(
-                                $briefSeed,
-                                $tmpImagePath,
-                                array_slice($selectedBrandImageAbsList, 0, 4),
-                                $providerMatrix
-                            );
-                            @unlink($tmpImagePath);
-                        }
-                    }
-
-                    $alignmentRejected = is_array($currentImageAlignmentReview)
-                        && !((bool) ($currentImageAlignmentReview['all_present'] ?? true))
-                        && (float) ($currentImageAlignmentReview['confidence'] ?? 0.0) >= (float) (config('generation.alignment_image_reference_min_confidence') ?: 0.55);
-                    if ($alignmentRejected && $imgAttempt < 1) {
-                        continue;
-                    }
-
-                    $candidateHash = $this->computeImageHashFromBytes($candidateBytes);
-                    if ($candidateHash === null) {
-                        $bytes = $candidateBytes;
-                        $finalHash = null;
-                        $lastImageAlignmentReview = $currentImageAlignmentReview;
-                        break;
-                    }
-
-                    $similarity = $this->maxImageHashSimilarity($candidateHash, $recentImageHashes);
-                    if ($similarity < 0.9 || $imgAttempt === 1) {
-                        $bytes = $candidateBytes;
-                        $finalHash = $candidateHash;
-                        $lastImageAlignmentReview = $currentImageAlignmentReview;
-                        break;
-                    }
-                }
-
-                if (is_string($bytes) && $bytes !== '') {
-                    $filename = 'ai/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.png';
-                    Storage::disk('public')->put($filename, $bytes);
-                    $item->ai_image_path = $filename;
-                    $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
-                    $resolvedImageProvider = $this->resolveImageProvider($metaNow);
-                    $metaNow['image_provider'] = $resolvedImageProvider;
-                    $metaNow['image_generation'] = [
-                        'provider' => $resolvedImageProvider,
-                        'source' => $imageSourceMode,
-                        'brand_source_path' => $brandSourceUsed,
-                        'brand_source_paths' => $brandSourcesUsed,
-                        'logo_requested' => $logoRequested,
-                        'logo_in_scene' => in_array($imageSourceMode, ['brand_image_edit', 'brand_multi_image_edit', 'logo_guided_edit'], true) ? $embedLogoInScene : false,
-                        'logo_source_path' => $logoScenePath,
-                        'logo_mode' => $logoMode,
-                        'logo_variant' => (string) ($logoRuntime['variant'] ?? 'auto'),
-                        'logo_selection_reason' => (string) ($logoRuntime['reason'] ?? ''),
-                        'brand_selection' => $brandDecision,
-                        'fallback' => $imageSourceFallback,
-                        'alignment_review' => $lastImageAlignmentReview,
-                        'image_hash' => $finalHash,
-                        'generated_at' => now()->toDateTimeString(),
-                    ];
-                    if ($logoRequested && $logoScenePath && ($logoMode === 'background' || $imageSourceMode === 'text_to_image')) {
-                        $overlayMeta = $metaNow;
-                        $overlayMeta['logo_runtime'] = [
-                            'force' => true,
-                            'path' => $logoScenePath,
-                            'mode' => $logoMode === 'background' ? 'background' : 'corner',
-                        ];
-                        $overlay = $this->applyBrandLogoOverlay($item, $strategy, $overlayMeta);
-                        $metaNow['image_generation']['logo_overlay'] = $overlay;
-                    }
-                    $item->ai_meta = $metaNow;
-
-                    $assets = is_array($item->assets) ? $item->assets : [];
-                    foreach ($brandSourcesUsed as $brandPath) {
-                        $assets[] = ['type' => 'brand_source', 'path' => $brandPath];
-                    }
-                    if ($logoRequested && $logoScenePath) {
-                        $assets[] = ['type' => 'brand_logo', 'path' => $logoScenePath];
-                    }
-                    $assets[] = ['type' => 'ai_generated', 'path' => $filename];
-                    $item->assets = $this->uniqueAssets($assets);
-                    $item->save();
-                }
-            }
-        } catch (Throwable $e) {
-            $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
-            $isVideoFailure = $this->isVideoFormat($item);
-            $errorKey = $isVideoFailure ? 'video_error' : 'image_error';
-            $errorAtKey = $errorKey . '_at';
-            $meta[$errorKey] = $e->getMessage();
-            $meta[$errorAtKey] = now()->toDateTimeString();
-
-            if ($isVideoFailure) {
-                $meta['video_provider_requested'] = $this->resolveVideoProvider($meta);
-                $item->ai_image_path = null;
-            } else {
-                $meta['image_provider'] = $this->resolveImageProvider($meta);
-                $isNet = $this->isTransientNetworkError($e);
-                $isBilling = $this->isImageBillingLimitError($e);
-
-                if ($isNet || $isBilling) {
-                    $placeholderPath = $this->createLocalImagePlaceholder($item, $tenantProfile);
-                    if ($placeholderPath) {
-                        $item->ai_image_path = $placeholderPath;
-                        $meta['image_fallback'] = 'local_placeholder';
-                        $meta['image_fallback_reason'] = $isNet ? 'network_dns_timeout' : 'billing_limit';
-                        $meta['image_fallback_at'] = now()->toDateTimeString();
-                    } else {
-                        $item->ai_image_path = null;
-                        $meta['image_fallback'] = null;
-                        $meta['image_fallback_reason'] = null;
-                        $meta['image_fallback_at'] = null;
-                    }
-                } else {
-                    $item->ai_image_path = null;
-                    $meta['image_fallback'] = null;
-                    $meta['image_fallback_reason'] = null;
-                    $meta['image_fallback_at'] = null;
-                }
-            }
-
-            $item->ai_meta = $meta;
-            $item->save();
-
-            Log::warning('GenerateAiForContentItem visual generation failed', [
-                'content_item_id' => $item->id,
-                'mode' => $isVideoFailure ? 'video' : 'image',
-                'error' => $e->getMessage(),
+            $generationAudit->completeAttempt($demoAttempt, [
+                'status' => 'succeeded',
+                'output_summary' => $this->buildRunResultSummary($item),
+                'tenant_id' => (int) $item->tenant_id,
+                'final_provider' => 'local_demo',
+                'failure_mode' => null,
             ]);
-        }
 
-        // Overlay usato come garanzia quando il brief chiede il logo e il modello non ha potuto editarlo correttamente.
-
-        if ($strictAssetMode && !$this->hasGeneratedVisualOutput($item)) {
-            $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
-            $errorMetaKey = $this->isVideoFormat($item) ? 'video_error' : 'image_error';
-            $baseError = trim((string) ($item->ai_error ?? ''));
-            if ($baseError === '') {
-                $baseError = trim((string) data_get($metaNow, $errorMetaKey, ''));
-            }
-
-            $item->ai_status = 'error';
-            $item->ai_error = $baseError !== ''
-                ? $baseError . ' | STRICT_MODE_NO_VISUAL_OUTPUT'
-                : 'STRICT_MODE_NO_VISUAL_OUTPUT';
-            $item->ai_generated_at = now();
+            $runMetrics = $generationMetrics->buildRunMetrics($item, $state->run);
+            $state->run = $generationAudit->completeRun($state->run, [
+                'status' => 'succeeded',
+                'effective_output' => $this->buildRunEffectiveOutput($item),
+                'result_summary' => $this->buildRunResultSummary($item),
+                'version_meta' => $this->generationVersionMeta(
+                    is_array($item->ai_meta) ? $item->ai_meta : []
+                ),
+            ] + $runMetrics);
+            $scorecard = $qualityScorecard->buildForContentItem($item, $state->run);
+            $state->run = $generationAudit->syncRun($state->run, [
+                'quality_scorecard' => $scorecard,
+            ]);
+            $qualityScorecard->storeOnContentItem($item, $scorecard, $state->run);
+            $this->updateGenerationAuditMeta($item, $state->run?->id, 'succeeded', [
+                'completed_at' => now()->toDateTimeString(),
+                'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
+            ]);
             $item->save();
-            $this->notifyAiFailure($item, $workspaceNotifications, (string) $item->ai_error);
+            $this->notifyAiSuccess($item, $workspaceNotifications);
+
             return;
         }
 
-        $item->ai_status = 'done';
-        $item->ai_generated_at = now();
-        $this->markFeedbackRequestAsApplied($item);
-        $item->save();
-        $this->notifyAiSuccess($item, $workspaceNotifications);
+        $state = $generateBaseText->handle($this, $state);
+        $state = $buildVisualPrompt->handle($this, $state);
+        $state = $generateVisualAsset->handle($this, $state);
+        $persistGenerationOutputs->handle($this, $state);
     }
 
     public function failed(Throwable $e): void
@@ -842,6 +151,33 @@ class GenerateAiForContentItem implements ShouldQueue
         if (trim((string) $item->ai_error) === '') {
             $item->ai_error = 'JOB: ' . $e->getMessage();
         }
+        $existingRun = \App\Models\GenerationRun::query()
+            ->where('content_item_id', (int) $item->id)
+            ->where('run_key', $this->runKey)
+            ->first();
+        $runMetrics = app(GenerationMetricsService::class)->buildRunMetrics($item, $existingRun);
+        $run = app(GenerationAuditService::class)->failRunByKey(
+            (int) $item->id,
+            $this->runKey,
+            $e,
+            [
+                'effective_output' => $this->buildRunEffectiveOutput($item),
+                'result_summary' => $this->buildRunResultSummary($item),
+                'last_error' => (string) $item->ai_error,
+                'version_meta' => $this->generationVersionMeta(
+                    is_array($item->ai_meta) ? $item->ai_meta : []
+                ),
+            ] + $runMetrics
+        );
+        $scorecard = app(GenerationQualityScorecardService::class)->buildForContentItem($item, $run);
+        $run = app(GenerationAuditService::class)->syncRun($run, [
+            'quality_scorecard' => $scorecard,
+        ]);
+        app(GenerationQualityScorecardService::class)->storeOnContentItem($item, $scorecard, $run);
+        $this->updateGenerationAuditMeta($item, $run?->id, 'failed', [
+            'failed_at' => now()->toDateTimeString(),
+            'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
+        ]);
         $item->save();
 
         app(WorkspaceNotificationService::class)->notifyTenant(
@@ -862,12 +198,210 @@ class GenerateAiForContentItem implements ShouldQueue
         );
     }
 
-    private function isDemoMode(): bool
+    // Internal helper surface temporarily exposed to pipeline step classes during the progressive refactor.
+    public function generationVersionMeta(array $meta = [], array $providerMatrix = []): array
+    {
+        return app(GenerationVersionRegistry::class)->versionMap(
+            meta: $meta,
+            providerMatrix: $providerMatrix,
+            jobClass: self::class
+        );
+    }
+
+    public function requestedProviderMatrixSnapshot(array $meta): array
+    {
+        return [
+            'text' => (string) data_get($meta, 'text_provider', ''),
+            'grader' => (string) data_get($meta, 'grader_provider', ''),
+            'image' => (string) data_get($meta, 'image_provider', ''),
+            'speech' => (string) data_get($meta, 'speech_provider', ''),
+            'video' => (string) data_get($meta, 'video_provider', ''),
+        ];
+    }
+
+    public function requestedOutputSummary(ContentItem $item, array $meta): array
+    {
+        return [
+            'format' => (string) $item->format,
+            'platform' => (string) $item->platform,
+            'video_provider' => (string) data_get($meta, 'video_provider', ''),
+            'video_provider_lock' => (bool) data_get($meta, 'video_provider_lock', false),
+            'image_provider' => (string) data_get($meta, 'image_provider', ''),
+            'requested_video_seconds' => (int) data_get($meta, 'video_duration_seconds_requested', 0),
+        ];
+    }
+
+    public function buildRunEffectiveOutput(ContentItem $item): array
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $videoPath = trim((string) data_get($meta, 'video_generation.video_path', ''));
+
+        return [
+            'format' => (string) $item->format,
+            'platform' => (string) $item->platform,
+            'ai_status' => (string) $item->ai_status,
+            'image_provider' => (string) data_get($meta, 'image_generation.provider', data_get($meta, 'image_provider', '')),
+            'video_provider' => (string) data_get($meta, 'video_generation.provider', data_get($meta, 'video_provider', '')),
+            'image_path' => trim((string) ($item->ai_image_path ?? '')),
+            'video_path' => $videoPath,
+            'target_total_seconds' => (int) data_get($meta, 'video_generation.target_total_seconds', 0),
+            'segment_count' => (int) data_get($meta, 'video_generation.segment_count', 0),
+            'audio_applied' => (bool) data_get($meta, 'video_generation.audio.applied', false),
+        ];
+    }
+
+    public function buildRunResultSummary(ContentItem $item): array
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+
+        return [
+            'ai_status' => (string) $item->ai_status,
+            'ai_error' => trim((string) ($item->ai_error ?? '')),
+            'caption_present' => trim((string) ($item->ai_caption ?? '')) !== '',
+            'image_path_present' => trim((string) ($item->ai_image_path ?? '')) !== '',
+            'video_path_present' => trim((string) data_get($meta, 'video_generation.video_path', '')) !== '',
+            'visual_provider_last_used' => $this->resolveVisualProviderLastUsed($item),
+        ];
+    }
+
+    public function buildVisualAttemptOutputSummary(ContentItem $item): array
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+
+        if ($this->isVideoFormat($item)) {
+            return [
+                'kind' => 'video',
+                'provider' => (string) data_get($meta, 'video_generation.provider', data_get($meta, 'video_provider', '')),
+                'source' => (string) data_get($meta, 'video_generation.source', ''),
+                'video_path_present' => trim((string) data_get($meta, 'video_generation.video_path', '')) !== '',
+                'thumbnail_path_present' => trim((string) data_get($meta, 'video_generation.thumbnail_path', '')) !== '',
+                'segment_count' => (int) data_get($meta, 'video_generation.segment_count', 0),
+                'generation_attempts' => (int) data_get($meta, 'video_generation.generation_attempts', 0),
+                'audio_applied' => (bool) data_get($meta, 'video_generation.audio.applied', false),
+            ];
+        }
+
+        return [
+            'kind' => 'image',
+            'provider' => (string) data_get($meta, 'image_generation.provider', data_get($meta, 'image_provider', '')),
+            'source' => (string) data_get($meta, 'image_generation.source', ''),
+            'image_path_present' => trim((string) ($item->ai_image_path ?? '')) !== '',
+            'fallback' => (string) data_get($meta, 'image_generation.fallback', data_get($meta, 'image_fallback', '')),
+            'logo_overlay_applied' => (bool) data_get($meta, 'image_generation.logo_overlay.applied', false),
+        ];
+    }
+
+    public function buildVisualAttemptAuditAttributes(ContentItem $item): array
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+
+        if ($this->isVideoFormat($item)) {
+            $provider = $this->resolveVisualProviderLastUsed($item);
+            $requestSummary = (array) data_get($meta, 'video_generation.request_summary', []);
+            $model = $this->normalizeVideoModelForProvider(
+                $provider,
+                (string) data_get($requestSummary, 'model', (string) data_get($meta, 'video_model', '')),
+                [
+                    'mode' => (string) data_get($requestSummary, 'request_mode', ''),
+                ]
+            );
+            $requestedSeconds = (int) data_get($meta, 'video_duration_seconds_requested', 0);
+            $normalizedSeconds = (int) data_get(
+                $requestSummary,
+                'seconds',
+                data_get($requestSummary, 'duration', 0)
+            );
+            if ($normalizedSeconds <= 0 && $requestedSeconds > 0) {
+                $normalizedSeconds = $this->normalizeVideoSecondsForProvider($provider, $requestedSeconds, $model);
+            }
+
+            return [
+                'provider_effective' => $provider,
+                'model_effective' => $model !== '' ? $model : null,
+                'requested_duration_seconds' => $requestedSeconds > 0 ? $requestedSeconds : null,
+                'normalized_duration_seconds' => $normalizedSeconds > 0 ? $normalizedSeconds : null,
+                'external_request_id' => trim((string) data_get($meta, 'video_generation.video_id', '')) ?: null,
+                'output_references' => $this->buildVisualAttemptOutputReferences($item),
+            ];
+        }
+
+        $provider = $this->resolveVisualProviderLastUsed($item);
+
+        return [
+            'provider_effective' => $provider,
+            'model_effective' => $this->capabilityRegistry()->defaultModel($provider, 'image') ?: null,
+            'output_references' => $this->buildVisualAttemptOutputReferences($item),
+        ];
+    }
+
+    public function buildVisualAttemptOutputReferences(ContentItem $item): array
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+
+        if ($this->isVideoFormat($item)) {
+            return [
+                'video_path' => trim((string) data_get($meta, 'video_generation.video_path', '')),
+                'thumbnail_path' => trim((string) data_get($meta, 'video_generation.thumbnail_path', '')),
+                'reference_paths' => array_values(array_filter(
+                    array_map('strval', (array) data_get($meta, 'video_generation.reference_paths', [])),
+                    fn ($path) => $path !== ''
+                )),
+            ];
+        }
+
+        return [
+            'image_path' => trim((string) ($item->ai_image_path ?? '')),
+            'brand_source_paths' => array_values(array_filter(
+                array_map('strval', (array) data_get($meta, 'image_generation.brand_source_paths', [])),
+                fn ($path) => $path !== ''
+            )),
+        ];
+    }
+
+    public function resolveVisualProviderLastUsed(ContentItem $item): string
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+
+        if ($this->isVideoFormat($item)) {
+            return (string) data_get($meta, 'video_generation.provider', data_get($meta, 'video_provider_last_used', data_get($meta, 'video_provider', '')));
+        }
+
+        return (string) data_get($meta, 'image_generation.provider', data_get($meta, 'image_provider', ''));
+    }
+
+    public function updateGenerationAuditMeta(ContentItem $item, ?int $runId, string $status, array $extra = []): void
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $versionMap = $extra['version_map'] ?? null;
+
+        if (!is_array($versionMap) && $runId) {
+            $versionMap = \App\Models\GenerationRun::query()
+                ->whereKey($runId)
+                ->value('version_meta');
+        }
+
+        $meta['generation_audit'] = array_merge(
+            (array) data_get($meta, 'generation_audit', []),
+            [
+                'latest_run_id' => $runId,
+                'latest_run_key' => $this->runKey,
+                'latest_status' => $status,
+                'tracked_at' => now()->toDateTimeString(),
+            ],
+            is_array($versionMap) && !empty($versionMap)
+                ? ['version_map' => $versionMap]
+                : [],
+            $extra
+        );
+        $item->ai_meta = $meta;
+    }
+
+    public function isDemoMode(): bool
     {
         return (bool) config('app.demo_mode', false);
     }
 
-    private function applyDemoPreset(ContentItem $item, array $tenantProfile, array $itemBrain, array $meta): void
+    public function applyDemoPreset(ContentItem $item, array $tenantProfile, array $itemBrain, array $meta): void
     {
         $preset = $this->buildDemoPreset($item, $tenantProfile, $itemBrain);
 
@@ -907,7 +441,7 @@ class GenerateAiForContentItem implements ShouldQueue
         $item->save();
     }
 
-    private function markFeedbackRequestAsApplied(ContentItem $item): void
+    public function markFeedbackRequestAsApplied(ContentItem $item): void
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $active = data_get($meta, 'feedback_loop.active_request');
@@ -922,7 +456,7 @@ class GenerateAiForContentItem implements ShouldQueue
         $item->ai_meta = $meta;
     }
 
-    private function notifyAiSuccess(ContentItem $item, WorkspaceNotificationService $workspaceNotifications): void
+    public function notifyAiSuccess(ContentItem $item, WorkspaceNotificationService $workspaceNotifications): void
     {
         $workspaceNotifications->notifyTenant(
             (int) $item->tenant_id,
@@ -943,7 +477,7 @@ class GenerateAiForContentItem implements ShouldQueue
         );
     }
 
-    private function notifyAiFailure(
+    public function notifyAiFailure(
         ContentItem $item,
         WorkspaceNotificationService $workspaceNotifications,
         string $reason
@@ -966,14 +500,14 @@ class GenerateAiForContentItem implements ShouldQueue
         );
     }
 
-    private function contentNotificationLabel(ContentItem $item): string
+    public function contentNotificationLabel(ContentItem $item): string
     {
         $title = trim((string) ($item->title ?: $item->content_angle ?: 'Contenuto'));
 
         return '"' . Str::limit($title, 70, '') . '"';
     }
 
-    private function buildDemoPreset(ContentItem $item, array $tenantProfile, array $itemBrain): array
+    public function buildDemoPreset(ContentItem $item, array $tenantProfile, array $itemBrain): array
     {
         $brand = trim((string) data_get($tenantProfile, 'business_name', 'Hostup'));
         $angle = trim((string) data_get($itemBrain, 'angle', $item->content_angle ?: 'Automazione affitti brevi'));
@@ -983,21 +517,21 @@ class GenerateAiForContentItem implements ShouldQueue
         $presets = [
             [
                 'title' => 'Prezzi dinamici senza stress',
-                'caption' => "Uno degli errori più comuni negli affitti brevi è aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilità in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: più margine e meno camere ferme.",
+                'caption' => "Uno degli errori piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ comuni negli affitti brevi ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ margine e meno camere ferme.",
                 'hashtags' => ['#Hostup', '#AffittiBrevi', '#RevenueManagement', '#PropertyManagement', '#Automazione'],
                 'cta' => "Vuoi vedere il flusso completo in azione? {$ctaDefault}",
                 'image_prompt' => "Dashboard moderna di revenue management per affitti brevi, stile pulito tech, palette brand, scena realistica senza testo.",
             ],
             [
                 'title' => 'Canali OTA allineati in tempo reale',
-                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilità, restrizioni e regole vengono aggiornate automaticamente.",
+                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â , restrizioni e regole vengono aggiornate automaticamente.",
                 'hashtags' => ['#Hostup', '#ChannelManager', '#AirbnbHost', '#BookingCom', '#ShortTermRental'],
                 'cta' => "Se vuoi, ti mostriamo in 10 minuti come configurarlo sul tuo portfolio.",
                 'image_prompt' => "Interfaccia channel manager multi-canale con card OTA, look future-tech, senza watermark e senza testo.",
             ],
             [
-                'title' => 'Meno operatività, più controllo',
-                'caption' => "La gestione efficace non è fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attività ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualità del servizio.",
+                'title' => 'Meno operativitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â , piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ controllo',
+                'caption' => "La gestione efficace non ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  del servizio.",
                 'hashtags' => ['#Hostup', '#HospitalityTech', '#AffittiBreviItalia', '#Automation', '#SmartOperations'],
                 'cta' => "Scrivici e prepariamo un setup pilota sui tuoi annunci.",
                 'image_prompt' => "Team operativo hospitality che monitora KPI su schermo, stile professionale, luci soft, no testo sovraimpresso.",
@@ -1011,14 +545,14 @@ class GenerateAiForContentItem implements ShouldQueue
             ],
             [
                 'title' => 'Template operativi pronti',
-                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualità costante.",
-                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#Scalabilità', '#DigitalHospitality'],
+                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  costante.",
+                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â ', '#DigitalHospitality'],
                 'cta' => "Vuoi una checklist pronta per partire? Te la condividiamo.",
                 'image_prompt' => "Vista workflow operativo per property management, cards ordinate e look minimal futuristico.",
             ],
             [
                 'title' => 'Setup rapido per team piccoli',
-                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, più controllo centralizzato. {$brand} organizza attività, priorità e pubblicazione contenuti in un unico flusso chiaro.",
+                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ controllo centralizzato. {$brand} organizza attivitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â , prioritÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  e pubblicazione contenuti in un unico flusso chiaro.",
                 'hashtags' => ['#Hostup', '#TeamProduttivo', '#Workflow', '#SmartTools', '#BusinessGrowth'],
                 'cta' => "Prenota una prova: impostiamo insieme il primo piano operativo.",
                 'image_prompt' => "Scrivania moderna con laptop e pannello operativo, mood tech pulito, nessun testo visibile.",
@@ -1032,7 +566,7 @@ class GenerateAiForContentItem implements ShouldQueue
         return $preset;
     }
 
-    private function chooseDemoImagePath(ContentItem $item): ?string
+    public function chooseDemoImagePath(ContentItem $item): ?string
     {
         $paths = BrandAsset::query()
             ->where('tenant_id', $item->tenant_id)
@@ -1052,7 +586,7 @@ class GenerateAiForContentItem implements ShouldQueue
         return $paths[$pos % count($paths)] ?? null;
     }
 
-    private function isQuotaOrRateLimitError(Throwable $e): bool
+    public function isQuotaOrRateLimitError(Throwable $e): bool
     {
         $message = strtolower($e->getMessage());
 
@@ -1062,7 +596,7 @@ class GenerateAiForContentItem implements ShouldQueue
             || str_contains($message, 'insufficient_quota');
     }
 
-    private function isTransientNetworkError(Throwable $e): bool
+    public function isTransientNetworkError(Throwable $e): bool
     {
         $message = strtolower($e->getMessage());
 
@@ -1075,7 +609,7 @@ class GenerateAiForContentItem implements ShouldQueue
             || str_contains($message, 'temporary failure in name resolution');
     }
 
-    private function fallbackText(ContentItem $item, array $tenantProfile, array $itemBrain): array
+    public function fallbackText(ContentItem $item, array $tenantProfile, array $itemBrain): array
     {
         $business = trim((string) data_get($tenantProfile, 'business_name', 'Brand'));
         $angle = trim((string) data_get($itemBrain, 'angle', $item->title ?: 'Contenuto'));
@@ -1107,7 +641,7 @@ class GenerateAiForContentItem implements ShouldQueue
         ];
     }
 
-    private function isImageBillingLimitError(Throwable $e): bool
+    public function isImageBillingLimitError(Throwable $e): bool
     {
         $message = strtolower($e->getMessage());
 
@@ -1116,7 +650,7 @@ class GenerateAiForContentItem implements ShouldQueue
             || str_contains($message, 'insufficient_quota');
     }
 
-    private function createLocalImagePlaceholder(ContentItem $item, array $tenantProfile): ?string
+    public function createLocalImagePlaceholder(ContentItem $item, array $tenantProfile): ?string
     {
         try {
             $brand = trim((string) data_get($tenantProfile, 'business_name', 'Brand'));
@@ -1150,13 +684,13 @@ SVG;
         }
     }
 
-    private function isVideoFormat(ContentItem $item): bool
+    public function isVideoFormat(ContentItem $item): bool
     {
         $format = strtolower(trim((string) ($item->format ?? '')));
         return in_array($format, ['reel', 'story', 'video'], true);
     }
 
-    private function shouldUseImageReferenceForVideo(string $briefNormalized): bool
+    public function shouldUseImageReferenceForVideo(string $briefNormalized): bool
     {
         if ($briefNormalized === '') {
             return false;
@@ -1192,7 +726,7 @@ SVG;
      * @param  array<string, mixed>  $brandDecision
      * @return array<string, mixed>
      */
-    private function generateVideoAsset(
+    public function generateVideoAsset(
         OpenAiService $openAi,
         NanoBananaService $nanoBanana,
         RunwayService $runway,
@@ -1833,7 +1367,7 @@ SVG;
      * Durata totale richiesta per il video finale. Se supera il limite del provider,
      * la pipeline entra in modalita segmentata e concatena piu clip coerenti.
      */
-    private function targetTotalVideoSecondsForItem(ContentItem $item, string $provider): int
+    public function targetTotalVideoSecondsForItem(ContentItem $item, string $provider): int
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $candidates = [
@@ -1872,7 +1406,7 @@ SVG;
      * @param  array<string, mixed>  $videoOptions
      * @return array<string, mixed>
      */
-    private function buildExtendedVideoSingleClipFallback(
+    public function buildExtendedVideoSingleClipFallback(
         string $provider,
         int $targetTotalSeconds,
         array $videoOptions,
@@ -1896,7 +1430,7 @@ SVG;
      * @param  array<string, mixed>|null  $extendedVideoFallback
      * @return array<string, mixed>
      */
-    private function applyExtendedVideoSingleClipFallback(array $result, ?array $extendedVideoFallback): array
+    public function applyExtendedVideoSingleClipFallback(array $result, ?array $extendedVideoFallback): array
     {
         if ($extendedVideoFallback === null) {
             return $result;
@@ -1933,7 +1467,7 @@ SVG;
         return $result;
     }
 
-    private function shouldGenerateExtendedVideo(ContentItem $item, string $provider, int $targetTotalSeconds, string $model = ''): bool
+    public function shouldGenerateExtendedVideo(ContentItem $item, string $provider, int $targetTotalSeconds, string $model = ''): bool
     {
         if (!$this->isVideoFormat($item)) {
             return false;
@@ -1942,19 +1476,15 @@ SVG;
         return $targetTotalSeconds > $this->providerSingleClipMaxSeconds($provider, $model);
     }
 
-    private function providerSingleClipMaxSeconds(string $provider, string $model = ''): int
+    public function providerSingleClipMaxSeconds(string $provider, string $model = ''): int
     {
-        return match (strtolower(trim($provider))) {
-            'runway' => $this->isRunwayVeoModel($model) ? 8 : 10,
-            'kling' => 10,
-            default => 12,
-        };
+        return $this->capabilityRegistry()->maxVideoDuration($provider, $model);
     }
 
     /**
      * @return array<int, int>
      */
-    private function segmentDurationsForExtendedVideo(string $provider, int $targetTotalSeconds, string $model = ''): array
+    public function segmentDurationsForExtendedVideo(string $provider, int $targetTotalSeconds, string $model = ''): array
     {
         $provider = strtolower(trim($provider));
 
@@ -2022,7 +1552,7 @@ SVG;
      * @param  array<int, int>  $allowed
      * @return array<int, int>
      */
-    private function discreteSegmentDurations(array $allowed, int $targetTotalSeconds): array
+    public function discreteSegmentDurations(array $allowed, int $targetTotalSeconds): array
     {
         $allowed = array_values(array_unique(array_filter(
             array_map(fn ($value) => (int) $value, $allowed),
@@ -2085,7 +1615,7 @@ SVG;
      * @param  array<string, mixed>  $meta
      * @return array<int, string>
      */
-    private function buildExtendedVideoSegmentPrompts(
+    public function buildExtendedVideoSegmentPrompts(
         string $provider,
         ContentItem $item,
         array $meta,
@@ -2157,7 +1687,7 @@ SVG;
      * @param  array<int, mixed>  $shots
      * @return array<int, array<int, array<string, mixed>>>
      */
-    private function chunkReelBlueprintShots(array $shots, int $segmentCount): array
+    public function chunkReelBlueprintShots(array $shots, int $segmentCount): array
     {
         $shots = array_values(array_filter($shots, fn ($shot) => is_array($shot)));
         if (empty($shots)) {
@@ -2178,7 +1708,7 @@ SVG;
     /**
      * @param  array<int, array<string, mixed>>  $shots
      */
-    private function summarizeReelShotChunk(array $shots): string
+    public function summarizeReelShotChunk(array $shots): string
     {
         if (empty($shots)) {
             return '';
@@ -2205,7 +1735,7 @@ SVG;
         return Str::limit(implode(' | ', $parts), 420, '');
     }
 
-    private function videoPromptCharLimitForProvider(string $provider): int
+    public function videoPromptCharLimitForProvider(string $provider): int
     {
         return match (strtolower(trim($provider))) {
             'runway' => max(600, min(1600, (int) (config('runway.max_prompt_chars') ?: 1400))),
@@ -2226,7 +1756,7 @@ SVG;
      * @param  array<string, mixed>  $activeFeedbackRequest
      * @return array<string, mixed>
      */
-    private function generateExtendedVideoAsset(
+    public function generateExtendedVideoAsset(
         OpenAiService $openAi,
         RunwayService $runway,
         KlingService $kling,
@@ -2447,7 +1977,7 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
-    private function buildStrategicVideoPrompt(
+    public function buildStrategicVideoPrompt(
         ContentItem $item,
         array $meta,
         string $briefRaw,
@@ -2490,6 +2020,10 @@ SVG;
             $assetVariables
         );
         $parts[] = $this->feedbackDrivenVideoInstruction($activeFeedbackRequest, $assetVariables, $locationSequenceMode);
+        $assetIdentityHint = $this->buildAssetIdentityPromptHint((array) data_get($meta, 'asset_identity', []));
+        if ($assetIdentityHint !== '') {
+            $parts[] = 'Vincoli identitari: ' . $assetIdentityHint . '.';
+        }
 
         if ($locationSequenceMode) {
             $locationNames = $this->videoLocationSequenceNames($assetVariables);
@@ -2532,7 +2066,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<string, mixed>
      */
-    private function normalizeReelBlueprint(
+    public function normalizeReelBlueprint(
         array $blueprint,
         ContentItem $item,
         array $meta,
@@ -2590,7 +2124,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<string, mixed>
      */
-    private function fallbackReelBlueprint(
+    public function fallbackReelBlueprint(
         ContentItem $item,
         array $meta,
         array $assetVariables,
@@ -2673,7 +2207,7 @@ SVG;
      * @param  array<string, mixed>  $blueprint
      * @return array<string, mixed>|null
      */
-    private function compactReelBlueprintSummary(array $blueprint): ?array
+    public function compactReelBlueprintSummary(array $blueprint): ?array
     {
         if (empty($blueprint)) {
             return null;
@@ -2710,7 +2244,7 @@ SVG;
      * @param  array<string, mixed>  $meta
      * @param  array<string, mixed>  $assetVariables
      */
-    private function buildRunwayReelExecutionPrompt(
+    public function buildRunwayReelExecutionPrompt(
         string $videoPrompt,
         ContentItem $item,
         array $meta,
@@ -2799,7 +2333,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<string, mixed>  $activeFeedbackRequest
      */
-    private function buildKlingExecutionPrompt(
+    public function buildKlingExecutionPrompt(
         string $videoPrompt,
         ContentItem $item,
         array $meta,
@@ -2868,7 +2402,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<int, string>
      */
-    private function videoLocationSequenceNames(array $assetVariables): array
+    public function videoLocationSequenceNames(array $assetVariables): array
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
         $names = [];
@@ -2887,26 +2421,18 @@ SVG;
         return array_values(array_unique(array_slice($names, 0, 4)));
     }
 
-    private function resolveVideoProvider(array $meta): string
+    public function resolveVideoProvider(array $meta): string
     {
         $preferred = trim((string) data_get($meta, 'video_provider', ''));
-        if ($preferred !== '') {
-            return VideoProviderResolver::normalize($preferred);
-        }
 
-        $default = VideoProviderResolver::default();
-        if ($this->isVideoProviderConfigured($default)) {
-            return $default;
-        }
-
-        if ($default !== 'runway' && $this->isVideoProviderConfigured('runway')) {
-            return 'runway';
-        }
-
-        return VideoProviderResolver::default();
+        return $this->capabilityRegistry()->resolveConfiguredProvider(
+            'video',
+            $preferred,
+            VideoProviderResolver::default()
+        );
     }
 
-    private function shouldAllowCrossProviderVideoFallback(array $meta): bool
+    public function shouldAllowCrossProviderVideoFallback(array $meta): bool
     {
         return !(bool) data_get($meta, 'video_provider_lock', false);
     }
@@ -2916,17 +2442,14 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<int, string>  $referencePaths
      */
-    private function resolveRunwayVideoModel(ContentItem $item, array $meta, array $assetVariables, array $referencePaths): string
+    public function resolveRunwayVideoModel(ContentItem $item, array $meta, array $assetVariables, array $referencePaths): string
     {
         $explicit = trim((string) data_get($meta, 'video_model', ''));
         if ($explicit !== '') {
             return $this->normalizeRunwayVideoModel($explicit);
         }
 
-        $configured = strtolower(trim((string) (config('runway.model') ?: '')));
-        if ($configured === '' || in_array($configured, ['gen4_turbo', 'gen4-turbo'], true)) {
-            $configured = 'gen4.5';
-        }
+        $configured = $this->normalizeRunwayVideoModel($this->capabilityRegistry()->defaultModel('runway', 'video'));
 
         $format = strtolower(trim((string) ($item->format ?? 'post')));
         $hasReferences = !empty(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''));
@@ -2947,7 +2470,7 @@ SVG;
      * @param  array<string, mixed>  $videoOptions
      * @return array<string, mixed>
      */
-    private function normalizeVideoOptionsForProvider(string $provider, array $videoOptions): array
+    public function normalizeVideoOptionsForProvider(string $provider, array $videoOptions): array
     {
         $provider = strtolower(trim($provider));
         $size = trim((string) ($videoOptions['size'] ?? ''));
@@ -2955,12 +2478,10 @@ SVG;
             $size = (string) (config('openai.video_size') ?: '720x1280');
         }
 
-        $model = trim((string) ($videoOptions['model'] ?? ''));
-        $model = match ($provider) {
-            'runway' => $this->normalizeRunwayVideoModel($model),
-            'kling' => $this->normalizeKlingVideoModel($model),
-            default => $this->normalizeOpenAiVideoModel($model),
-        };
+        $model = $this->normalizeVideoModelForProvider(
+            $provider,
+            trim((string) ($videoOptions['model'] ?? ''))
+        );
 
         $seconds = (int) ($videoOptions['seconds'] ?? 0);
         if ($seconds <= 0) {
@@ -2979,79 +2500,64 @@ SVG;
         return $videoOptions;
     }
 
-    private function normalizeVideoSecondsForProvider(string $provider, int $seconds, string $model = ''): int
+    public function normalizeVideoSecondsForProvider(string $provider, int $seconds, string $model = ''): int
     {
-        $provider = strtolower(trim($provider));
-        $seconds = max(1, $seconds);
-
-        return match ($provider) {
-            'runway' => $this->isRunwayVeoModel($model)
-                ? ($seconds < 6 ? 4 : ($seconds < 8 ? 6 : 8))
-                : max(3, min(10, $seconds)),
-            'kling' => $seconds >= 8 ? 10 : 5,
-            default => $seconds <= 4 ? 4 : ($seconds <= 8 ? 8 : 12),
-        };
+        return $this->capabilityRegistry()->normalizeVideoDuration($provider, $seconds, $model);
     }
 
-    private function isRunwayVeoModel(string $model): bool
+    public function isRunwayVeoModel(string $model): bool
     {
         $normalized = $this->normalizeRunwayVideoModel($model);
 
         return str_starts_with($normalized, 'veo3');
     }
 
-    private function normalizeOpenAiVideoModel(string $model): string
+    public function normalizeOpenAiVideoModel(string $model): string
     {
-        $model = strtolower(trim($model));
-        if ($model !== '' && str_starts_with($model, 'sora-2')) {
-            return $model;
-        }
-
-        $configured = strtolower(trim((string) (config('openai.video_model') ?: 'sora-2')));
-
-        return str_starts_with($configured, 'sora-2') ? $configured : 'sora-2';
+        return $this->capabilityRegistry()->normalizeModel('openai', 'video', $model);
     }
 
-    private function normalizeRunwayVideoModel(string $model): string
+    public function normalizeRunwayVideoModel(string $model): string
     {
-        $model = strtolower(trim($model));
-        if ($model !== '' && !str_starts_with($model, 'sora-') && !str_starts_with($model, 'kling-')) {
-            return in_array($model, ['gen4_turbo', 'gen4-turbo'], true) ? 'gen4.5' : $model;
-        }
-
-        $configured = strtolower(trim((string) (config('runway.model') ?: 'gen4.5')));
-        if ($configured === '' || str_starts_with($configured, 'sora-') || str_starts_with($configured, 'kling-')) {
-            return 'gen4.5';
-        }
-
-        return in_array($configured, ['gen4_turbo', 'gen4-turbo'], true) ? 'gen4.5' : $configured;
+        return $this->capabilityRegistry()->normalizeModel('runway', 'video', $model);
     }
 
-    private function normalizeKlingVideoModel(string $model): string
+    public function normalizeKlingVideoModel(string $model): string
     {
-        $model = strtolower(trim($model));
-        if ($model !== '' && str_starts_with($model, 'kling-')) {
-            return $model;
-        }
-
-        $configured = strtolower(trim((string) (config('kling.model') ?: '')));
-
-        return str_starts_with($configured, 'kling-') ? $configured : '';
+        return $this->capabilityRegistry()->normalizeModel('kling', 'video', $model);
     }
 
-    private function resolveImageProvider(array $meta): string
+    public function normalizeVideoModelForProvider(string $provider, string $model = '', array $context = []): string
+    {
+        return match (strtolower(trim($provider))) {
+            'runway' => $this->capabilityRegistry()->normalizeModel('runway', 'video', $model, $context),
+            'kling' => $this->capabilityRegistry()->normalizeModel('kling', 'video', $model, $context),
+            default => $this->capabilityRegistry()->normalizeModel('openai', 'video', $model, $context),
+        };
+    }
+
+    public function resolveImageProvider(array $meta): string
     {
         $source = trim((string) data_get($meta, 'source', ''));
         $mode = trim((string) data_get($meta, 'plan.mode', ''));
 
         if (!in_array($source, ['manual_single_content'], true) && $mode !== 'single_manual') {
-            return ImageProviderResolver::default();
+            return $this->capabilityRegistry()->defaultProvider('image');
         }
 
-        return ImageProviderResolver::resolve((string) data_get($meta, 'image_provider', ''), ImageProviderResolver::default());
+        return $this->capabilityRegistry()->resolveProvider(
+            'image',
+            (string) data_get($meta, 'image_provider', ''),
+            ImageProviderResolver::default()
+        );
     }
 
-    private function generateImageTextWithProvider(
+    public function capabilityRegistry(): ProviderCapabilityRegistry
+    {
+        return app(ProviderCapabilityRegistry::class);
+    }
+
+    public function generateImageTextWithProvider(
         string $provider,
         string $prompt,
         OpenAiService $openAi,
@@ -3067,7 +2573,7 @@ SVG;
     /**
      * @param  array<int, string>  $editPaths
      */
-    private function generateImageEditWithProvider(
+    public function generateImageEditWithProvider(
         string $provider,
         string $prompt,
         array $editPaths,
@@ -3084,7 +2590,7 @@ SVG;
     /**
      * @param  array<int, string>  $selectedBrandImagePaths
      */
-    private function augmentPromptForInstagramImageExecution(
+    public function augmentPromptForInstagramImageExecution(
         ContentItem $item,
         string $prompt,
         array $selectedBrandImagePaths,
@@ -3116,7 +2622,7 @@ SVG;
         return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
     }
 
-    private function instagramVisualOutputInstruction(ContentItem $item): string
+    public function instagramVisualOutputInstruction(ContentItem $item): string
     {
         return 'Output finale verticale 4:5, pronto per Instagram feed, con composizione premium, focus principale netto, margini puliti e gerarchia visiva forte. Questo deve sembrare un post social studiato per fermare lo scroll, non una foto corporate generica: soggetto chiaro subito, lettura forte anche da miniatura e resa nativa da feed.';
     }
@@ -3124,7 +2630,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $itemBrain
      */
-    private function socialGraphicSystemInstruction(ContentItem $item, array $itemBrain): string
+    public function socialGraphicSystemInstruction(ContentItem $item, array $itemBrain): string
     {
         $position = $this->positionInPlan($item) + 1;
         $total = max(1, $this->totalItemsInPlan($item));
@@ -3151,7 +2657,7 @@ SVG;
     /**
      * @param  array<int, string>  $selectedBrandImagePaths
      */
-    private function multiReferenceBlendInstruction(array $selectedBrandImagePaths): string
+    public function multiReferenceBlendInstruction(array $selectedBrandImagePaths): string
     {
         $paths = array_values(array_filter($selectedBrandImagePaths, fn ($path) => is_string($path) && $path !== ''));
 
@@ -3168,7 +2674,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<int, string>
      */
-    private function stabilizeReferencePathsForFeedback(
+    public function stabilizeReferencePathsForFeedback(
         array $selectedBrandImagePaths,
         array $feedbackRequest,
         array $assetVariables
@@ -3191,7 +2697,7 @@ SVG;
      * @param  array<int, string>  $selectedBrandImagePaths
      * @param  array<string, mixed>  $assetVariables
      */
-    private function feedbackDrivenImageInstruction(
+    public function feedbackDrivenImageInstruction(
         array $feedbackRequest,
         array $selectedBrandImagePaths,
         array $assetVariables
@@ -3200,7 +2706,7 @@ SVG;
             return '';
         }
 
-        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $category = Str::lower(trim((string) ($feedbackRequest['normalized_category'] ?? $feedbackRequest['category'] ?? '')));
         $reason = trim((string) ($feedbackRequest['reason'] ?? ''));
         $parts = [];
 
@@ -3214,12 +2720,22 @@ SVG;
             $parts[] = 'Se esistono altri riferimenti, servono solo per dettagli secondari coerenti, non per fondere ambienti diversi.';
         }
 
-        if ($category === 'realism') {
-            $parts[] = 'Se aggiungi persone, evita close-up inventati e preferisci figure credibili in media distanza, con volti, mani e postura naturali.';
+        if (in_array($category, ['realism', 'person_not_consistent'], true)) {
+            $parts[] = 'Se aggiungi persone, evita close-up inventati e preferisci figure credibili in media distanza, con volti, mani, postura e presenza naturali.';
+            $parts[] = 'La persona del brand deve restare riconoscibile: stessi lineamenti, stesso volto e stessa identita dei riferimenti.';
         }
 
-        if ($category === 'visual_composition') {
+        if (in_array($category, ['visual_composition', 'low_quality_visual'], true)) {
             $parts[] = 'Cambia davvero composizione, inquadratura e gerarchia visiva, mantenendo pero il luogo autentico se e reale.';
+            $parts[] = 'Migliora nitidezza, luce, proporzioni e credibilita generale della scena.';
+        }
+
+        if ($category === 'product_deformed') {
+            $parts[] = 'Se compare un prodotto reale, mantieni forma, packaging, etichetta e proporzioni coerenti senza deformazioni o reinterpretazioni.';
+        }
+
+        if ($category === 'off_brand') {
+            $parts[] = 'Riallinea palette, styling, atmosfera, luce e dress code al posizionamento reale del brand.';
         }
 
         return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
@@ -3229,7 +2745,7 @@ SVG;
      * @param  array<string, mixed>  $feedbackRequest
      * @param  array<string, mixed>  $assetVariables
      */
-    private function feedbackDrivenVideoInstruction(
+    public function feedbackDrivenVideoInstruction(
         array $feedbackRequest,
         array $assetVariables,
         bool $locationSequenceMode = false
@@ -3238,7 +2754,7 @@ SVG;
             return '';
         }
 
-        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $category = Str::lower(trim((string) ($feedbackRequest['normalized_category'] ?? $feedbackRequest['category'] ?? '')));
         $reason = trim((string) ($feedbackRequest['reason'] ?? ''));
         $reasonNormalized = $this->normalizeText($reason);
         $parts = [];
@@ -3254,23 +2770,27 @@ SVG;
             $parts[] = 'Se c e una persona di riferimento del brand, la sua identita deve restare la stessa tra una versione e l altra: stesso volto, stessi lineamenti, stessa eta apparente e stessa presenza.';
         }
 
-        if ($this->feedbackDemandsPersonaIdentityLock($reasonNormalized)) {
+        if ($this->feedbackDemandsPersonaIdentityLock($reasonNormalized, $category)) {
             $parts[] = 'La persona deve sembrare davvero quella dei riferimenti: usa volto, lineamenti, proporzioni, capelli e presenza come ancora rigida.';
         }
 
-        if ($locationSequenceMode || $category === 'location_integrity') {
+        if ($locationSequenceMode || in_array($category, ['location_integrity', 'location_not_consistent'], true)) {
             $parts[] = 'Mantieni i luoghi reali autentici e separati se sono ambienti diversi, senza fonderli o inventare spazi nuovi.';
         }
 
-        if ($category === 'realism') {
-            $parts[] = 'Volti, mani, postura, sguardo e movimenti devono risultare naturali e credibili, senza uncanny effect.';
+        if (in_array($category, ['realism', 'person_not_consistent', 'low_quality_visual'], true)) {
+            $parts[] = 'Volti, mani, postura, sguardo, texture e movimenti devono risultare naturali e credibili, senza uncanny effect.';
         }
 
-        if ($category === 'visual_composition') {
+        if (in_array($category, ['visual_composition', 'low_quality_visual'], true)) {
             $parts[] = 'Cambia in modo netto lo shot plan: inquadratura iniziale, ordine dei frame, distanze camera e gerarchia visiva delle scene.';
         }
 
-        if ($category === 'brand_alignment') {
+        if ($category === 'product_deformed') {
+            $parts[] = 'Se il video mostra un prodotto reale, mantieni forma, proporzioni, packaging e dettagli senza deformazioni tra uno shot e l altro.';
+        }
+
+        if (in_array($category, ['brand_alignment', 'off_brand'], true)) {
             $parts[] = 'Riallinea outfit, atmosfera, ambiente, luce e comportamento del soggetto al posizionamento reale del brand.';
         }
 
@@ -3282,15 +2802,15 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<int, string>  $selectedBrandImagePaths
      */
-    private function feedbackForcesPrimaryLocationAnchor(
+    public function feedbackForcesPrimaryLocationAnchor(
         array $feedbackRequest,
         array $assetVariables,
         array $selectedBrandImagePaths
     ): bool {
-        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $category = Str::lower(trim((string) ($feedbackRequest['normalized_category'] ?? $feedbackRequest['category'] ?? '')));
         $reason = $this->normalizeText((string) ($feedbackRequest['reason'] ?? ''));
 
-        if ($category === 'location_integrity') {
+        if (in_array($category, ['location_integrity', 'location_not_consistent'], true)) {
             return true;
         }
 
@@ -3315,8 +2835,12 @@ SVG;
         return false;
     }
 
-    private function feedbackDemandsPersonaIdentityLock(string $reasonNormalized): bool
+    public function feedbackDemandsPersonaIdentityLock(string $reasonNormalized, string $category = ''): bool
     {
+        if (Str::lower(trim($category)) === 'person_not_consistent') {
+            return true;
+        }
+
         if ($reasonNormalized === '') {
             return false;
         }
@@ -3324,7 +2848,7 @@ SVG;
         foreach ([
             'non sembra lei',
             'non e lei',
-            'non è lei',
+            'non ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ lei',
             'volto diverso',
             'viso diverso',
             'faccia diversa',
@@ -3342,40 +2866,102 @@ SVG;
     /**
      * @param  array<string, mixed>  $feedbackRequest
      */
-    private function feedbackTargetsVisual(array $feedbackRequest): bool
+    public function feedbackTargetsVisual(array $feedbackRequest): bool
     {
         if (empty($feedbackRequest)) {
             return false;
         }
 
         $scope = Str::lower(trim((string) ($feedbackRequest['scope'] ?? '')));
-        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $category = Str::lower(trim((string) ($feedbackRequest['normalized_category'] ?? $feedbackRequest['category'] ?? '')));
+        $visualCategories = [
+            'realism',
+            'visual_composition',
+            'location_integrity',
+            'brand_alignment',
+            'person_not_consistent',
+            'location_not_consistent',
+            'product_deformed',
+            'low_quality_visual',
+            'off_brand',
+            'not_publishable',
+        ];
+        $copyOnlyCategories = [
+            'too_generic',
+            'too_salesy',
+            'wrong_cta',
+            'audio_unatural',
+            'caption_copy',
+            'call_to_action',
+            'tone_of_voice',
+            'offer_focus',
+        ];
 
-        if (in_array($scope, ['visual_first', 'full'], true)) {
+        if ($scope === 'visual_first') {
             return true;
         }
 
-        return in_array($category, ['realism', 'visual_composition', 'location_integrity'], true);
+        if (in_array($category, $visualCategories, true)) {
+            return true;
+        }
+
+        if ($scope === 'full' && !in_array($category, $copyOnlyCategories, true)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
      * @param  array<string, mixed>  $feedbackRequest
      * @return array<string, mixed>
      */
-    private function normalizeFeedbackRequest(array $feedbackRequest): array
+    public function normalizeFeedbackRequest(array $feedbackRequest): array
     {
         if (empty($feedbackRequest)) {
             return [];
         }
 
+        $category = Str::lower(trim((string) ($feedbackRequest['category'] ?? '')));
+        $scope = Str::lower(trim((string) ($feedbackRequest['scope'] ?? 'full')));
+        $reason = trim((string) ($feedbackRequest['reason'] ?? ''));
+        $sentiment = trim((string) ($feedbackRequest['sentiment'] ?? ''));
+        $action = trim((string) ($feedbackRequest['action'] ?? ''));
+        $normalizedCategory = Str::lower(trim((string) ($feedbackRequest['normalized_category'] ?? '')));
+
+        if ($normalizedCategory === '') {
+            $normalizedCategory = \App\Models\ContentFeedbackEntry::normalizeCategory($category, $reason, $scope);
+        }
+
+        $severity = Str::lower(trim((string) ($feedbackRequest['severity'] ?? '')));
+        if ($severity === '') {
+            $severity = \App\Models\ContentFeedbackEntry::resolveSeverity(null, $normalizedCategory, $reason, $action, $sentiment);
+        }
+
+        $scores = collect((array) ($feedbackRequest['scores'] ?? []))
+            ->mapWithKeys(function ($value, $key): array {
+                if (!is_numeric($value)) {
+                    return [];
+                }
+
+                return [(string) $key => $value + 0];
+            })
+            ->all();
+
         return [
             'feedback_id' => isset($feedbackRequest['feedback_id']) ? (int) $feedbackRequest['feedback_id'] : null,
-            'sentiment' => trim((string) ($feedbackRequest['sentiment'] ?? '')),
-            'category' => Str::lower(trim((string) ($feedbackRequest['category'] ?? ''))),
-            'scope' => Str::lower(trim((string) ($feedbackRequest['scope'] ?? 'full'))),
-            'reason' => trim((string) ($feedbackRequest['reason'] ?? '')),
-            'action' => trim((string) ($feedbackRequest['action'] ?? '')),
+            'sentiment' => $sentiment,
+            'category' => $category,
+            'category_label' => trim((string) ($feedbackRequest['category_label'] ?? '')),
+            'normalized_category' => $normalizedCategory,
+            'normalized_category_label' => trim((string) ($feedbackRequest['normalized_category_label'] ?? \App\Models\ContentFeedbackEntry::labelForCategory($normalizedCategory))),
+            'scope' => $scope,
+            'severity' => $severity,
+            'severity_label' => trim((string) ($feedbackRequest['severity_label'] ?? \App\Models\ContentFeedbackEntry::labelForSeverity($severity))),
+            'reason' => $reason,
+            'action' => $action,
             'instruction' => trim((string) ($feedbackRequest['instruction'] ?? '')),
+            'scores' => $scores,
             'created_at' => trim((string) ($feedbackRequest['created_at'] ?? '')),
             'requested_at' => trim((string) ($feedbackRequest['requested_at'] ?? '')),
         ];
@@ -3385,7 +2971,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<int, string>  $selectedBrandImagePaths
      */
-    private function locationEnvelopePreservationInstruction(array $assetVariables, array $selectedBrandImagePaths): string
+    public function locationEnvelopePreservationInstruction(array $assetVariables, array $selectedBrandImagePaths): string
     {
         if (!$this->hasProtectedLocationEnvelope($assetVariables, $selectedBrandImagePaths)) {
             return '';
@@ -3398,7 +2984,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<int, string>  $selectedBrandImagePaths
      */
-    private function hasProtectedLocationEnvelope(array $assetVariables, array $selectedBrandImagePaths): bool
+    public function hasProtectedLocationEnvelope(array $assetVariables, array $selectedBrandImagePaths): bool
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
         if (empty($resolved)) {
@@ -3448,7 +3034,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $assetVariables
      */
-    private function hasExplicitHumanReferences(array $assetVariables): bool
+    public function hasExplicitHumanReferences(array $assetVariables): bool
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
         if (empty($resolved)) {
@@ -3488,7 +3074,7 @@ SVG;
      * @param  array<string, mixed>  $videoOptions
      * @return array<string, mixed>
      */
-    private function generateVideoWithKling(
+    public function generateVideoWithKling(
         KlingService $kling,
         ContentItem $item,
         string $briefRaw,
@@ -3588,7 +3174,7 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @return array{inputs: array<int, string>, summary: array<string, mixed>}
      */
-    private function resolveKlingCfgScale(ContentItem $item, array $assetVariables): float
+    public function resolveKlingCfgScale(ContentItem $item, array $assetVariables): float
     {
         $configured = (float) (config('kling.cfg_scale') ?: 0.78);
         $configured = max(0.3, min(1.0, $configured));
@@ -3606,7 +3192,7 @@ SVG;
         }
         return $configured;
     }
-    private function resolveKlingReferenceCap(ContentItem $item, array $assetVariables): int
+    public function resolveKlingReferenceCap(ContentItem $item, array $assetVariables): int
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $context = $this->videoSubjectContextText(
@@ -3622,7 +3208,7 @@ SVG;
         }
         return 3;
     }
-    private function buildKlingReferenceInputs(array $referenceAbsPool, array $referencePaths): array
+    public function buildKlingReferenceInputs(array $referenceAbsPool, array $referencePaths): array
     {
         $referenceAbsPool = array_values(array_filter(
             array_map(fn ($value) => trim((string) $value), $referenceAbsPool),
@@ -3674,7 +3260,7 @@ SVG;
     /**
      * @return array{mode:string,value:string}|null
      */
-    private function buildKlingReferenceInput(string $storagePath, string $absolutePath): ?array
+    public function buildKlingReferenceInput(string $storagePath, string $absolutePath): ?array
     {
         if ($this->shouldPreferInlineKlingReference()) {
             $dataUri = $this->buildKlingDataUri($absolutePath);
@@ -3704,14 +3290,14 @@ SVG;
         }
     }
 
-    private function shouldPreferInlineKlingReference(): bool
+    public function shouldPreferInlineKlingReference(): bool
     {
         $baseUrl = strtolower(trim((string) (config('kling.base_url') ?: '')));
 
         return str_contains($baseUrl, 'klingai.com');
     }
 
-    private function buildKlingDataUri(string $absolutePath): ?string
+    public function buildKlingDataUri(string $absolutePath): ?string
     {
         $absolutePath = trim($absolutePath);
         if ($absolutePath === '' || !is_file($absolutePath)) {
@@ -3735,7 +3321,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<string, mixed>  $activeFeedbackRequest
      */
-    private function buildKlingNegativePrompt(
+    public function buildKlingNegativePrompt(
         ContentItem $item,
         array $assetVariables,
         array $activeFeedbackRequest,
@@ -3807,7 +3393,7 @@ SVG;
      * @param  array<string, mixed>  $videoOptions
      * @return array<string, mixed>
      */
-    private function generateVideoWithRunway(
+    public function generateVideoWithRunway(
         RunwayService $runway,
         OpenAiService $openAi,
         ContentItem $item,
@@ -4013,7 +3599,7 @@ SVG;
      * @param  array<string, mixed>|null  $providerFallback
      * @return array<string, mixed>
      */
-    private function generateVideoWithOpenAi(
+    public function generateVideoWithOpenAi(
         OpenAiService $openAi,
         string $briefRaw,
         string $fallbackPrompt,
@@ -4197,7 +3783,7 @@ SVG;
         throw new \RuntimeException('Video generation failed without explicit error.');
     }
 
-    private function shouldFallbackFromRunwayToOpenAi(Throwable $error): bool
+    public function shouldFallbackFromRunwayToOpenAi(Throwable $error): bool
     {
         $message = strtolower(trim($error->getMessage()));
 
@@ -4221,7 +3807,7 @@ SVG;
             || str_contains($message, 'failed to connect');
     }
 
-    private function shouldRetryRunwayInsideProvider(Throwable $error): bool
+    public function shouldRetryRunwayInsideProvider(Throwable $error): bool
     {
         $message = strtolower(trim($error->getMessage()));
 
@@ -4253,7 +3839,7 @@ SVG;
      * @param  array<string, mixed>  $runwayOptions
      * @return array<int, array{model:string,prompt:string,reason:string}>
      */
-    private function buildRunwayRecoveryPlans(array $runwayOptions, string $videoPrompt, string $briefRaw): array
+    public function buildRunwayRecoveryPlans(array $runwayOptions, string $videoPrompt, string $briefRaw): array
     {
         $plans = [];
         $baseModel = $this->normalizeRunwayVideoModel((string) ($runwayOptions['model'] ?? 'gen4.5'));
@@ -4292,7 +3878,7 @@ SVG;
         return array_values($plans);
     }
 
-    private function buildRunwayStabilityRetryPrompt(string $videoPrompt, string $briefRaw): string
+    public function buildRunwayStabilityRetryPrompt(string $videoPrompt, string $briefRaw): string
     {
         $source = trim($briefRaw !== '' ? $briefRaw : $videoPrompt);
         $parts = [
@@ -4313,7 +3899,7 @@ SVG;
         );
     }
 
-    private function shouldFallbackFromKlingToSecondaryProvider(Throwable $error): bool
+    public function shouldFallbackFromKlingToSecondaryProvider(Throwable $error): bool
     {
         $message = strtolower(trim($error->getMessage()));
         if ($message === '') {
@@ -4344,22 +3930,12 @@ SVG;
     /**
      * @return array<int, string>
      */
-    private function secondaryVideoProvidersForKlingFailure(): array
+    public function secondaryVideoProvidersForKlingFailure(): array
     {
-        $providers = [];
-
-        if ($this->isVideoProviderConfigured('runway')) {
-            $providers[] = 'runway';
-        }
-
-        if ($this->isVideoProviderConfigured('openai')) {
-            $providers[] = 'openai';
-        }
-
-        return $providers;
+        return $this->capabilityRegistry()->fallbackProviders('kling', 'video');
     }
 
-    private function shouldFallbackFromOpenAiToSecondaryProvider(Throwable $error): bool
+    public function shouldFallbackFromOpenAiToSecondaryProvider(Throwable $error): bool
     {
         if ($this->isOpenAiVideoModerationBlock($error)) {
             return false;
@@ -4395,36 +3971,20 @@ SVG;
     /**
      * @return array<int, string>
      */
-    private function secondaryVideoProvidersForOpenAiFailure(bool $hasReferencePool): array
+    public function secondaryVideoProvidersForOpenAiFailure(bool $hasReferencePool): array
     {
-        $providers = [];
-
-        if ($this->isVideoProviderConfigured('runway')) {
-            $providers[] = 'runway';
-        }
-
-        if ($this->isVideoProviderConfigured('kling')) {
-            $providers[] = 'kling';
-        }
-
-        return $providers;
+        return $this->capabilityRegistry()->fallbackProviders('openai', 'video');
     }
 
-    private function isVideoProviderConfigured(string $provider): bool
+    public function isVideoProviderConfigured(string $provider): bool
     {
-        return match (strtolower(trim($provider))) {
-            'openai' => trim((string) (config('openai.api_key') ?: env('OPENAI_API_KEY') ?: '')) !== '',
-            'runway' => trim((string) (config('runway.api_key') ?: env('RUNWAY_API_KEY') ?: '')) !== '',
-            'kling' => trim((string) (config('kling.access_key') ?: env('KLING_ACCESS_KEY') ?: '')) !== ''
-                && trim((string) (config('kling.secret_key') ?: env('KLING_SECRET_KEY') ?: '')) !== '',
-            default => false,
-        };
+        return $this->capabilityRegistry()->isConfigured($provider, 'video');
     }
 
     /**
      * @param  array<int, string>  $referencePaths
      */
-    private function buildOpenAiVideoFallbackPrompt(string $videoPrompt, string $briefRaw, array $referencePaths): string
+    public function buildOpenAiVideoFallbackPrompt(string $videoPrompt, string $briefRaw, array $referencePaths): string
     {
         $prompt = trim($videoPrompt);
         $referenceCount = count(array_filter($referencePaths, fn ($path) => is_string($path) && $path !== ''));
@@ -4444,7 +4004,7 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
-    private function buildOpenAiVideoModerationRetryPrompt(
+    public function buildOpenAiVideoModerationRetryPrompt(
         string $videoPrompt,
         string $briefRaw,
         array $referencePaths,
@@ -4462,7 +4022,7 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
-    private function prepareOpenAiVideoPromptForExecution(
+    public function prepareOpenAiVideoPromptForExecution(
         string $videoPrompt,
         string $briefRaw,
         array $referencePaths,
@@ -4480,7 +4040,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $assetVariables
      */
-    private function personIdentityVideoInstruction(array $assetVariables): string
+    public function personIdentityVideoInstruction(array $assetVariables): string
     {
         $row = $this->singleResolvedPersonVariable($assetVariables);
         if ($row === null) {
@@ -4527,7 +4087,7 @@ SVG;
      * @param  array<int, string>  $referencePaths
      * @param  array<string, mixed>  $assetVariables
      */
-    private function buildSafeCommercialVideoPrompt(
+    public function buildSafeCommercialVideoPrompt(
         string $videoPrompt,
         string $briefRaw,
         array $referencePaths,
@@ -4565,7 +4125,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $assetVariables
      */
-    private function sanitizeVideoPromptForSafety(string $text, array $assetVariables): string
+    public function sanitizeVideoPromptForSafety(string $text, array $assetVariables): string
     {
         $sanitized = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
         if ($sanitized === '') {
@@ -4601,7 +4161,7 @@ SVG;
         return Str::limit($sanitized, 260, '');
     }
 
-    private function isOpenAiVideoModerationBlock(Throwable $error): bool
+    public function isOpenAiVideoModerationBlock(Throwable $error): bool
     {
         $message = strtolower(trim($error->getMessage()));
         if ($message === '') {
@@ -4619,7 +4179,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $assetVariables
      */
-    private function shouldUseOpenAiVideoModerationGuard(string $videoPrompt, string $briefRaw, array $assetVariables): bool
+    public function shouldUseOpenAiVideoModerationGuard(string $videoPrompt, string $briefRaw, array $assetVariables): bool
     {
         $source = trim($videoPrompt . ' ' . $briefRaw);
         if ($source === '') {
@@ -4643,7 +4203,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $assetVariables
      */
-    private function hasPersonAssetVariable(array $assetVariables): bool
+    public function hasPersonAssetVariable(array $assetVariables): bool
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
 
@@ -4660,7 +4220,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<string, mixed>|null
      */
-    private function singleResolvedPersonVariable(array $assetVariables): ?array
+    public function singleResolvedPersonVariable(array $assetVariables): ?array
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
         $persons = array_values(array_filter(
@@ -4671,7 +4231,7 @@ SVG;
         return count($persons) === 1 ? $persons[0] : null;
     }
 
-    private function videoSubjectContextText(array $meta, string $briefRaw = '', string $videoPrompt = ''): string
+    public function videoSubjectContextText(array $meta, string $briefRaw = '', string $videoPrompt = ''): string
     {
         $parts = [
             trim($briefRaw),
@@ -4688,7 +4248,7 @@ SVG;
         )))));
     }
 
-    private function videoNeedsDualSubjectLock(array $meta, string $contextText, array $assetVariables): bool
+    public function videoNeedsDualSubjectLock(array $meta, string $contextText, array $assetVariables): bool
     {
         if (!$this->hasPersonAssetVariable($assetVariables)) {
             return false;
@@ -4697,7 +4257,7 @@ SVG;
         return $this->primaryVideoProductLikeRow($meta, $assetVariables, $contextText) !== null;
     }
 
-    private function subjectLockVideoInstruction(array $meta, string $contextText, array $assetVariables): string
+    public function subjectLockVideoInstruction(array $meta, string $contextText, array $assetVariables): string
     {
         if (!$this->videoNeedsDualSubjectLock($meta, $contextText, $assetVariables)) {
             return '';
@@ -4711,7 +4271,7 @@ SVG;
         return "Vincolo di scena: la persona del brand e {$productLabel} devono restare entrambi soggetti principali del reel. Non trasformare il video in un ritratto della sola persona: {$productLabel} deve essere chiaramente visibile nel hook, nello sviluppo e nel payoff finale. Se il brief specifica marca, modello o colore, rispettali senza cambiarli.";
     }
 
-    private function primaryVideoProductLikeRow(array $meta, array $assetVariables, string $contextText = ''): ?array
+    public function primaryVideoProductLikeRow(array $meta, array $assetVariables, string $contextText = ''): ?array
     {
         $candidates = [];
 
@@ -4749,7 +4309,7 @@ SVG;
         return null;
     }
 
-    private function rowLooksProductLike(array $row): bool
+    public function rowLooksProductLike(array $row): bool
     {
         $kind = strtolower(trim((string) ($row['kind'] ?? 'custom')));
         if ($kind === 'product') {
@@ -4776,7 +4336,7 @@ SVG;
         return false;
     }
 
-    private function videoContextMentionsProduct(string $contextText): bool
+    public function videoContextMentionsProduct(string $contextText): bool
     {
         $contextText = $this->normalizeText($contextText);
         if ($contextText === '') {
@@ -4793,7 +4353,7 @@ SVG;
         return false;
     }
 
-    private function extractProductHintFromContext(string $contextText): string
+    public function extractProductHintFromContext(string $contextText): string
     {
         $normalized = $this->normalizeText($contextText);
         if ($normalized === '') {
@@ -4834,7 +4394,7 @@ SVG;
         return '';
     }
 
-    private function productLikeRowName(?array $row): string
+    public function productLikeRowName(?array $row): string
     {
         if (!is_array($row)) {
             return '';
@@ -4854,7 +4414,7 @@ SVG;
         return $descriptor;
     }
 
-    private function needsWellnessSafetyLanguage(string $text): bool
+    public function needsWellnessSafetyLanguage(string $text): bool
     {
         $normalized = Str::lower($this->normalizeText($text));
 
@@ -4871,7 +4431,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<int, string>
      */
-    private function personVariableNames(array $assetVariables): array
+    public function personVariableNames(array $assetVariables): array
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
 
@@ -4890,7 +4450,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array{0: array<int, string>, 1: array<int, string>}
      */
-    private function prioritizeVideoReferencePoolsForPersonVariable(
+    public function prioritizeVideoReferencePoolsForPersonVariable(
         array $imageReferenceAbsPool,
         array $imageReferencePathPool,
         array $assetVariables,
@@ -4934,7 +4494,7 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @param  array<int, string>  $referencePaths
      */
-    private function shouldUsePersonIdentityReferenceBoard(array $assetVariables, array $referencePaths): bool
+    public function shouldUsePersonIdentityReferenceBoard(array $assetVariables, array $referencePaths): bool
     {
         return $this->singleResolvedPersonVariable($assetVariables) !== null
             && count(array_values(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''))) >= 2;
@@ -4945,11 +4505,14 @@ SVG;
      * @param  array<int, string>  $availablePaths
      * @return array<int, string>
      */
-    private function orderedPersonImagePaths(array $row, array $availablePaths): array
+    public function orderedPersonImagePaths(array $row, array $availablePaths): array
     {
         $availableLookup = array_fill_keys($availablePaths, true);
         $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
         $shotSummary = is_array($profile['shot_summary'] ?? null) ? $profile['shot_summary'] : [];
+        $identityPack = is_array($row['identity_pack'] ?? null)
+            ? $row['identity_pack']
+            : app(AssetIdentityService::class)->synthesizeIdentityPackFromRow($row);
 
         $slotPriority = [
             'front',
@@ -4960,6 +4523,23 @@ SVG;
         ];
 
         $ordered = [];
+        $canonicalAssets = collect((array) data_get($identityPack, 'canonical_assets', []))
+            ->filter(fn ($asset) => is_array($asset))
+            ->sortByDesc(fn (array $asset) => (bool) ($asset['is_primary'] ?? false))
+            ->values()
+            ->all();
+
+        foreach ($canonicalAssets as $asset) {
+            if (!is_array($asset)) {
+                continue;
+            }
+            $path = trim((string) ($asset['path'] ?? ''));
+            if ($path !== '' && isset($availableLookup[$path])) {
+                $ordered[] = $path;
+                unset($availableLookup[$path]);
+            }
+        }
+
         foreach ($slotPriority as $slot) {
             foreach ($shotSummary as $shot) {
                 if (!is_array($shot)) {
@@ -4990,7 +4570,7 @@ SVG;
      * @param  array<int, string>  $paths
      * @return array<int, string>
      */
-    private function filterReferenceImagePaths(array $paths): array
+    public function filterReferenceImagePaths(array $paths): array
     {
         $disk = Storage::disk('public');
         $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'];
@@ -5009,7 +4589,92 @@ SVG;
         ));
     }
 
-    private function targetVideoSecondsForFormat(ContentItem $item): string
+    public function applyIdentityPackReferenceSelection(
+        array $paths,
+        array $assetVariables,
+        array $assetIdentity = [],
+        bool $strictAssetMode = false
+    ): array {
+        $paths = array_values(array_unique(array_filter(array_map(
+            fn ($path) => trim((string) $path),
+            $paths
+        ))));
+
+        if (empty($paths)) {
+            return [];
+        }
+
+        $primaryCanonicalPaths = [];
+        $canonicalPaths = [];
+        foreach ((array) data_get($assetIdentity, 'slots', []) as $slot) {
+            if (!is_array($slot)) {
+                continue;
+            }
+            foreach ((array) data_get($slot, 'identity_pack.canonical_assets', data_get($slot, 'canonical_assets', [])) as $asset) {
+                if (!is_array($asset)) {
+                    continue;
+                }
+                $path = trim((string) ($asset['path'] ?? ''));
+                if ($path !== '') {
+                    $canonicalPaths[] = $path;
+                    if ((bool) ($asset['is_primary'] ?? false)) {
+                        $primaryCanonicalPaths[] = $path;
+                    }
+                }
+            }
+            $canonicalAssetPath = trim((string) ($slot['canonical_asset_path'] ?? ''));
+            if ($canonicalAssetPath !== '') {
+                $canonicalPaths[] = $canonicalAssetPath;
+                $primaryCanonicalPaths[] = $canonicalAssetPath;
+            }
+        }
+
+        foreach ($this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', [])) as $row) {
+            foreach ((array) data_get($row, 'identity_pack.canonical_assets', []) as $asset) {
+                if (!is_array($asset)) {
+                    continue;
+                }
+                $path = trim((string) ($asset['path'] ?? ''));
+                if ($path !== '') {
+                    $canonicalPaths[] = $path;
+                    if ((bool) ($asset['is_primary'] ?? false)) {
+                        $primaryCanonicalPaths[] = $path;
+                    }
+                }
+            }
+            $canonicalAssetPath = trim((string) ($row['canonical_asset_path'] ?? ''));
+            if ($canonicalAssetPath !== '') {
+                $canonicalPaths[] = $canonicalAssetPath;
+                $primaryCanonicalPaths[] = $canonicalAssetPath;
+            }
+        }
+
+        $primaryCanonicalPaths = array_values(array_unique(array_filter($primaryCanonicalPaths)));
+        $canonicalPaths = array_values(array_unique(array_filter($canonicalPaths)));
+        if (empty($canonicalPaths)) {
+            return $paths;
+        }
+
+        $selectedPrimary = array_values(array_filter($primaryCanonicalPaths, fn ($path) => in_array($path, $paths, true)));
+        $selectedCanonical = array_values(array_filter($canonicalPaths, fn ($path) => in_array($path, $paths, true)));
+        if (empty($selectedCanonical)) {
+            return $paths;
+        }
+
+        if ($strictAssetMode) {
+            return !empty($selectedPrimary) ? $selectedPrimary : $selectedCanonical;
+        }
+
+        $selectedSecondary = array_values(array_filter(
+            $selectedCanonical,
+            fn ($path) => !in_array($path, $selectedPrimary, true)
+        ));
+        $remaining = array_values(array_filter($paths, fn ($path) => !in_array($path, $selectedCanonical, true)));
+
+        return array_values(array_unique(array_merge($selectedPrimary, $selectedSecondary, $remaining)));
+    }
+
+    public function targetVideoSecondsForFormat(ContentItem $item): string
     {
         $format = strtolower(trim((string) ($item->format ?? '')));
         if ($format === 'reel') {
@@ -5028,7 +4693,7 @@ SVG;
         return $seconds;
     }
 
-    private function targetVideoSizeForFormat(ContentItem $item): string
+    public function targetVideoSizeForFormat(ContentItem $item): string
     {
         $configured = trim((string) (config('openai.video_size') ?: ''));
         if (in_array($configured, ['720x1280', '1280x720', '1080x1920'], true)) {
@@ -5043,7 +4708,7 @@ SVG;
         return '1280x720';
     }
 
-    private function buildVideoReferenceImage(string $baseImageAbs, string $logoAbs, string $logoMode = 'background'): ?string
+    public function buildVideoReferenceImage(string $baseImageAbs, string $logoAbs, string $logoMode = 'background'): ?string
     {
         $baseInfo = @getimagesize($baseImageAbs);
         $logoInfo = @getimagesize($logoAbs);
@@ -5124,7 +4789,7 @@ SVG;
         return $tmpPath;
     }
 
-    private function buildVideoReferenceCollage(array $imageAbsPaths): ?string
+    public function buildVideoReferenceCollage(array $imageAbsPaths): ?string
     {
         $paths = array_values(array_filter($imageAbsPaths, fn ($p) => is_string($p) && $p !== '' && is_file($p)));
         if (empty($paths)) {
@@ -5201,7 +4866,7 @@ SVG;
      * @param  array<int, string>  $referenceAbsPaths
      * @return array<string, mixed>|null
      */
-    private function buildLockedVideoSceneReference(
+    public function buildLockedVideoSceneReference(
         OpenAiService $openAi,
         NanoBananaService $nanoBanana,
         string $brief,
@@ -5301,7 +4966,7 @@ SVG;
         return $best;
     }
 
-    private function detectVideoExtensionFromBytes(string $bytes): string
+    public function detectVideoExtensionFromBytes(string $bytes): string
     {
         if (str_starts_with($bytes, "\x1A\x45\xDF\xA3")) {
             return 'webm';
@@ -5310,7 +4975,7 @@ SVG;
         return 'mp4';
     }
 
-    private function detectImageExtensionFromBytes(string $bytes): string
+    public function detectImageExtensionFromBytes(string $bytes): string
     {
         if (str_starts_with($bytes, "\x89PNG")) {
             return 'png';
@@ -5323,7 +4988,7 @@ SVG;
         return 'jpg';
     }
 
-    private function prepareVideoReferenceForSize(string $sourceAbs, string $size): ?string
+    public function prepareVideoReferenceForSize(string $sourceAbs, string $size): ?string
     {
         if (!is_file($sourceAbs)) {
             return null;
@@ -5389,7 +5054,7 @@ SVG;
     /**
      * @return array{0:int,1:int}
      */
-    private function parseVideoSize(string $size): array
+    public function parseVideoSize(string $size): array
     {
         $size = trim(strtolower($size));
         if (!preg_match('/^(\d{2,5})x(\d{2,5})$/', $size, $m)) {
@@ -5398,7 +5063,7 @@ SVG;
         return [(int) $m[1], (int) $m[2]];
     }
 
-    private function applyBrandLogoOverlay(ContentItem $item, array $strategy, array $meta): ?array
+    public function applyBrandLogoOverlay(ContentItem $item, array $strategy, array $meta): ?array
     {
         try {
             $imageSource = (string) data_get($meta, 'image_generation.source', '');
@@ -5527,12 +5192,12 @@ SVG;
         }
     }
 
-    private function shouldApplyLogoOverlay(ContentItem $item, string $imageSource, array $meta = []): bool
+    public function shouldApplyLogoOverlay(ContentItem $item, string $imageSource, array $meta = []): bool
     {
         return (bool) data_get($meta, 'logo_runtime.force', false);
     }
 
-    private function overlayStyleForItem(ContentItem $item, int $tw, int $th, int $w, int $h, string $mode = 'corner'): array
+    public function overlayStyleForItem(ContentItem $item, int $tw, int $th, int $w, int $h, string $mode = 'corner'): array
     {
         if ($mode === 'background') {
             return [
@@ -5579,7 +5244,7 @@ SVG;
         };
     }
 
-    private function applyOpacity($img, float $opacity): void
+    public function applyOpacity($img, float $opacity): void
     {
         $opacity = max(0.15, min(1.0, $opacity));
         $w = imagesx($img);
@@ -5603,7 +5268,7 @@ SVG;
         }
     }
 
-    private function resolveLogoRuntime(ContentItem $item, array $strategy, array $meta, ?string $selectedBrandImageAbs): array
+    public function resolveLogoRuntime(ContentItem $item, array $strategy, array $meta, ?string $selectedBrandImageAbs): array
     {
         $brief = $this->normalizeText((string) data_get($meta, 'manual_brief', ''));
         $requested = $this->briefRequestsLogoAsset($brief);
@@ -5718,7 +5383,7 @@ SVG;
         ];
     }
 
-    private function loadRasterLogoCandidates(array $meta, int $tenantId): array
+    public function loadRasterLogoCandidates(array $meta, int $tenantId): array
     {
         $rows = [];
 
@@ -5783,7 +5448,7 @@ SVG;
         return $out;
     }
 
-    private function detectLogoToneHint(string $text): ?string
+    public function detectLogoToneHint(string $text): ?string
     {
         $v = $this->normalizeText($text);
         if ($v === '') {
@@ -5807,7 +5472,7 @@ SVG;
         return null;
     }
 
-    private function briefRequestsLogoAsset(string $briefNormalized): bool
+    public function briefRequestsLogoAsset(string $briefNormalized): bool
     {
         if ($briefNormalized === '') {
             return false;
@@ -5822,7 +5487,7 @@ SVG;
         return false;
     }
 
-    private function briefWantsBackgroundLogo(string $briefNormalized): bool
+    public function briefWantsBackgroundLogo(string $briefNormalized): bool
     {
         if ($briefNormalized === '') {
             return false;
@@ -5837,7 +5502,7 @@ SVG;
         return false;
     }
 
-    private function briefRequestedLogoVariant(string $briefNormalized): string
+    public function briefRequestedLogoVariant(string $briefNormalized): string
     {
         if ($briefNormalized === '') {
             return 'auto';
@@ -5869,7 +5534,7 @@ SVG;
         return 'auto';
     }
 
-    private function estimateImageBrightness(?string $absolutePath): ?float
+    public function estimateImageBrightness(?string $absolutePath): ?float
     {
         if (!is_string($absolutePath) || trim($absolutePath) === '' || !is_file($absolutePath)) {
             return null;
@@ -5922,7 +5587,7 @@ SVG;
         return $sum / $count;
     }
 
-    private function resolveLogoPath(array $strategy, array $meta, int $tenantId): ?string
+    public function resolveLogoPath(array $strategy, array $meta, int $tenantId): ?string
     {
         $forcedLogoPath = trim((string) data_get($meta, 'logo_runtime.path', ''));
         if ($forcedLogoPath !== '') {
@@ -5955,7 +5620,7 @@ SVG;
         return null;
     }
 
-    private function resolveRasterLogoAbsolutePath(array $strategy, array $meta, int $tenantId): ?string
+    public function resolveRasterLogoAbsolutePath(array $strategy, array $meta, int $tenantId): ?string
     {
         $logoRel = $this->resolveLogoPath($strategy, $meta, $tenantId);
         if (!$logoRel) {
@@ -5973,7 +5638,7 @@ SVG;
         return $abs;
     }
 
-    private function shouldEmbedLogoInScene(ContentItem $item, ?string $selectedBrandImageAbs, ?string $logoAbs): bool
+    public function shouldEmbedLogoInScene(ContentItem $item, ?string $selectedBrandImageAbs, ?string $logoAbs): bool
     {
         if (!$selectedBrandImageAbs || !$logoAbs) {
             return false;
@@ -5982,7 +5647,7 @@ SVG;
         return ($this->positionInPlan($item) % 3) === 0;
     }
 
-    private function loadRasterImage(string $path, string $mime)
+    public function loadRasterImage(string $path, string $mime)
     {
         return match (strtolower($mime)) {
             'image/png' => @imagecreatefrompng($path),
@@ -5993,7 +5658,7 @@ SVG;
         };
     }
 
-    private function saveRasterImage($image, string $path, string $mime): bool
+    public function saveRasterImage($image, string $path, string $mime): bool
     {
         return match (strtolower($mime)) {
             'image/png' => @imagepng($image, $path, 9),
@@ -6003,7 +5668,7 @@ SVG;
         };
     }
 
-    private function maxTextSimilarity(string $text, array $candidates): float
+    public function maxTextSimilarity(string $text, array $candidates): float
     {
         $text = $this->normalizeText($text);
         if ($text === '' || empty($candidates)) {
@@ -6024,7 +5689,7 @@ SVG;
         return $max;
     }
 
-    private function closestText(string $text, array $candidates): ?string
+    public function closestText(string $text, array $candidates): ?string
     {
         $base = $this->normalizeText($text);
         $best = null;
@@ -6043,7 +5708,7 @@ SVG;
         return $best;
     }
 
-    private function textSimilarityScore(string $a, string $b): float
+    public function textSimilarityScore(string $a, string $b): float
     {
         if ($a === '' || $b === '') {
             return 0.0;
@@ -6072,7 +5737,7 @@ SVG;
         return min(1.0, ($jaccard * 0.65) + ($charScore * 0.35));
     }
 
-    private function normalizeText(string $value): string
+    public function normalizeText(string $value): string
     {
         $value = Str::lower(trim($value));
         $value = preg_replace('/[^\pL\pN\s]+/u', ' ', $value) ?? '';
@@ -6083,7 +5748,7 @@ SVG;
     /**
      * @return array<string, mixed>
      */
-    private function resolveAssetVariableContext(int $tenantId, array $meta, array $strategy): array
+    public function resolveAssetVariableContext(int $tenantId, array $meta, array $strategy): array
     {
         $metaPayload = (array) data_get($meta, 'asset_variables', []);
 
@@ -6201,11 +5866,21 @@ SVG;
      * @param  array<string, mixed>  $assetVariables
      * @return array<string, mixed>
      */
-    private function resolveAssetIdentityContext(array $meta, array $assetVariables): array
+    public function resolveAssetIdentityContext(array $meta, array $assetVariables): array
     {
         $payload = (array) data_get($meta, 'asset_identity', []);
         $resolved = collect($this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', [])));
         $slots = [];
+        $lockedElements = collect((array) data_get($payload, 'locked_elements', []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->values()
+            ->all();
+        $allowedChanges = collect((array) data_get($payload, 'allowed_changes', []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->values()
+            ->all();
 
         foreach ((array) data_get($payload, 'slots', []) as $slot => $row) {
             if (!is_array($row)) {
@@ -6214,8 +5889,21 @@ SVG;
 
             $resolvedRow = $resolved->first(fn ($variable) => (int) ($variable['id'] ?? 0) === (int) ($row['id'] ?? 0));
             $merged = is_array($resolvedRow) ? array_replace($resolvedRow, $row) : $row;
+            $identityPack = app(AssetIdentityService::class)->synthesizeIdentityPackFromRow($merged);
+            $merged['identity_pack'] = $identityPack;
+            $merged['canonical_assets'] = (array) data_get($identityPack, 'canonical_assets', []);
+            $merged['maintain_elements'] = array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'invariants', []))));
+            $merged['changeable_elements'] = array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'transformables', []))));
+            $merged['locked_elements'] = $merged['maintain_elements'];
+            $merged['allowed_transforms'] = $merged['changeable_elements'];
+            $merged['strictness_level'] = (string) data_get($identityPack, 'strictness_level', (string) ($merged['identity_mode'] ?? 'balanced'));
             $slots[(string) $slot] = $merged;
+            $lockedElements = array_merge($lockedElements, $merged['maintain_elements']);
+            $allowedChanges = array_merge($allowedChanges, $merged['changeable_elements']);
         }
+
+        $lockedElements = array_values(array_unique(array_filter(array_map('strval', $lockedElements))));
+        $allowedChanges = array_values(array_unique(array_filter(array_map('strval', $allowedChanges))));
 
         return [
             'slots' => $slots,
@@ -6227,25 +5915,17 @@ SVG;
                 ->all(),
             'seasonal_overlay' => trim((string) data_get($payload, 'seasonal_overlay', '')),
             'consistency_mode' => trim((string) data_get($payload, 'consistency_mode', 'balanced')),
-            'locked_elements' => collect((array) data_get($payload, 'locked_elements', []))
-                ->map(fn ($value) => trim((string) $value))
-                ->filter(fn (string $value) => $value !== '')
-                ->unique()
-                ->values()
-                ->all(),
-            'allowed_changes' => collect((array) data_get($payload, 'allowed_changes', []))
-                ->map(fn ($value) => trim((string) $value))
-                ->filter(fn (string $value) => $value !== '')
-                ->unique()
-                ->values()
-                ->all(),
+            'locked_elements' => $lockedElements,
+            'maintain_elements' => $lockedElements,
+            'allowed_changes' => $allowedChanges,
+            'changeable_elements' => $allowedChanges,
         ];
     }
 
     /**
      * @param  array<string, mixed>  $assetVariables
      */
-    private function buildAssetVariablePromptHint(array $assetVariables): string
+    public function buildAssetVariablePromptHint(array $assetVariables): string
     {
         $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
         if (empty($resolved)) {
@@ -6257,7 +5937,9 @@ SVG;
             $name = trim((string) ($row['name'] ?? ''));
             $slug = trim((string) ($row['slug'] ?? ''));
             $kind = trim((string) ($row['kind'] ?? 'custom'));
-            $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+            $identityPack = is_array($row['identity_pack'] ?? null)
+                ? $row['identity_pack']
+                : app(AssetIdentityService::class)->synthesizeIdentityPackFromRow($row);
 
             $label = $name !== '' ? $name : ($slug !== '' ? '@' . $slug : 'variabile');
             if ($kind !== '') {
@@ -6267,61 +5949,59 @@ SVG;
             if ($assetRole !== '') {
                 $label .= ' role: ' . $assetRole;
             }
-            $identityMode = trim((string) ($row['identity_mode'] ?? ''));
-            if ($identityMode !== '') {
-                $label .= ' mode: ' . $identityMode;
+            $strictness = trim((string) data_get($identityPack, 'strictness_level', (string) ($row['identity_mode'] ?? '')));
+            if ($strictness !== '') {
+                $label .= ' strictness: ' . $strictness;
             }
             $threshold = isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : 0;
             if ($threshold > 0) {
                 $label .= ' soglia: ' . $threshold;
             }
 
-            $refs = collect((array) ($row['asset_paths'] ?? []))
-                ->map(fn ($path) => trim((string) basename((string) $path)))
-                ->filter(fn (string $v) => $v !== '')
+            $canonicalRefs = collect((array) data_get($identityPack, 'canonical_assets', []))
+                ->map(fn ($asset) => is_array($asset) ? trim((string) basename((string) ($asset['path'] ?? ''))) : '')
+                ->filter(fn (string $value) => $value !== '')
                 ->take(2)
                 ->values()
                 ->all();
-
-            if (!empty($refs)) {
-                $label .= ' refs: ' . implode(', ', $refs);
+            if (!empty($canonicalRefs)) {
+                $label .= ' canonici: ' . implode(', ', $canonicalRefs);
             }
 
-            if ($kind === 'person' && !empty($profile)) {
-                $role = trim((string) ($profile['role'] ?? ''));
-                $immutable = trim((string) ($profile['immutable_traits'] ?? ''));
-                $lookNotes = trim((string) ($profile['look_notes'] ?? ''));
-
-                if ($role !== '') {
-                    $label .= ' ruolo: ' . Str::limit($role, 80, '');
-                }
-                if ($immutable !== '') {
-                    $label .= ' non cambiare: ' . Str::limit($immutable, 120, '');
-                }
-                if ($lookNotes !== '' && $immutable === '') {
-                    $label .= ' look: ' . Str::limit($lookNotes, 100, '');
-                }
-            }
-
-            $locked = trim((string) data_get($profile, 'prompt_lock.immutable_elements', ''));
-            if ($locked !== '' && $kind !== 'person') {
-                $label .= ' non cambiare: ' . Str::limit($locked, 120, '');
-            }
-
-            $allowedTransforms = collect((array) data_get($profile, 'allowed_transforms', []))
+            $invariants = collect((array) data_get($identityPack, 'invariants', []))
                 ->map(fn ($value) => trim((string) $value))
                 ->filter(fn (string $value) => $value !== '')
                 ->take(3)
                 ->values()
                 ->all();
-            if (!empty($allowedTransforms)) {
-                $label .= ' cambia solo: ' . implode(', ', $allowedTransforms);
+            if (!empty($invariants)) {
+                $label .= ' mantieni: ' . implode(', ', $invariants);
+            }
+
+            $transformables = collect((array) data_get($identityPack, 'transformables', []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->take(3)
+                ->values()
+                ->all();
+            if (!empty($transformables)) {
+                $label .= ' puoi variare: ' . implode(', ', $transformables);
+            }
+
+            $visualTags = collect((array) data_get($identityPack, 'visual_tags', []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->take(2)
+                ->values()
+                ->all();
+            if (!empty($visualTags)) {
+                $label .= ' tag: ' . implode(', ', $visualTags);
             }
 
             $parts[] = $label;
         }
 
-        return Str::limit(implode('; ', $parts), 520, '');
+        return Str::limit(implode('; ', $parts), 640, '');
     }
 
     /**
@@ -6329,7 +6009,7 @@ SVG;
      *
      * @param  array<string, mixed>  $assetIdentity
      */
-    private function buildAssetIdentityPromptHint(array $assetIdentity): string
+    public function buildAssetIdentityPromptHint(array $assetIdentity): string
     {
         $slots = is_array($assetIdentity['slots'] ?? null) ? $assetIdentity['slots'] : [];
         if (empty($slots) && empty((array) ($assetIdentity['locked_elements'] ?? [])) && trim((string) ($assetIdentity['seasonal_overlay'] ?? '')) === '') {
@@ -6349,18 +6029,27 @@ SVG;
             }
 
             $label = $slot . ': ' . $name;
-            $descriptor = trim((string) data_get($row, 'descriptor.summary', data_get($row, 'profile.descriptor.summary', '')));
+            $descriptor = trim((string) data_get($row, 'identity_pack.descriptor.summary', data_get($row, 'descriptor.summary', data_get($row, 'profile.descriptor.summary', ''))));
             if ($descriptor !== '') {
                 $label .= ' (' . Str::limit($descriptor, 90, '') . ')';
             }
-            $locked = collect((array) ($row['locked_elements'] ?? []))
+            $maintain = collect((array) ($row['maintain_elements'] ?? $row['locked_elements'] ?? []))
                 ->map(fn ($value) => trim((string) $value))
                 ->filter(fn (string $value) => $value !== '')
-                ->take(1)
+                ->take(2)
                 ->values()
                 ->all();
-            if (!empty($locked)) {
-                $label .= ' fisso: ' . Str::limit($locked[0], 100, '');
+            if (!empty($maintain)) {
+                $label .= ' | mantieni: ' . implode(', ', $maintain);
+            }
+            $changeable = collect((array) ($row['changeable_elements'] ?? $row['allowed_transforms'] ?? []))
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn (string $value) => $value !== '')
+                ->take(2)
+                ->values()
+                ->all();
+            if (!empty($changeable)) {
+                $label .= ' | puoi variare: ' . implode(', ', $changeable);
             }
 
             $parts[] = $label;
@@ -6371,14 +6060,24 @@ SVG;
             $parts[] = 'overlay: ' . Str::limit($seasonalOverlay, 80, '');
         }
 
-        $allowedChanges = collect((array) ($assetIdentity['allowed_changes'] ?? []))
+        $maintainElements = collect((array) ($assetIdentity['maintain_elements'] ?? $assetIdentity['locked_elements'] ?? []))
             ->map(fn ($value) => trim((string) $value))
             ->filter(fn (string $value) => $value !== '')
             ->take(4)
             ->values()
             ->all();
-        if (!empty($allowedChanges)) {
-            $parts[] = 'cambi ammessi: ' . implode(', ', $allowedChanges);
+        if (!empty($maintainElements)) {
+            $parts[] = 'mantieni: ' . implode('; ', $maintainElements);
+        }
+
+        $changeableElements = collect((array) ($assetIdentity['changeable_elements'] ?? $assetIdentity['allowed_changes'] ?? []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->take(4)
+            ->values()
+            ->all();
+        if (!empty($changeableElements)) {
+            $parts[] = 'puoi cambiare: ' . implode(', ', $changeableElements);
         }
 
         $consistencyMode = trim((string) ($assetIdentity['consistency_mode'] ?? ''));
@@ -6386,125 +6085,25 @@ SVG;
             $parts[] = 'consistency: ' . $consistencyMode;
         }
 
-        return Str::limit(implode('; ', $parts), 520, '');
+        return Str::limit(implode('; ', $parts), 680, '');
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
-    private function loadAssetVariableCatalogFromDb(int $tenantId): array
+    public function loadAssetVariableCatalogFromDb(int $tenantId): array
     {
         if ($tenantId < 1) {
             return [];
         }
 
-        $variables = AssetVariable::query()
-            ->where('tenant_id', $tenantId)
-            ->where('is_active', true)
-            ->orderByDesc('id')
-            ->get();
-
-        if ($variables->isEmpty()) {
-            return [];
-        }
-
-        $allAssetIds = $variables
-            ->flatMap(function (AssetVariable $row): array {
-                $ids = collect((array) ($row->asset_ids ?? []))
-                    ->map(fn ($id) => (int) $id)
-                    ->filter(fn (int $id) => $id > 0)
-                    ->values()
-                    ->all();
-
-                $voiceAssetId = (int) ($row->voice_asset_id ?? 0);
-                if ($voiceAssetId > 0) {
-                    $ids[] = $voiceAssetId;
-                }
-
-                return $ids;
-            })
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn (int $id) => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-
-        $assets = BrandAsset::query()
-            ->where('tenant_id', $tenantId)
-            ->whereNull('content_plan_id')
-            ->whereIn('id', $allAssetIds)
-            ->get(['id', 'kind', 'path', 'original_name', 'mime', 'meta'])
-            ->keyBy('id');
-
-        $out = [];
-        foreach ($variables as $variable) {
-            $assetIds = collect((array) ($variable->asset_ids ?? []))
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn (int $id) => $id > 0)
-                ->unique()
-                ->values();
-
-            $linkedAssets = $assetIds
-                ->map(fn (int $id) => $assets->get($id))
-                ->filter()
-                ->values();
-
-            $assetPaths = $linkedAssets
-                ->map(fn ($asset) => (string) ($asset->path ?? ''))
-                ->filter(fn (string $path) => $path !== '')
-                ->values()
-                ->all();
-
-            $canonicalAssetId = (int) ($variable->canonical_asset_id ?? 0);
-            $canonicalAsset = $canonicalAssetId > 0 ? $assets->get($canonicalAssetId) : null;
-            $voiceAssetId = (int) ($variable->voice_asset_id ?? 0);
-            $voiceAsset = $voiceAssetId > 0 ? $assets->get($voiceAssetId) : null;
-
-            $out[] = [
-                'id' => (int) $variable->id,
-                'name' => (string) $variable->name,
-                'slug' => (string) $variable->slug,
-                'kind' => (string) $variable->kind,
-                'asset_role' => (string) ($variable->asset_role ?? ''),
-                'description' => (string) ($variable->description ?? ''),
-                'canonical_asset_id' => $canonicalAssetId > 0 ? $canonicalAssetId : null,
-                'canonical_asset_path' => $canonicalAsset ? (string) ($canonicalAsset->path ?? '') : '',
-                'voice_asset_id' => $voiceAssetId > 0 ? $voiceAssetId : null,
-                'voice_asset_path' => $voiceAsset ? (string) ($voiceAsset->path ?? '') : '',
-                'voice_asset_name' => $voiceAsset ? (string) ($voiceAsset->original_name ?? '') : '',
-                'voice_asset_mime' => $voiceAsset ? (string) ($voiceAsset->mime ?? '') : '',
-                'voice_provider' => (string) ($variable->voice_provider ?? data_get($variable->profile, 'voice_reference.provider', '')),
-                'voice_provider_voice_id' => (string) ($variable->voice_provider_voice_id ?? data_get($variable->profile, 'voice_reference.provider_voice_id', '')),
-                'voice_status' => (string) ($variable->voice_status ?? data_get($variable->profile, 'voice_reference.status', '')),
-                'identity_mode' => (string) ($variable->identity_mode ?? 'balanced'),
-                'consistency_threshold' => $variable->consistency_threshold !== null ? (int) $variable->consistency_threshold : null,
-                'profile' => is_array($variable->profile) ? $variable->profile : [],
-                'asset_ids' => $assetIds->all(),
-                'asset_paths' => $assetPaths,
-                'assets' => $linkedAssets->map(fn ($asset) => [
-                    'id' => (int) ($asset->id ?? 0),
-                    'kind' => (string) ($asset->kind ?? ''),
-                    'path' => (string) ($asset->path ?? ''),
-                    'original_name' => (string) ($asset->original_name ?? ''),
-                    'mime' => (string) ($asset->mime ?? ''),
-                    'meta' => is_array($asset->meta) ? $asset->meta : [],
-                ])->all(),
-                'voice_asset' => $voiceAsset ? [
-                    'id' => (int) ($voiceAsset->id ?? 0),
-                    'kind' => (string) ($voiceAsset->kind ?? ''),
-                    'path' => (string) ($voiceAsset->path ?? ''),
-                    'original_name' => (string) ($voiceAsset->original_name ?? ''),
-                    'mime' => (string) ($voiceAsset->mime ?? ''),
-                    'meta' => is_array($voiceAsset->meta) ? $voiceAsset->meta : [],
-                ] : null,
-            ];
-        }
-
-        return $this->normalizeAssetVariableRows($out);
+        return $this->normalizeAssetVariableRows(
+            app(AssetVariableService::class)->catalogForTenant($tenantId)
+        );
     }
 
-    private function mergeLiveAssetVariableCatalog(array $catalog, array $liveCatalog): array
+    public function mergeLiveAssetVariableCatalog(array $catalog, array $liveCatalog): array
     {
         if (empty($liveCatalog)) {
             return $catalog;
@@ -6532,7 +6131,7 @@ SVG;
         return array_values($merged);
     }
 
-    private function refreshResolvedRowsFromCatalog(array $resolved, array $catalog): array
+    public function refreshResolvedRowsFromCatalog(array $resolved, array $catalog): array
     {
         if (empty($resolved) || empty($catalog)) {
             return $resolved;
@@ -6558,7 +6157,7 @@ SVG;
         return $resolved;
     }
 
-    private function assetVariableCatalogKey(array $row): string
+    public function assetVariableCatalogKey(array $row): string
     {
         $id = isset($row['id']) ? (int) $row['id'] : 0;
         if ($id > 0) {
@@ -6570,10 +6169,11 @@ SVG;
         return $slug !== '' ? 'slug:' . $slug : '';
     }
 
-    private function normalizeAssetVariableRows(array $rows): array
+    public function normalizeAssetVariableRows(array $rows): array
     {
         $out = [];
         $seen = [];
+        $identityService = app(AssetIdentityService::class);
 
         foreach ($rows as $row) {
             if (!is_array($row)) {
@@ -6624,7 +6224,7 @@ SVG;
             $voiceProviderVoiceId = trim((string) ($row['voice_provider_voice_id'] ?? data_get($profile, 'voice_reference.provider_voice_id', '')));
             $voiceStatus = trim((string) ($row['voice_status'] ?? data_get($profile, 'voice_reference.status', '')));
 
-            $out[] = [
+            $normalized = [
                 'id' => $id && $id > 0 ? $id : null,
                 'name' => $name,
                 'slug' => $slug,
@@ -6646,7 +6246,24 @@ SVG;
                 'asset_paths' => $assetPaths,
                 'assets' => is_array($row['assets'] ?? null) ? $row['assets'] : [],
                 'voice_asset' => is_array($row['voice_asset'] ?? null) ? $row['voice_asset'] : null,
+                'identity_pack' => is_array($row['identity_pack'] ?? null) ? $row['identity_pack'] : [],
             ];
+
+            $identityPack = $identityService->synthesizeIdentityPackFromRow($normalized);
+            $canonicalAssetPath = trim((string) ($normalized['canonical_asset_path'] ?? ''));
+            if ($canonicalAssetPath === '') {
+                $canonicalAssetPath = trim((string) data_get($identityPack, 'canonical_assets.0.path', ''));
+            }
+            if ($canonicalAssetPath !== '' && !in_array($canonicalAssetPath, $assetPaths, true)) {
+                array_unshift($assetPaths, $canonicalAssetPath);
+                $assetPaths = array_values(array_unique(array_filter($assetPaths)));
+            }
+
+            $normalized['canonical_asset_path'] = $canonicalAssetPath;
+            $normalized['asset_paths'] = $assetPaths;
+            $normalized['identity_pack'] = $identityPack;
+
+            $out[] = $normalized;
         }
 
         return array_values($out);
@@ -6654,11 +6271,15 @@ SVG;
     /**
      * @param  array<string, mixed>  $row
      */
-    private function assetVariableMatchesBrief(string $briefNormalized, array $row): bool
+    public function assetVariableMatchesBrief(string $briefNormalized, array $row): bool
     {
         if ($briefNormalized === '') {
             return false;
         }
+
+        $identityPack = is_array($row['identity_pack'] ?? null)
+            ? $row['identity_pack']
+            : app(AssetIdentityService::class)->synthesizeIdentityPackFromRow($row);
 
         $name = $this->normalizeText((string) ($row['name'] ?? ''));
         $slug = $this->normalizeText(str_replace('-', ' ', (string) ($row['slug'] ?? '')));
@@ -6670,6 +6291,13 @@ SVG;
             (string) data_get($row, 'profile.descriptor.summary', ''),
             (string) data_get($row, 'profile.prompt_lock.immutable_elements', ''),
             implode(' ', (array) data_get($row, 'profile.allowed_transforms', [])),
+            (string) data_get($identityPack, 'descriptor.summary', ''),
+            (string) data_get($identityPack, 'descriptor.persistent_label', ''),
+            implode(' ', (array) data_get($identityPack, 'invariants', [])),
+            implode(' ', (array) data_get($identityPack, 'transformables', [])),
+            implode(' ', (array) data_get($identityPack, 'visual_tags', [])),
+            implode(' ', (array) data_get($identityPack, 'positive_examples', [])),
+            implode(' ', (array) data_get($identityPack, 'negative_examples', [])),
         ])));
 
         if ($name !== '' && str_contains(' ' . $briefNormalized . ' ', ' ' . $name . ' ')) {
@@ -6697,7 +6325,7 @@ SVG;
         return false;
     }
 
-    private function assetVariableSelectionMode(bool $hasRequested, bool $hasDetected): string
+    public function assetVariableSelectionMode(bool $hasRequested, bool $hasDetected): string
     {
         if ($hasRequested && $hasDetected) {
             return 'manual+brief';
@@ -6711,7 +6339,7 @@ SVG;
         return 'none';
     }
 
-    private function resolveBrandImageSources(array $strategy, array $meta, int $tenantId): array
+    public function resolveBrandImageSources(array $strategy, array $meta, int $tenantId): array
     {
         $paths = (array) data_get($strategy, 'brand_references.reference_images', []);
         $paths = array_values(array_filter(array_map('strval', $paths)));
@@ -6744,7 +6372,7 @@ SVG;
         return array_values(array_unique($paths));
     }
 
-    private function decideBrandImageUsage(ContentItem $item, array $paths, ?OpenAiService $openAi = null): array
+    public function decideBrandImageUsage(ContentItem $item, array $paths, ?OpenAiService $openAi = null): array
     {
         $public = Storage::disk('public');
         $valid = [];
@@ -6814,7 +6442,7 @@ SVG;
         ];
     }
 
-    private function reorderValidPathsByMetaRecency(array $validPaths, array $meta): array
+    public function reorderValidPathsByMetaRecency(array $validPaths, array $meta): array
     {
         if (empty($validPaths)) {
             return [];
@@ -6847,7 +6475,7 @@ SVG;
         return array_values(array_unique($ordered));
     }
 
-    private function extractExplicitReferencePaths(array $meta, array $validPaths): array
+    public function extractExplicitReferencePaths(array $meta, array $validPaths): array
     {
         if (empty($validPaths)) {
             return [];
@@ -6892,7 +6520,7 @@ SVG;
         return array_values(array_unique($out));
     }
 
-    private function selectBrandImageFromBrief(ContentItem $item, array $validPaths): ?array
+    public function selectBrandImageFromBrief(ContentItem $item, array $validPaths): ?array
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $brief = trim((string) data_get($meta, 'manual_brief', ''));
@@ -6967,7 +6595,7 @@ SVG;
         return null;
     }
 
-    private function selectBrandImageByVision(ContentItem $item, array $validPaths, OpenAiService $openAi): ?array
+    public function selectBrandImageByVision(ContentItem $item, array $validPaths, OpenAiService $openAi): ?array
     {
         if (count($validPaths) < 2) {
             return null;
@@ -7025,7 +6653,7 @@ SVG;
         ];
     }
 
-    private function briefMeaningfulTokens(string $normalized): array
+    public function briefMeaningfulTokens(string $normalized): array
     {
         $stop = [
             'con', 'senza', 'della', 'delle', 'degli', 'dello', 'dell', 'dalla', 'dalle', 'dallo',
@@ -7050,7 +6678,7 @@ SVG;
         return array_values(array_unique($out));
     }
 
-    private function totalItemsInPlan(ContentItem $item): int
+    public function totalItemsInPlan(ContentItem $item): int
     {
         return (int) ContentItem::query()
             ->where('tenant_id', $item->tenant_id)
@@ -7064,7 +6692,7 @@ SVG;
      * @param  array<int, string>  $planCaptions
      * @return array<string, mixed>
      */
-    private function buildSocialPublicationContext(
+    public function buildSocialPublicationContext(
         ContentItem $item,
         array $itemBrain,
         array $planTitles,
@@ -7086,7 +6714,7 @@ SVG;
         ];
     }
 
-    private function positionInPlan(ContentItem $item): int
+    public function positionInPlan(ContentItem $item): int
     {
         $ids = ContentItem::query()
             ->where('tenant_id', $item->tenant_id)
@@ -7105,7 +6733,7 @@ SVG;
         return (int) $position;
     }
 
-    private function usedBrandImagePathsInPlan(int $tenantId, int $contentPlanId, int $excludeItemId): array
+    public function usedBrandImagePathsInPlan(int $tenantId, int $contentPlanId, int $excludeItemId): array
     {
         $rows = ContentItem::query()
             ->where('tenant_id', $tenantId)
@@ -7128,7 +6756,7 @@ SVG;
         return array_values(array_unique($used));
     }
 
-    private function planAlreadyUsedBrandImage(ContentItem $item): bool
+    public function planAlreadyUsedBrandImage(ContentItem $item): bool
     {
         $rows = ContentItem::query()
             ->where('tenant_id', $item->tenant_id)
@@ -7147,7 +6775,7 @@ SVG;
         return false;
     }
 
-    private function computeImageHashFromBytes(string $bytes): ?string
+    public function computeImageHashFromBytes(string $bytes): ?string
     {
         $img = @imagecreatefromstring($bytes);
         if (!$img) {
@@ -7180,7 +6808,7 @@ SVG;
         return $bits;
     }
 
-    private function loadRecentImageHashes(int $tenantId, int $excludeItemId, int $limit = 24): array
+    public function loadRecentImageHashes(int $tenantId, int $excludeItemId, int $limit = 24): array
     {
         $rows = ContentItem::query()
             ->where('tenant_id', $tenantId)
@@ -7215,7 +6843,7 @@ SVG;
         return array_values(array_unique($out));
     }
 
-    private function maxImageHashSimilarity(?string $hash, array $otherHashes): float
+    public function maxImageHashSimilarity(?string $hash, array $otherHashes): float
     {
         if (!$hash || empty($otherHashes)) {
             return 0.0;
@@ -7239,7 +6867,7 @@ SVG;
         return $max;
     }
 
-    private function loadBrandAssetsFromDb(int $tenantId): array
+    public function loadBrandAssetsFromDb(int $tenantId): array
     {
         return BrandAsset::query()
             ->where('tenant_id', $tenantId)
@@ -7258,7 +6886,7 @@ SVG;
             ->all();
     }
 
-    private function mergeBrandAssets(array $fromMeta, array $fromDb): array
+    public function mergeBrandAssets(array $fromMeta, array $fromDb): array
     {
         $all = array_merge($fromMeta, $fromDb);
         $out = [];
@@ -7288,7 +6916,7 @@ SVG;
         return $out;
     }
 
-    private function uniqueAssets(array $assets): array
+    public function uniqueAssets(array $assets): array
     {
         $out = [];
         $seen = [];
@@ -7325,7 +6953,7 @@ SVG;
      *   error:string|null
      * }
      */
-    private function maybeAttachAudioTrackToVideo(ContentItem $item, string $videoPath, SpeechSynthesisService $speechSynthesis): array
+    public function maybeAttachAudioTrackToVideo(ContentItem $item, string $videoPath, SpeechSynthesisService $speechSynthesis): array
     {
         if (!(bool) config('generation.video_auto_audio', true)) {
             return [
@@ -7523,7 +7151,7 @@ SVG;
                     'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
-                    'error' => $error ?: 'FFmpeg non è riuscito ad agganciare l audio al video',
+                    'error' => $error ?: 'FFmpeg non ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ riuscito ad agganciare l audio al video',
                 ];
             }
 
@@ -7596,7 +7224,7 @@ SVG;
             }
         }
     }
-    private function resolveNarrationTextForVideo(ContentItem $item): string
+    public function resolveNarrationTextForVideo(ContentItem $item): string
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $voiceover = trim((string) data_get($meta, 'video_voiceover', ''));
@@ -7622,7 +7250,7 @@ SVG;
         return '';
     }
 
-    private function sanitizeNarrationText(string $text): string
+    public function sanitizeNarrationText(string $text): string
     {
         $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
         if ($text === '') {
@@ -7643,7 +7271,7 @@ SVG;
         return $text;
     }
 
-    private function compactCaptionForVoiceover(string $caption): string
+    public function compactCaptionForVoiceover(string $caption): string
     {
         $text = trim($caption);
         if ($text === '') {
@@ -7681,7 +7309,7 @@ SVG;
      * @param  array<string, mixed>  $payload
      * @return array{path:?string, absolute_path:?string}
      */
-    private function storeGeneratedAudioPayload($publicDisk, array $payload): array
+    public function storeGeneratedAudioPayload($publicDisk, array $payload): array
     {
         $bytes = $payload['bytes'] ?? null;
         if (!is_string($bytes) || $bytes === '') {
@@ -7708,7 +7336,7 @@ SVG;
     /**
      * @return array<string, mixed>
      */
-    private function resolvePersonaVoiceContext(ContentItem $item): array
+    public function resolvePersonaVoiceContext(ContentItem $item): array
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $candidates = [];
@@ -7754,7 +7382,7 @@ SVG;
         return [];
     }
 
-    private function resolvePersonaVoiceVariable(ContentItem $item): ?AssetVariable
+    public function resolvePersonaVoiceVariable(ContentItem $item): ?AssetVariable
     {
         $voiceContext = $this->resolvePersonaVoiceContext($item);
         $variableId = (int) ($voiceContext['id'] ?? 0);
@@ -7766,7 +7394,7 @@ SVG;
             ->where('tenant_id', $item->tenant_id)
             ->find($variableId);
     }
-    private function resolveBrandVideoReferencePath(ContentItem $item): string
+    public function resolveBrandVideoReferencePath(ContentItem $item): string
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $candidate = trim((string) data_get($meta, 'video_reference.path', ''));
@@ -7792,7 +7420,7 @@ SVG;
         return '';
     }
 
-    private function extractAudioTrackFromVideo(string $sourceVideoAbs, string $targetAudioAbs, string $ffmpegBinary): bool
+    public function extractAudioTrackFromVideo(string $sourceVideoAbs, string $targetAudioAbs, string $ffmpegBinary): bool
     {
         $process = new Process([
             $ffmpegBinary,
@@ -7824,7 +7452,7 @@ SVG;
      *   error:?string
      * }
      */
-    private function postProcessGeneratedVideoForPlayback(ContentItem $item, string $videoPath, string $provider): array
+    public function postProcessGeneratedVideoForPlayback(ContentItem $item, string $videoPath, string $provider): array
     {
         $videoPath = trim($videoPath);
         $provider = strtolower(trim($provider));
@@ -7980,7 +7608,7 @@ SVG;
         }
     }
 
-    private function muxVideoWithAudioTrack(string $sourceVideoAbs, string $audioAbs, string $targetVideoAbs, string $ffmpegBinary): bool
+    public function muxVideoWithAudioTrack(string $sourceVideoAbs, string $audioAbs, string $targetVideoAbs, string $ffmpegBinary): bool
     {
         $process = new Process([
             $ffmpegBinary,
@@ -8017,7 +7645,7 @@ SVG;
     /**
      * @param  array<int, string>  $videoPaths
      */
-    private function concatenateVideoSegments(array $videoPaths): string
+    public function concatenateVideoSegments(array $videoPaths): string
     {
         $publicDisk = Storage::disk('public');
         $paths = array_values(array_filter(
@@ -8109,7 +7737,7 @@ SVG;
     /**
      * @param  array<string, mixed>  $audioAttach
      */
-    private function logVideoAudioOutcome(ContentItem $item, array $audioAttach): void
+    public function logVideoAudioOutcome(ContentItem $item, array $audioAttach): void
     {
         $context = [
             'content_item_id' => $item->id,
@@ -8134,7 +7762,7 @@ SVG;
         Log::warning('GenerateAiForContentItem video audio skipped', $context);
     }
 
-    private function videoHasAudioStream(string $videoAbsPath, string $ffprobeBinary): bool
+    public function videoHasAudioStream(string $videoAbsPath, string $ffprobeBinary): bool
     {
         $process = new Process([
             $ffprobeBinary,
@@ -8159,7 +7787,7 @@ SVG;
         return $output !== '' && str_contains($output, 'audio');
     }
 
-    private function resolveFfmpegBinary(): string
+    public function resolveFfmpegBinary(): string
     {
         $configured = trim((string) config('generation.ffmpeg_binary', ''));
         $fallback = $configured !== '' ? $configured : $this->defaultBinaryCommand('ffmpeg');
@@ -8173,7 +7801,7 @@ SVG;
         );
     }
 
-    private function resolveFfprobeBinary(string $ffmpegBinary): string
+    public function resolveFfprobeBinary(string $ffmpegBinary): string
     {
         $configured = trim((string) config('generation.ffprobe_binary', ''));
         if ($configured !== '' && $this->canRunBinary($configured)) {
@@ -8196,7 +7824,7 @@ SVG;
         );
     }
 
-    private function canRunBinary(string $binary): bool
+    public function canRunBinary(string $binary): bool
     {
         $binary = trim($binary);
         if ($binary === '') {
@@ -8216,7 +7844,7 @@ SVG;
     /**
      * @return array<int, string>
      */
-    private function candidateBinaries(string $binary): array
+    public function candidateBinaries(string $binary): array
     {
         $default = $this->defaultBinaryCommand($binary);
 
@@ -8241,7 +7869,7 @@ SVG;
         ];
     }
 
-    private function defaultBinaryCommand(string $binary): string
+    public function defaultBinaryCommand(string $binary): string
     {
         return PHP_OS_FAMILY === 'Windows' ? $binary . '.exe' : $binary;
     }
@@ -8249,7 +7877,7 @@ SVG;
     /**
      * @param  array<int, string>  $candidates
      */
-    private function firstAvailableBinary(array $candidates, string $fallback): string
+    public function firstAvailableBinary(array $candidates, string $fallback): string
     {
         $unique = [];
         foreach ($candidates as $candidate) {
@@ -8270,7 +7898,7 @@ SVG;
         return $fallback;
     }
 
-    private function deriveSiblingBinary(string $sourceBinary, string $sourceName, string $targetName): ?string
+    public function deriveSiblingBinary(string $sourceBinary, string $sourceName, string $targetName): ?string
     {
         $normalized = str_replace('\\', '/', trim($sourceBinary));
         if ($normalized === '') {
@@ -8290,7 +7918,7 @@ SVG;
         return null;
     }
 
-    private function attachBrandVideoReference(ContentItem $item): void
+    public function attachBrandVideoReference(ContentItem $item): void
     {
         $format = strtolower((string) ($item->format ?? ''));
         if (!in_array($format, ['reel', 'story', 'video'], true)) {
@@ -8353,7 +7981,7 @@ SVG;
         $item->ai_meta = $meta;
     }
 
-    private function hasGeneratedVisualOutput(ContentItem $item): bool
+    public function hasGeneratedVisualOutput(ContentItem $item): bool
     {
         $imagePath = trim((string) ($item->ai_image_path ?? ''));
         if ($imagePath !== '') {
@@ -8380,3 +8008,27 @@ SVG;
         return false;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

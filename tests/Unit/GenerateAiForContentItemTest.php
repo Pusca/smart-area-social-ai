@@ -616,7 +616,7 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertStringContainsString('cambia in modo netto lo shot plan', strtolower($instruction));
     }
 
-    public function test_it_prioritizes_person_reference_pool_using_shot_order(): void
+    public function test_it_prioritizes_person_reference_pool_using_identity_pack_canonicals(): void
     {
         $job = new GenerateAiForContentItem(1);
         $method = new ReflectionMethod($job, 'prioritizeVideoReferencePoolsForPersonVariable');
@@ -631,6 +631,11 @@ class GenerateAiForContentItemTest extends TestCase
                     [
                         'name' => 'Giorgia',
                         'kind' => 'person',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'left.jpg'],
+                            ],
+                        ],
                         'profile' => [
                             'shot_summary' => [
                                 ['slot' => 'front', 'path' => 'front.jpg'],
@@ -644,8 +649,143 @@ class GenerateAiForContentItemTest extends TestCase
             ]
         );
 
-        $this->assertSame(['front.jpg', 'left.jpg', 'half.jpg', 'profile.jpg'], $paths);
-        $this->assertSame(['abs-front', 'abs-left', 'abs-half', 'abs-profile'], $abs);
+        $this->assertSame(['left.jpg', 'front.jpg', 'half.jpg', 'profile.jpg'], $paths);
+        $this->assertSame(['abs-left', 'abs-front', 'abs-half', 'abs-profile'], $abs);
     }
 
+    public function test_it_normalizes_structured_feedback_requests_and_keeps_audio_only_feedback_out_of_visual_flow(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $normalized = $job->normalizeFeedbackRequest([
+            'sentiment' => 'dislike',
+            'category' => 'tone_of_voice',
+            'scope' => 'full',
+            'reason' => 'La voce audio sembra robotica e poco naturale.',
+            'action' => 'regenerate',
+        ]);
+
+        $this->assertSame('audio_unatural', $normalized['normalized_category']);
+        $this->assertSame('medium', $normalized['severity']);
+        $this->assertFalse($job->feedbackTargetsVisual($normalized));
+    }
+
+    public function test_it_builds_asset_identity_prompt_hint_for_location_with_maintain_and_change_sections(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $hint = $job->buildAssetIdentityPromptHint([
+            'slots' => [
+                'place' => [
+                    'name' => 'Showroom Milano',
+                    'identity_pack' => [
+                        'descriptor' => ['summary' => 'Parete logo, vetrate e bancone frontale.'],
+                    ],
+                    'maintain_elements' => ['parete logo', 'vetrate', 'bancone'],
+                    'changeable_elements' => ['decorazioni natalizie', 'props stagionali'],
+                ],
+            ],
+            'maintain_elements' => ['parete logo', 'vetrate', 'bancone'],
+            'changeable_elements' => ['decorazioni natalizie', 'props stagionali'],
+            'consistency_mode' => 'strict',
+        ]);
+
+        $this->assertStringContainsString('mantieni: parete logo, vetrate', $hint);
+        $this->assertStringContainsString('puoi variare: decorazioni natalizie, props stagionali', $hint);
+        $this->assertStringContainsString('consistency: strict', $hint);
+    }
+
+    public function test_it_builds_asset_variable_prompt_hint_for_product_identity_pack(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $hint = $job->buildAssetVariablePromptHint([
+            'resolved' => [
+                [
+                    'name' => 'Linea Premium',
+                    'kind' => 'product',
+                    'asset_role' => 'hero_product',
+                    'consistency_threshold' => 91,
+                    'identity_pack' => [
+                        'strictness_level' => 'strict',
+                        'canonical_assets' => [
+                            ['path' => 'product/front.jpg'],
+                        ],
+                        'invariants' => ['forma flacone', 'etichetta', 'colori packaging'],
+                        'transformables' => ['props stagionali', 'ambientazione premium'],
+                        'visual_tags' => ['packaging nero opaco', 'dettagli oro'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertStringContainsString('Linea Premium [product]', $hint);
+        $this->assertStringContainsString('mantieni: forma flacone, etichetta, colori packaging', $hint);
+        $this->assertStringContainsString('puoi variare: props stagionali, ambientazione premium', $hint);
+        $this->assertStringContainsString('strictness: strict', $hint);
+    }
+
+    public function test_it_applies_identity_pack_reference_selection_in_strict_mode(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $selected = $job->applyIdentityPackReferenceSelection(
+            ['support.jpg', 'canonical.jpg', 'other.jpg'],
+            [
+                'resolved' => [
+                    [
+                        'kind' => 'product',
+                        'canonical_asset_path' => 'canonical.jpg',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'canonical.jpg'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'slots' => [
+                    'product' => [
+                        'canonical_assets' => [
+                            ['path' => 'canonical.jpg'],
+                        ],
+                    ],
+                ],
+            ],
+            true
+        );
+
+        $this->assertSame(['canonical.jpg'], $selected);
+    }
+
+    public function test_it_prefers_primary_canonical_references_in_strict_mode(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $selected = $job->applyIdentityPackReferenceSelection(
+            ['support.jpg', 'primary.jpg', 'secondary.jpg', 'other.jpg'],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Brand Presenter',
+                        'kind' => 'person',
+                        'canonical_asset_path' => 'primary.jpg',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'secondary.jpg', 'is_primary' => false],
+                                ['path' => 'primary.jpg', 'is_primary' => true],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            [],
+            true
+        );
+
+        $this->assertSame(['primary.jpg'], $selected);
+    }
 }
+
+

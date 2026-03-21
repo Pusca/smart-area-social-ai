@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Services\AI\ProviderCapabilityRegistry;
+
 class GraderProviderResolver
 {
     /**
@@ -9,39 +11,26 @@ class GraderProviderResolver
      */
     public static function allowed(): array
     {
-        $providers = (array) config('generation.grader_providers', ['openai']);
-        $providers = array_values(array_filter(array_map(
-            fn ($provider) => strtolower(trim((string) $provider)),
-            $providers
-        )));
-
-        return array_values(array_unique($providers));
+        return self::registry()->allowedProviders('grader');
     }
 
     public static function default(): string
     {
-        $default = strtolower(trim((string) config('generation.grader_provider_default', 'openai')));
-        if (in_array($default, self::allowed(), true)) {
-            return $default;
-        }
-
-        return 'openai';
+        return self::registry()->defaultProvider('grader');
     }
 
     public static function normalize(string $value): string
     {
-        $value = strtolower(trim($value));
-        if (in_array($value, self::allowed(), true)) {
-            return $value;
-        }
-
-        return self::default();
+        return self::registry()->normalizeProvider('grader', $value);
     }
 
     public static function resolve(string $preferred, ?string $fallback = null): string
     {
-        $candidate = trim($preferred) !== '' ? $preferred : (string) $fallback;
+        return self::registry()->resolveProvider('grader', $preferred, $fallback);
+    }
 
-        return self::normalize($candidate);
+    private static function registry(): ProviderCapabilityRegistry
+    {
+        return app(ProviderCapabilityRegistry::class);
     }
 }

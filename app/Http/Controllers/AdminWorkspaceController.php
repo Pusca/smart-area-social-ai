@@ -8,6 +8,7 @@ use App\Models\ContentPlan;
 use App\Models\Tenant;
 use App\Models\TenantProfile;
 use App\Models\User;
+use App\Services\GenerationMetricsService;
 use App\Services\TenantQuotaService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,8 @@ use Illuminate\Support\Str;
 class AdminWorkspaceController extends Controller
 {
     public function __construct(
-        private readonly TenantQuotaService $tenantQuotaService
+        private readonly TenantQuotaService $tenantQuotaService,
+        private readonly GenerationMetricsService $generationMetrics
     ) {
     }
 
@@ -162,6 +164,29 @@ class AdminWorkspaceController extends Controller
                 'ai_error' => $globalAiError,
                 'ai_completion' => $globalContents > 0 ? (int) round(($globalAiDone / $globalContents) * 100) : 0,
             ],
+        ]);
+    }
+
+    public function generationMetrics(Request $request)
+    {
+        $validated = $request->validate([
+            'tenant_id' => 'nullable|integer|exists:tenants,id',
+            'days' => 'nullable|integer|min:1|max:365',
+        ]);
+
+        $tenantId = isset($validated['tenant_id']) ? (int) $validated['tenant_id'] : null;
+        $days = isset($validated['days']) ? (int) $validated['days'] : null;
+        $snapshot = $this->generationMetrics->dashboardSnapshot($tenantId, $days);
+
+        return view('admin.generation-metrics', [
+            'selectedTenantId' => $tenantId,
+            'selectedDays' => (int) data_get($snapshot, 'window_days', $days ?? 30),
+            'summary' => (array) data_get($snapshot, 'summary', []),
+            'costByTenant' => collect((array) data_get($snapshot, 'cost_by_tenant', [])),
+            'costByProvider' => collect((array) data_get($snapshot, 'cost_by_provider', [])),
+            'latencyByProvider' => collect((array) data_get($snapshot, 'latency_by_provider', [])),
+            'failureModes' => collect((array) data_get($snapshot, 'failure_modes', [])),
+            'tenants' => Tenant::query()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

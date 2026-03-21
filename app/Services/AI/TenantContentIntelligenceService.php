@@ -39,6 +39,7 @@ class TenantContentIntelligenceService
             ->first();
 
         $memory = $this->memoryBuilder->buildForTenant($tenantId, 40);
+        $feedbackSummary = (array) data_get($memory, 'feedback_summary', []);
         $assetCounts = $this->loadAssetCounts($tenantId);
         $assetRows = BrandAsset::query()
             ->where('tenant_id', $tenantId)
@@ -50,7 +51,7 @@ class TenantContentIntelligenceService
 
         $examples = $this->selectExamples($tenantId, $brief, $format, $platforms);
         $negativeExamples = $this->selectNegativeExamples($tenantId, $brief, $format, $platforms);
-        $feedbackSignals = $this->buildFeedbackSignals($tenantId);
+        $feedbackSignals = $this->buildFeedbackSignals($feedbackSummary);
 
         $knowledgePack = [
             'brand_basics' => [
@@ -80,11 +81,17 @@ class TenantContentIntelligenceService
                 'recent_hooks' => array_slice((array) ($memory['recent_hooks'] ?? []), 0, 6),
             ],
             'feedback' => [
-                'preferred_formats' => (array) data_get($memory, 'feedback_summary.preferred_formats', []),
-                'preferred_platforms' => (array) data_get($memory, 'feedback_summary.preferred_platforms', []),
+                'preferred_formats' => (array) ($feedbackSummary['preferred_formats'] ?? []),
+                'preferred_platforms' => (array) ($feedbackSummary['preferred_platforms'] ?? []),
+                'priority_categories' => (array) ($feedbackSummary['priority_categories'] ?? []),
+                'category_breakdown' => (array) ($feedbackSummary['category_breakdown'] ?? []),
+                'severity_breakdown' => (array) ($feedbackSummary['severity_breakdown'] ?? []),
+                'score_averages' => (array) ($feedbackSummary['score_averages'] ?? []),
                 'positive_signals' => (array) ($memory['positive_signals'] ?? []),
                 'hard_avoid_rules' => (array) ($memory['hard_avoid_rules'] ?? []),
-                'recent_objections' => array_slice((array) data_get($memory, 'feedback_summary.recent_objections', []), 0, 6),
+                'recent_objections' => array_slice((array) ($feedbackSummary['recent_objections'] ?? []), 0, 6),
+                'reusable_signals' => array_slice((array) ($feedbackSummary['reusable_signals'] ?? []), 0, 8),
+                'retrieval_hints' => (array) ($feedbackSummary['retrieval_hints'] ?? []),
             ],
             'brief_focus' => [
                 'brief_keywords' => $this->extractKeywords($brief),
@@ -117,6 +124,8 @@ class TenantContentIntelligenceService
                     'content_feedback_entries.sentiment',
                     'content_feedback_entries.reason',
                     'content_feedback_entries.category',
+                    'content_feedback_entries.normalized_category',
+                    'content_feedback_entries.severity',
                 ]),
             ])
             ->where('tenant_id', $tenantId)
@@ -175,6 +184,8 @@ class TenantContentIntelligenceService
                         'sentiment' => (string) ($item->latestFeedbackEntry?->sentiment ?? ''),
                         'reason' => Str::limit(trim((string) ($item->latestFeedbackEntry?->reason ?? '')), 140, ''),
                         'category' => (string) ($item->latestFeedbackEntry?->category ?? ''),
+                        'normalized_category' => (string) ($item->latestFeedbackEntry?->normalized_category ?: ($item->latestFeedbackEntry?->resolvedCategory() ?? '')),
+                        'severity' => (string) ($item->latestFeedbackEntry?->severity ?: ($item->latestFeedbackEntry?->resolvedSeverity() ?? '')),
                     ],
                     'score' => round($score, 3),
                 ];
@@ -224,6 +235,8 @@ class TenantContentIntelligenceService
                     'title' => Str::limit($title, 90, ''),
                     'caption' => Str::limit($caption, 180, ''),
                     'category' => trim((string) ($entry->category ?? '')),
+                    'normalized_category' => $entry->resolvedCategory(),
+                    'severity' => $entry->resolvedSeverity(),
                     'reason' => Str::limit(trim((string) ($entry->reason ?? '')), 160, ''),
                     'scope' => trim((string) ($entry->scope ?? '')),
                     'score' => round($score, 3),
@@ -236,28 +249,21 @@ class TenantContentIntelligenceService
     }
 
     /**
+     * @param  array<string, mixed>  $feedbackSummary
      * @return array<int, string>
      */
-    private function buildFeedbackSignals(int $tenantId): array
+    private function buildFeedbackSignals(array $feedbackSummary): array
     {
-        $rows = ContentFeedbackEntry::query()
-            ->where('tenant_id', $tenantId)
-            ->latest('id')
-            ->limit(20)
-            ->get(['sentiment', 'category', 'reason']);
+        $signals = array_merge(
+            (array) ($feedbackSummary['reusable_signals'] ?? []),
+            (array) ($feedbackSummary['hard_avoid_rules'] ?? []),
+            array_map(
+                fn (string $category): string => 'priorita feedback [' . $category . ']',
+                array_slice((array) ($feedbackSummary['priority_categories'] ?? []), 0, 4)
+            )
+        );
 
-        $signals = [];
-        foreach ($rows as $row) {
-            $reason = trim((string) ($row->reason ?? ''));
-            if ($reason === '') {
-                continue;
-            }
-            $category = trim((string) ($row->category ?? ''));
-            $prefix = $row->sentiment === ContentFeedbackEntry::SENTIMENT_LIKE ? 'preferisci' : 'evita';
-            $signals[] = trim($prefix . ' ' . ($category !== '' ? '[' . $category . '] ' : '') . $reason);
-        }
-
-        return array_values(array_unique(array_slice($signals, 0, 10)));
+        return array_values(array_unique(array_slice(array_values(array_filter($signals)), 0, 10)));
     }
 
     /**
@@ -520,3 +526,6 @@ class TenantContentIntelligenceService
         return trim($text);
     }
 }
+
+
+

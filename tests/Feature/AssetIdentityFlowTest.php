@@ -78,6 +78,18 @@ class AssetIdentityFlowTest extends TestCase
             ['decorazioni natalizie', 'luci piu calde', 'props promozionali'],
             data_get($variable->profile, 'allowed_transforms')
         );
+        $this->assertSame('location', data_get($variable->identity_pack, 'type'));
+        $this->assertSame('strict', data_get($variable->identity_pack, 'strictness_level'));
+        $this->assertSame('Reception chiara, logo a parete, vetrate e bancone frontale.', data_get($variable->identity_pack, 'descriptor.summary'));
+        $this->assertSame(
+            ['layout reception', 'parete logo', 'bancone', 'vetrate', 'posizione accesso'],
+            data_get($variable->identity_pack, 'invariants')
+        );
+        $this->assertSame(
+            ['decorazioni natalizie', 'luci piu calde', 'props promozionali'],
+            data_get($variable->identity_pack, 'transformables')
+        );
+        $this->assertNotEmpty(data_get($variable->identity_pack, 'canonical_assets.0.path'));
 
         $officeA->refresh();
         $officeB->refresh();
@@ -216,8 +228,15 @@ class AssetIdentityFlowTest extends TestCase
             data_get($item->ai_meta, 'asset_identity.slot_ids')
         );
         $this->assertContains('decorazioni natalizie eleganti', (array) data_get($item->ai_meta, 'asset_identity.allowed_changes'));
+        $this->assertSame('person', data_get($item->ai_meta, 'asset_identity.slots.presenter.identity_pack.type'));
+        $this->assertSame('product', data_get($item->ai_meta, 'asset_identity.slots.product.identity_pack.type'));
+        $this->assertSame('location', data_get($item->ai_meta, 'asset_identity.slots.place.identity_pack.type'));
+        $this->assertNotEmpty(data_get($item->ai_meta, 'asset_identity.slots.place.canonical_assets'));
+        $this->assertNotEmpty(data_get($item->ai_meta, 'asset_identity.slots.presenter.maintain_elements'));
+        $this->assertContains('decorazioni natalizie', (array) data_get($item->ai_meta, 'asset_identity.slots.place.changeable_elements'));
         $this->assertTrue(collect((array) $item->source_refs)->contains(fn ($row) => data_get($row, 'type') === 'asset_identity_slot' && data_get($row, 'slot') === 'presenter'));
 
         Queue::assertPushed(GenerateAiForContentItem::class, 1);
     }
 }
+

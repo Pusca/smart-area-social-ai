@@ -503,6 +503,9 @@ class TenantProfileController extends Controller
             'descriptor_summary' => 'nullable|string|max:1000',
             'immutable_elements' => 'nullable|string|max:1200',
             'allowed_transforms' => 'nullable|string|max:2000',
+            'visual_tags' => 'nullable|string|max:1200',
+            'positive_examples' => 'nullable|string|max:1600',
+            'negative_examples' => 'nullable|string|max:1600',
             'prompt_notes' => 'nullable|string|max:1200',
             'usage_notes' => 'nullable|string|max:1200',
         ]);
@@ -539,6 +542,7 @@ class TenantProfileController extends Controller
         $profile['consistency_threshold'] = $this->assetIdentityService->normalizeConsistencyThreshold(
             $data['consistency_threshold'] ?? null
         );
+        $identityPack = $this->assetIdentityService->buildManualIdentityPack($data, $linkedAssets);
 
         $variable = AssetVariable::query()->create([
             'tenant_id' => $tenantId,
@@ -552,6 +556,7 @@ class TenantProfileController extends Controller
             'identity_mode' => $profile['identity_mode'],
             'consistency_threshold' => $profile['consistency_threshold'],
             'profile' => $profile,
+            'identity_pack' => $identityPack,
             'is_active' => true,
         ]);
 
@@ -1027,6 +1032,12 @@ class TenantProfileController extends Controller
             }
 
             $assetVariable->profile = $profile;
+            $linkedAssets = BrandAsset::query()
+                ->where('tenant_id', $tenantId)
+                ->whereNull('content_plan_id')
+                ->whereIn('id', (array) $assetVariable->asset_ids)
+                ->get();
+            $assetVariable->identity_pack = $this->assetIdentityService->synthesizeIdentityPackForVariable($assetVariable, $linkedAssets);
             $assetVariable->save();
 
             $extraAssetIds = [];
@@ -1066,7 +1077,7 @@ class TenantProfileController extends Controller
         AssetVariable::query()
             ->where('tenant_id', $tenantId)
             ->get()
-            ->each(function (AssetVariable $variable) use ($deletedLookup): void {
+            ->each(function (AssetVariable $variable) use ($deletedLookup, $tenantId): void {
                 $assetIds = collect((array) ($variable->asset_ids ?? []))
                     ->map(fn ($id) => (int) $id)
                     ->filter(fn (int $id) => $id > 0)
@@ -1145,6 +1156,12 @@ class TenantProfileController extends Controller
                 $variable->asset_ids = $remainingAssetIds;
                 $variable->canonical_asset_id = $canonicalAssetId;
                 $variable->profile = $profile;
+                $remainingAssets = BrandAsset::query()
+                    ->where('tenant_id', $tenantId)
+                    ->whereNull('content_plan_id')
+                    ->whereIn('id', $remainingAssetIds)
+                    ->get();
+                $variable->identity_pack = $this->assetIdentityService->synthesizeIdentityPackForVariable($variable, $remainingAssets);
                 $variable->save();
             });
     }
@@ -1350,3 +1367,6 @@ class TenantProfileController extends Controller
         return $profile;
     }
 }
+
+
+

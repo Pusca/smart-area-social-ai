@@ -23,12 +23,14 @@ class AssetVariable extends Model
         'identity_mode',
         'consistency_threshold',
         'profile',
+        'identity_pack',
         'is_active',
     ];
 
     protected $casts = [
         'asset_ids' => 'array',
         'profile' => 'array',
+        'identity_pack' => 'array',
         'canonical_asset_id' => 'integer',
         'voice_asset_id' => 'integer',
         'consistency_threshold' => 'integer',

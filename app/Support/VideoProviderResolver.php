@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Services\AI\ProviderCapabilityRegistry;
+
 class VideoProviderResolver
 {
     /**
@@ -9,45 +11,31 @@ class VideoProviderResolver
      */
     public static function allowed(): array
     {
-        $providers = (array) config('generation.video_providers', ['openai', 'runway']);
-        $providers = array_values(array_filter(array_map(
-            fn ($p) => strtolower(trim((string) $p)),
-            $providers
-        )));
-
-        return array_values(array_unique($providers));
+        return self::registry()->allowedProviders('video');
     }
 
     public static function default(): string
     {
-        $default = strtolower(trim((string) config('generation.video_provider_default', 'openai')));
-        if (in_array($default, self::allowed(), true)) {
-            return $default;
-        }
-
-        return 'openai';
+        return self::registry()->defaultProvider('video');
     }
 
     public static function normalize(string $value): string
     {
-        $value = strtolower(trim($value));
-        if (in_array($value, self::allowed(), true)) {
-            return $value;
-        }
-
-        return self::default();
+        return self::registry()->normalizeProvider('video', $value);
     }
 
     public static function resolve(string $preferred, ?string $fallback = null): string
     {
-        $candidate = trim($preferred) !== '' ? $preferred : (string) $fallback;
-
-        return self::normalize($candidate);
+        return self::registry()->resolveProvider('video', $preferred, $fallback);
     }
 
     public static function inRule(): string
     {
         return 'in:' . implode(',', self::allowed());
     }
-}
 
+    private static function registry(): ProviderCapabilityRegistry
+    {
+        return app(ProviderCapabilityRegistry::class);
+    }
+}

@@ -206,8 +206,12 @@ class GuidedAssetVariableService
                 'identity_mode' => 'strict',
                 'consistency_threshold' => 92,
                 'profile' => $profile,
+                'identity_pack' => [],
                 'is_active' => true,
             ]);
+
+            $variable->identity_pack = $this->assetIdentityService->synthesizeIdentityPackForVariable($variable, collect($assets));
+            $variable->save();
 
             $this->assetIdentityService->syncAssetMetaForVariable($variable, $assetIds, $voiceAssetId ? [$voiceAssetId] : []);
 

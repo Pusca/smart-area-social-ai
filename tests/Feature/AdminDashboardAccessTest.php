@@ -85,6 +85,31 @@ class AdminDashboardAccessTest extends TestCase
         Tenant::flushSchemaSupportCache();
     }
 
+    public function test_authorized_platform_admin_can_access_ai_metrics_page(): void
+    {
+        config()->set('platform_admin.authorized_emails', ['puscastanislav0@gmail.com']);
+
+        $tenant = Tenant::create([
+            'name' => 'Tenant Metrics',
+            'slug' => 'tenant-metrics',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        $admin = User::factory()->create([
+            'email' => 'puscastanislav0@gmail.com',
+            'tenant_id' => null,
+            'role' => 'super_admin',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.ai.metrics', ['tenant_id' => $tenant->id, 'days' => 30]))
+            ->assertOk()
+            ->assertSee('Metriche generazione AI')
+            ->assertSee('Costo per provider')
+            ->assertSee('Failure mode');
+    }
+
     public function test_non_authorized_admin_email_gets_forbidden_on_admin_dashboard(): void
     {
         config()->set('platform_admin.authorized_emails', ['puscastanislav0@gmail.com']);

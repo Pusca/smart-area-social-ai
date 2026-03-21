@@ -9,6 +9,7 @@ use App\Support\GenerationExecution;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class ContentFeedbackController extends Controller
 {
@@ -22,16 +23,27 @@ class ContentFeedbackController extends Controller
         $this->authorizeTenant($request, $contentItem);
 
         $data = $request->validate([
-            'sentiment' => 'required|string|in:like,dislike',
-            'category' => 'nullable|string|max:80',
+            'sentiment' => ['required', 'string', Rule::in([
+                ContentFeedbackEntry::SENTIMENT_LIKE,
+                ContentFeedbackEntry::SENTIMENT_DISLIKE,
+            ])],
+            'category' => ['nullable', 'string', 'max:80', Rule::in(ContentFeedbackEntry::allowedCategoryValues())],
             'reason' => 'nullable|string|max:2000',
-            'action' => 'nullable|string|in:record_only,regenerate',
+            'action' => ['nullable', 'string', Rule::in([
+                ContentFeedbackEntry::ACTION_RECORD_ONLY,
+                ContentFeedbackEntry::ACTION_REGENERATE,
+            ])],
+            'severity' => ['nullable', 'string', Rule::in(ContentFeedbackEntry::allowedSeverityValues())],
+            'quality_score' => 'nullable|numeric|min:1|max:5',
+            'brand_fit_score' => 'nullable|numeric|min:1|max:5',
+            'publishability_score' => 'nullable|numeric|min:1|max:5',
         ]);
 
         $sentiment = (string) $data['sentiment'];
         $category = Str::lower(trim((string) ($data['category'] ?? '')));
         $reason = trim((string) ($data['reason'] ?? ''));
         $action = (string) ($data['action'] ?? ContentFeedbackEntry::ACTION_RECORD_ONLY);
+        $requestedSeverity = (string) ($data['severity'] ?? '');
 
         if ($sentiment === ContentFeedbackEntry::SENTIMENT_DISLIKE && $reason === '') {
             return back()
@@ -42,9 +54,21 @@ class ContentFeedbackController extends Controller
         if ($sentiment === ContentFeedbackEntry::SENTIMENT_LIKE) {
             $category = '';
             $action = ContentFeedbackEntry::ACTION_RECORD_ONLY;
+            $requestedSeverity = ContentFeedbackEntry::SEVERITY_LOW;
         }
 
-        $scope = $this->resolveScope($category);
+        $normalizedCategory = $sentiment === ContentFeedbackEntry::SENTIMENT_LIKE && $category === '' && $reason === ''
+            ? null
+            : ContentFeedbackEntry::normalizeCategory($category, $reason, '');
+        $scope = $this->resolveScope($category, $normalizedCategory);
+        $severity = ContentFeedbackEntry::resolveSeverity(
+            $requestedSeverity,
+            (string) ($normalizedCategory ?: 'other'),
+            $reason,
+            $action,
+            $sentiment
+        );
+        $scores = $this->extractScores($data);
 
         $entry = ContentFeedbackEntry::query()->create([
             'tenant_id' => (int) $contentItem->tenant_id,
@@ -52,9 +76,12 @@ class ContentFeedbackController extends Controller
             'user_id' => (int) $request->user()->id,
             'sentiment' => $sentiment,
             'category' => $category !== '' ? $category : null,
+            'normalized_category' => $normalizedCategory,
             'scope' => $scope,
+            'severity' => $severity,
             'reason' => $reason !== '' ? $reason : null,
             'action' => $action,
+            'scores' => !empty($scores) ? $scores : null,
             'meta' => [
                 'format' => (string) ($contentItem->format ?? ''),
                 'platform' => (string) ($contentItem->platform ?? ''),
@@ -62,6 +89,11 @@ class ContentFeedbackController extends Controller
                 'image_provider' => (string) data_get($contentItem->ai_meta, 'image_provider', ''),
                 'video_provider' => (string) data_get($contentItem->ai_meta, 'video_provider', ''),
                 'ai_generated_at' => optional($contentItem->ai_generated_at)->toDateTimeString(),
+                'structured_feedback' => [
+                    'normalized_category' => $normalizedCategory,
+                    'severity' => $severity,
+                    'scores' => $scores,
+                ],
             ],
         ]);
 
@@ -127,33 +159,105 @@ class ContentFeedbackController extends Controller
      */
     private function buildFeedbackSnapshot(ContentFeedbackEntry $entry): array
     {
+        $legacyCategory = (string) ($entry->category ?? '');
+        $normalizedCategory = (string) ($entry->normalized_category ?: $entry->resolvedCategory());
+
+        if (
+            $entry->sentiment === ContentFeedbackEntry::SENTIMENT_LIKE
+            && $legacyCategory === ''
+            && trim((string) ($entry->reason ?? '')) === ''
+        ) {
+            $normalizedCategory = '';
+        }
+
+        $severity = (string) ($entry->severity ?: $entry->resolvedSeverity());
+
         return [
             'feedback_id' => (int) $entry->id,
             'sentiment' => (string) $entry->sentiment,
-            'category' => (string) ($entry->category ?? ''),
-            'category_label' => ContentFeedbackEntry::CATEGORY_LABELS[(string) ($entry->category ?? '')] ?? null,
+            'category' => $legacyCategory,
+            'category_label' => ContentFeedbackEntry::labelForCategory($legacyCategory),
+            'normalized_category' => $normalizedCategory,
+            'normalized_category_label' => ContentFeedbackEntry::labelForCategory($normalizedCategory),
             'scope' => (string) ($entry->scope ?? ContentFeedbackEntry::SCOPE_FULL),
+            'severity' => $severity,
+            'severity_label' => ContentFeedbackEntry::labelForSeverity($severity),
             'reason' => (string) ($entry->reason ?? ''),
             'action' => (string) ($entry->action ?? ContentFeedbackEntry::ACTION_RECORD_ONLY),
+            'scores' => $entry->scorePayload(),
             'created_at' => optional($entry->created_at)->toDateTimeString(),
         ];
     }
 
-    private function resolveScope(string $category): string
+    private function resolveScope(string $category, ?string $normalizedCategory = null): string
     {
-        return match ($category) {
-            'realism', 'visual_composition', 'location_integrity' => ContentFeedbackEntry::SCOPE_VISUAL_FIRST,
-            'tone_of_voice', 'caption_copy', 'call_to_action', 'offer_focus', 'platform_fit' => ContentFeedbackEntry::SCOPE_COPY_FIRST,
-            default => ContentFeedbackEntry::SCOPE_FULL,
-        };
+        $normalizedCategory = Str::lower(trim((string) $normalizedCategory));
+        $category = Str::lower(trim($category));
+
+        $visualCategories = [
+            'realism',
+            'visual_composition',
+            'location_integrity',
+            'person_not_consistent',
+            'location_not_consistent',
+            'product_deformed',
+            'low_quality_visual',
+        ];
+        $copyCategories = [
+            'tone_of_voice',
+            'caption_copy',
+            'call_to_action',
+            'offer_focus',
+            'platform_fit',
+            'too_generic',
+            'too_salesy',
+            'wrong_cta',
+            'audio_unatural',
+        ];
+
+        if (in_array($normalizedCategory, $visualCategories, true) || in_array($category, $visualCategories, true)) {
+            return ContentFeedbackEntry::SCOPE_VISUAL_FIRST;
+        }
+
+        if (in_array($normalizedCategory, $copyCategories, true) || in_array($category, $copyCategories, true)) {
+            return ContentFeedbackEntry::SCOPE_COPY_FIRST;
+        }
+
+        return ContentFeedbackEntry::SCOPE_FULL;
     }
 
     private function buildInstruction(ContentFeedbackEntry $entry): string
     {
-        $category = trim((string) ($entry->category ?? ''));
         $reason = trim((string) ($entry->reason ?? ''));
-        $label = ContentFeedbackEntry::CATEGORY_LABELS[$category] ?? 'Correzione richiesta';
+        $label = $entry->resolvedCategoryLabel()
+            ?? ContentFeedbackEntry::labelForCategory((string) ($entry->category ?? ''))
+            ?? 'Correzione richiesta';
 
         return trim($label . ': ' . $reason);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, int|float>
+     */
+    private function extractScores(array $data): array
+    {
+        $mapping = [
+            'quality_score' => 'quality_score',
+            'brand_fit_score' => 'brand_fit_score',
+            'publishability_score' => 'publishability_score',
+        ];
+
+        $scores = [];
+        foreach ($mapping as $field => $key) {
+            if (!array_key_exists($field, $data) || $data[$field] === null || $data[$field] === '') {
+                continue;
+            }
+
+            $numeric = (float) $data[$field];
+            $scores[$key] = floor($numeric) === $numeric ? (int) $numeric : round($numeric, 2);
+        }
+
+        return $scores;
     }
 }

@@ -930,16 +930,15 @@ class ContentItemController extends Controller
             }
 
             $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
-            $locked = trim((string) data_get($profile, 'prompt_lock.immutable_elements', data_get($profile, 'immutable_traits', '')));
-            if ($locked !== '') {
-                $lockedElements[] = $locked;
-            }
+            $identityPack = $this->assetIdentityService->synthesizeIdentityPackFromRow($row);
+            $invariants = array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'invariants', []))));
+            $transformables = array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'transformables', []))));
 
-            foreach ((array) data_get($profile, 'allowed_transforms', []) as $transform) {
-                $transform = trim((string) $transform);
-                if ($transform !== '') {
-                    $allowedChanges[] = $transform;
-                }
+            foreach ($invariants as $invariant) {
+                $lockedElements[] = $invariant;
+            }
+            foreach ($transformables as $transformable) {
+                $allowedChanges[] = $transformable;
             }
 
             $voiceAssetPath = trim((string) ($row['voice_asset_path'] ?? data_get($profile, 'voice_reference.sample_path', '')));
@@ -947,6 +946,10 @@ class ContentItemController extends Controller
             $voiceProvider = trim((string) ($row['voice_provider'] ?? data_get($profile, 'voice_reference.provider', '')));
             $voiceProviderVoiceId = trim((string) ($row['voice_provider_voice_id'] ?? data_get($profile, 'voice_reference.provider_voice_id', '')));
             $voiceStatus = trim((string) ($row['voice_status'] ?? data_get($profile, 'voice_reference.status', '')));
+            $canonicalAssetPath = trim((string) ($row['canonical_asset_path'] ?? ''));
+            if ($canonicalAssetPath === '') {
+                $canonicalAssetPath = trim((string) data_get($identityPack, 'canonical_assets.0.path', ''));
+            }
 
             $slots[$slot] = [
                 'id' => (int) ($row['id'] ?? 0),
@@ -954,8 +957,10 @@ class ContentItemController extends Controller
                 'kind' => (string) ($row['kind'] ?? 'custom'),
                 'asset_role' => (string) ($row['asset_role'] ?? ''),
                 'canonical_asset_id' => isset($row['canonical_asset_id']) ? (int) $row['canonical_asset_id'] : null,
-                'canonical_asset_path' => (string) ($row['canonical_asset_path'] ?? ''),
+                'canonical_asset_path' => $canonicalAssetPath,
+                'canonical_assets' => (array) data_get($identityPack, 'canonical_assets', []),
                 'identity_mode' => (string) ($row['identity_mode'] ?? 'balanced'),
+                'strictness_level' => (string) data_get($identityPack, 'strictness_level', (string) ($row['identity_mode'] ?? 'balanced')),
                 'consistency_threshold' => isset($row['consistency_threshold']) ? (int) $row['consistency_threshold'] : null,
                 'voice_asset_id' => isset($row['voice_asset_id']) ? (int) $row['voice_asset_id'] : null,
                 'voice_asset_path' => $voiceAssetPath,
@@ -964,10 +969,16 @@ class ContentItemController extends Controller
                 'voice_provider_voice_id' => $voiceProviderVoiceId,
                 'voice_status' => $voiceStatus,
                 'voice_label' => (string) data_get($profile, 'voice_reference.label', ''),
-                'locked_elements' => $locked !== '' ? [$locked] : [],
-                'allowed_transforms' => array_values(array_filter(array_map('strval', (array) data_get($profile, 'allowed_transforms', [])))),
+                'locked_elements' => $invariants,
+                'maintain_elements' => $invariants,
+                'allowed_transforms' => $transformables,
+                'changeable_elements' => $transformables,
+                'visual_tags' => array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'visual_tags', [])))),
+                'positive_examples' => array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'positive_examples', [])))),
+                'negative_examples' => array_values(array_filter(array_map('strval', (array) data_get($identityPack, 'negative_examples', [])))),
+                'identity_pack' => $identityPack,
                 'descriptor' => [
-                    'summary' => (string) data_get($profile, 'descriptor.summary', data_get($profile, 'identity_summary', '')),
+                    'summary' => (string) data_get($identityPack, 'descriptor.summary', data_get($profile, 'descriptor.summary', data_get($profile, 'identity_summary', ''))),
                 ],
             ];
         }
@@ -977,13 +988,18 @@ class ContentItemController extends Controller
             $allowedChanges[] = $seasonalOverlay;
         }
 
+        $lockedElements = array_values(array_unique(array_filter($lockedElements)));
+        $allowedChanges = array_values(array_unique(array_filter($allowedChanges)));
+
         return [
             'slots' => $slots,
             'slot_ids' => array_values(array_map(fn ($row) => (int) ($row['id'] ?? 0), $slots)),
             'seasonal_overlay' => $seasonalOverlay,
             'consistency_mode' => $this->assetIdentityService->normalizeIdentityMode((string) ($data['consistency_mode'] ?? 'balanced')),
-            'locked_elements' => array_values(array_unique(array_filter($lockedElements))),
-            'allowed_changes' => array_values(array_unique(array_filter($allowedChanges))),
+            'locked_elements' => $lockedElements,
+            'maintain_elements' => $lockedElements,
+            'allowed_changes' => $allowedChanges,
+            'changeable_elements' => $allowedChanges,
         ];
     }
     private function buildSourceRefsFromAssetIdentity(array $assetIdentity): array
@@ -996,13 +1012,18 @@ class ContentItemController extends Controller
                 continue;
             }
 
+            $canonicalAssetPath = trim((string) ($row['canonical_asset_path'] ?? ''));
+            if ($canonicalAssetPath === '') {
+                $canonicalAssetPath = trim((string) data_get($row, 'canonical_assets.0.path', data_get($row, 'identity_pack.canonical_assets.0.path', '')));
+            }
+
             $out[] = [
                 'type' => 'asset_identity_slot',
                 'slot' => (string) $slot,
                 'variable_id' => isset($row['id']) ? (int) $row['id'] : null,
                 'name' => (string) ($row['name'] ?? ''),
                 'kind' => (string) ($row['kind'] ?? 'custom'),
-                'canonical_asset_path' => (string) ($row['canonical_asset_path'] ?? ''),
+                'canonical_asset_path' => $canonicalAssetPath,
             ];
         }
 
@@ -1019,8 +1040,8 @@ class ContentItemController extends Controller
         $slots = is_array($assetIdentity['slots'] ?? null) ? $assetIdentity['slots'] : [];
         $consistencyMode = trim((string) ($assetIdentity['consistency_mode'] ?? ''));
         $seasonalOverlay = trim((string) ($assetIdentity['seasonal_overlay'] ?? ''));
-        $lockedElements = array_values(array_filter(array_map('strval', (array) ($assetIdentity['locked_elements'] ?? []))));
-        $allowedChanges = array_values(array_filter(array_map('strval', (array) ($assetIdentity['allowed_changes'] ?? []))));
+        $maintainElements = array_values(array_filter(array_map('strval', (array) ($assetIdentity['maintain_elements'] ?? $assetIdentity['locked_elements'] ?? []))));
+        $changeableElements = array_values(array_filter(array_map('strval', (array) ($assetIdentity['changeable_elements'] ?? $assetIdentity['allowed_changes'] ?? []))));
 
         if (!empty($slots)) {
             $slotLabels = [];
@@ -1034,11 +1055,26 @@ class ContentItemController extends Controller
                     continue;
                 }
 
-                $slotLabels[] = $slot . ': ' . $name;
+                $descriptor = trim((string) data_get($row, 'identity_pack.descriptor.summary', data_get($row, 'descriptor.summary', '')));
+                $maintain = array_values(array_filter(array_map('strval', (array) ($row['maintain_elements'] ?? $row['locked_elements'] ?? []))));
+                $changeable = array_values(array_filter(array_map('strval', (array) ($row['changeable_elements'] ?? $row['allowed_transforms'] ?? []))));
+
+                $label = $slot . ': ' . $name;
+                if ($descriptor !== '') {
+                    $label .= ' (' . Str::limit($descriptor, 80, '') . ')';
+                }
+                if (!empty($maintain)) {
+                    $label .= ' | mantieni: ' . implode(', ', array_slice($maintain, 0, 2));
+                }
+                if (!empty($changeable)) {
+                    $label .= ' | puoi variare: ' . implode(', ', array_slice($changeable, 0, 2));
+                }
+
+                $slotLabels[] = $label;
             }
 
             if (!empty($slotLabels)) {
-                $direction .= ' Slot identitari selezionati: ' . implode(', ', $slotLabels) . '.';
+                $direction .= ' Slot identitari selezionati: ' . implode('; ', $slotLabels) . '.';
             }
         }
 
@@ -1048,11 +1084,11 @@ class ContentItemController extends Controller
         if ($seasonalOverlay !== '') {
             $direction .= ' Overlay o tema da applicare senza cambiare il soggetto base: ' . Str::limit($seasonalOverlay, 120, '') . '.';
         }
-        if (!empty($lockedElements)) {
-            $direction .= ' Elementi da non alterare: ' . implode('; ', array_slice($lockedElements, 0, 4)) . '.';
+        if (!empty($maintainElements)) {
+            $direction .= ' Elementi da mantenere: ' . implode('; ', array_slice($maintainElements, 0, 6)) . '.';
         }
-        if (!empty($allowedChanges)) {
-            $direction .= ' Cambi ammessi: ' . implode(', ', array_slice($allowedChanges, 0, 6)) . '.';
+        if (!empty($changeableElements)) {
+            $direction .= ' Elementi che possono cambiare: ' . implode(', ', array_slice($changeableElements, 0, 6)) . '.';
         }
 
         return $direction;
@@ -1380,3 +1416,5 @@ class ContentItemController extends Controller
     }
 
 }
+
+

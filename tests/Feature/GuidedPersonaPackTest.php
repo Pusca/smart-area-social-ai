@@ -36,7 +36,7 @@ class GuidedPersonaPackTest extends TestCase
             'name' => 'Chef Erika',
             'description' => 'Volto del ristorante per contenuti accoglienti ed eleganti.',
             'persona_role' => 'Chef e volto del brand',
-            'immutable_traits' => 'Taglio capelli corto, sorriso naturale, lineamenti reali, età apparente coerente',
+            'immutable_traits' => 'Taglio capelli corto, sorriso naturale, lineamenti reali, etÃ  apparente coerente',
             'look_notes' => 'Presenza elegante e sicura, sguardo diretto ma caldo.',
             'styling_notes' => 'Divisa pulita o outfit smart casual coerente col locale.',
             'prompt_notes' => 'Evita close-up artificiali e mantieni pelle e mani credibili.',
@@ -64,6 +64,11 @@ class GuidedPersonaPackTest extends TestCase
         $this->assertSame((int) $variable->canonical_asset_id, (int) data_get($variable->profile, 'canonical_asset_id'));
         $this->assertSame(5, (int) data_get($variable->profile, 'shot_count'));
         $this->assertNotEmpty(data_get($variable->profile, 'reference_video_path'));
+        $this->assertSame('person', data_get($variable->identity_pack, 'type'));
+        $this->assertSame('strict', data_get($variable->identity_pack, 'strictness_level'));
+        $this->assertNotEmpty(data_get($variable->identity_pack, 'canonical_assets.0.path'));
+        $this->assertContains('Taglio capelli corto', (array) data_get($variable->identity_pack, 'invariants'));
+        $this->assertContains('pose variation', (array) data_get($variable->identity_pack, 'transformables'));
 
         $assets = BrandAsset::query()->where('tenant_id', $tenant->id)->orderBy('id')->get();
         $this->assertCount(6, $assets);
@@ -81,3 +86,4 @@ class GuidedPersonaPackTest extends TestCase
         $this->assertCount(6, (array) ($catalog[0]['assets'] ?? []));
     }
 }
+

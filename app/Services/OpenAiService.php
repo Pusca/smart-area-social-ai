@@ -188,6 +188,8 @@ class OpenAiService
                 'video_prompt' => $parsed['video_prompt'] ?? null,
                 'voiceover' => $parsed['voiceover'] ?? null,
                 'reel_blueprint' => is_array($parsed['reel_blueprint'] ?? null) ? $parsed['reel_blueprint'] : null,
+                'response_id' => trim((string) ($data['id'] ?? '')) ?: null,
+                'usage' => $this->extractUsage($data),
             ];
         } catch (Throwable $e) {
             Log::error('OpenAiService generateContent failed', [
@@ -1211,6 +1213,23 @@ class OpenAiService
         throw new RuntimeException('Risposta non JSON: ' . mb_substr($text, 0, 500));
     }
 
+    /**
+     * @return array<string, int>
+     */
+    protected function extractUsage(array $response): array
+    {
+        $usage = (array) ($response['usage'] ?? []);
+        $input = (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
+        $output = (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
+        $total = (int) ($usage['total_tokens'] ?? ($input + $output));
+
+        return array_filter([
+            'input_tokens' => $input > 0 ? $input : null,
+            'output_tokens' => $output > 0 ? $output : null,
+            'total_tokens' => $total > 0 ? $total : null,
+        ], fn ($value) => $value !== null);
+    }
+
     private function toVisionDataUri(string $absolutePath): ?string
     {
         if (!is_file($absolutePath)) {
@@ -1273,6 +1292,5 @@ class OpenAiService
         };
     }
 }
-
 
 

@@ -8,6 +8,11 @@ use Illuminate\Support\Str;
 
 class AssetVariableService
 {
+    public function __construct(
+        private readonly AssetIdentityService $assetIdentityService
+    ) {
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -31,6 +36,11 @@ class AssetVariableService
                     ->values()
                     ->all();
 
+                $canonicalAssetId = (int) ($row->canonical_asset_id ?? 0);
+                if ($canonicalAssetId > 0) {
+                    $ids[] = $canonicalAssetId;
+                }
+
                 $voiceAssetId = (int) ($row->voice_asset_id ?? 0);
                 if ($voiceAssetId > 0) {
                     $ids[] = $voiceAssetId;
@@ -48,7 +58,6 @@ class AssetVariableService
             ->where('tenant_id', $tenantId)
             ->whereNull('content_plan_id')
             ->whereIn('id', $allAssetIds)
-            // I meta servono per capire se un asset e anchor canonico o parte di un pack guidato.
             ->get(['id', 'kind', 'path', 'original_name', 'mime', 'meta'])
             ->keyBy('id');
 
@@ -60,7 +69,16 @@ class AssetVariableService
                 ->unique()
                 ->values();
 
-            $linkedAssets = $assetIds
+            $canonicalAssetId = (int) ($variable->canonical_asset_id ?? 0);
+            $linkedAssetIds = $assetIds
+                ->when(
+                    $canonicalAssetId > 0,
+                    fn ($ids) => $ids->push($canonicalAssetId)
+                )
+                ->unique()
+                ->values();
+
+            $linkedAssets = $linkedAssetIds
                 ->map(fn (int $id) => $assets->get($id))
                 ->filter()
                 ->values();
@@ -71,10 +89,10 @@ class AssetVariableService
                 ->values()
                 ->all();
 
-            $canonicalAssetId = (int) ($variable->canonical_asset_id ?? 0);
             $canonicalAsset = $canonicalAssetId > 0 ? $assets->get($canonicalAssetId) : null;
             $voiceAssetId = (int) ($variable->voice_asset_id ?? 0);
             $voiceAsset = $voiceAssetId > 0 ? $assets->get($voiceAssetId) : null;
+            $identityPack = $this->assetIdentityService->synthesizeIdentityPackForVariable($variable, $linkedAssets);
 
             $out[] = [
                 'id' => (int) $variable->id,
@@ -97,6 +115,7 @@ class AssetVariableService
                     ? (int) $variable->consistency_threshold
                     : null,
                 'profile' => is_array($variable->profile) ? $variable->profile : [],
+                'identity_pack' => $identityPack,
                 'asset_ids' => $assetIds->all(),
                 'asset_paths' => $assetPaths,
                 'assets' => $linkedAssets->map(fn ($asset) => [
@@ -294,7 +313,7 @@ class AssetVariableService
     }
 
     /**
-     * Oltre a nome e slug, usiamo ruolo e descrittori per riconoscere identita nel brief.
+     * Oltre a nome e slug, usiamo ruolo, identity pack e descrittori per riconoscere identita nel brief.
      *
      * @param  array<string, mixed>  $variable
      */
@@ -313,9 +332,14 @@ class AssetVariableService
             $this->normalize((string) data_get($variable, 'profile.identity_summary', '')),
             $this->normalize((string) data_get($variable, 'profile.descriptor.summary', '')),
             $this->normalize((string) data_get($variable, 'profile.prompt_lock.immutable_elements', '')),
+            $this->normalize((string) data_get($variable, 'identity_pack.descriptor.summary', '')),
+            $this->normalize((string) data_get($variable, 'identity_pack.descriptor.persistent_label', '')),
         ];
 
-        foreach ($this->allowedTransformTokens($variable) as $token) {
+        foreach (array_merge(
+            $this->allowedTransformTokens($variable),
+            $this->identityPackTokens($variable)
+        ) as $token) {
             $tokens[] = $this->normalize($token);
         }
 
@@ -338,9 +362,39 @@ class AssetVariableService
      */
     private function allowedTransformTokens(array $variable): array
     {
+        $fromPack = collect((array) data_get($variable, 'identity_pack.transformables', []))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->values()
+            ->all();
+
+        if (!empty($fromPack)) {
+            return $fromPack;
+        }
+
         return collect((array) data_get($variable, 'profile.allowed_transforms', []))
             ->map(fn ($value) => trim((string) $value))
             ->filter(fn (string $value) => $value !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $variable
+     * @return array<int, string>
+     */
+    private function identityPackTokens(array $variable): array
+    {
+        return collect(array_merge(
+            (array) data_get($variable, 'identity_pack.invariants', []),
+            (array) data_get($variable, 'identity_pack.transformables', []),
+            (array) data_get($variable, 'identity_pack.visual_tags', []),
+            (array) data_get($variable, 'identity_pack.positive_examples', []),
+            (array) data_get($variable, 'identity_pack.negative_examples', [])
+        ))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->unique()
             ->values()
             ->all();
     }

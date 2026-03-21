@@ -59,6 +59,23 @@
             $hashtags = is_array($decoded) ? $decoded : [];
         }
         if (!is_array($hashtags)) $hashtags = [];
+        $qualityScorecard = is_array(data_get($item->ai_meta, 'quality_scorecard')) ? (array) data_get($item->ai_meta, 'quality_scorecard') : [];
+        $qualityStatus = (string) ($qualityScorecard['publish_readiness_status'] ?? '');
+        $qualityBadge = match ($qualityStatus) {
+            'pass' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+            'pass_with_warnings' => 'border-amber-200 bg-amber-50 text-amber-700',
+            'manual_review_required' => 'border-orange-200 bg-orange-50 text-orange-700',
+            'blocked' => 'border-red-200 bg-red-50 text-red-700',
+            default => 'border-gray-200 bg-gray-50 text-gray-700',
+        };
+        $qualityScores = [
+            'Brand voice' => data_get($qualityScorecard, 'brand_voice_score'),
+            'Visual identity' => data_get($qualityScorecard, 'visual_identity_score'),
+            'CTA compliance' => data_get($qualityScorecard, 'cta_compliance_score'),
+            'Reference match' => data_get($qualityScorecard, 'reference_match_score'),
+            'Realism' => data_get($qualityScorecard, 'realism_score'),
+            'Caption quality' => data_get($qualityScorecard, 'caption_quality_score'),
+        ];
     @endphp
 
     <section class="ui-shell ui-page">
@@ -116,6 +133,50 @@
                     <div class="mb-2 text-sm text-muted">Image prompt</div>
                     <div class="text-text">{{ $item->ai_image_prompt ?? '-' }}</div>
                 </div>
+
+                @if(!empty($qualityScorecard))
+                    <div class="ui-card p-5">
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="text-sm text-muted">Quality scorecard</div>
+                            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $qualityBadge }}">
+                                {{ $qualityStatus !== '' ? $qualityStatus : 'n/a' }}
+                            </span>
+                        </div>
+
+                        <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                            @foreach($qualityScores as $label => $score)
+                                <div class="rounded-lg bg-surface-2 px-3 py-2">
+                                    <div class="text-xs text-muted">{{ $label }}</div>
+                                    <div class="mt-1 text-sm font-semibold text-text">
+                                        {{ is_numeric($score) ? number_format(((float) $score) * 100, 0) . '%' : '-' }}
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        @if(!empty($qualityScorecard['warnings']))
+                            <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                                <div class="font-semibold">Warnings</div>
+                                <ul class="mt-2 list-disc space-y-1 pl-5">
+                                    @foreach((array) $qualityScorecard['warnings'] as $warning)
+                                        <li>{{ $warning }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+
+                        @if(!empty($qualityScorecard['blocking_reasons']))
+                            <div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-900">
+                                <div class="font-semibold">Blocking reasons</div>
+                                <ul class="mt-2 list-disc space-y-1 pl-5">
+                                    @foreach((array) $qualityScorecard['blocking_reasons'] as $reason)
+                                        <li>{{ $reason }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+                    </div>
+                @endif
             </div>
         </div>
     </section>

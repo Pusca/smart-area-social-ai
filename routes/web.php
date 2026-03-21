@@ -22,6 +22,7 @@ Route::get('/', function () {
 
 Route::middleware(['auth', 'platformAdmin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/', [AdminWorkspaceController::class, 'index'])->name('dashboard');
+    Route::get('/ai/metrics', [AdminWorkspaceController::class, 'generationMetrics'])->name('ai.metrics');
     Route::put('/users/{user}/tenant', [AdminWorkspaceController::class, 'updateUserTenant'])->name('users.tenant.update');
     Route::put('/tenants/{tenant}', [AdminWorkspaceController::class, 'updateTenant'])->name('tenants.update');
     Route::post('/users/{user}/impersonate', [AdminWorkspaceController::class, 'impersonateUser'])->name('users.impersonate');

@@ -37,6 +37,11 @@ class ContentItem extends Model
         return $this->hasMany(SocialPublication::class);
     }
 
+    public function generationRuns(): HasMany
+    {
+        return $this->hasMany(GenerationRun::class);
+    }
+
     public function feedbackEntries(): HasMany
     {
         return $this->hasMany(ContentFeedbackEntry::class);
@@ -105,4 +110,5 @@ class ContentItem extends Model
         $this->attributes['assets'] = null;
     }
 }
+
 

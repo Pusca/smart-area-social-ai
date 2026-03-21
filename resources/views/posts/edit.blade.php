@@ -55,13 +55,31 @@
     $isVideoFormat = in_array(strtolower(trim((string) $contentItem->format)), ['reel', 'story'], true);
     $feedbackEntries = $contentItem->feedbackEntries ?? collect();
     $latestFeedback = $feedbackEntries->first();
-    $feedbackCategories = \App\Models\ContentFeedbackEntry::CATEGORY_LABELS;
+    $feedbackCategories = \App\Models\ContentFeedbackEntry::selectableCategoryLabels();
+    $feedbackSeverityOptions = \App\Models\ContentFeedbackEntry::SEVERITY_LABELS;
     $activeFeedbackSentiment = $latestFeedback?->sentiment;
     $feedbackSentiment = old('sentiment', 'like');
     $feedbackAction = old('action', 'record_only');
     $activeFeedbackRequest = data_get($contentItem->ai_meta, 'feedback_loop.active_request');
     $lastAppliedFeedback = data_get($contentItem->ai_meta, 'feedback_loop.last_applied');
     $shouldOpenFeedbackModal = old('sentiment') === 'dislike' || $errors->has('category') || $errors->has('reason');
+    $qualityScorecard = is_array(data_get($contentItem->ai_meta, 'quality_scorecard')) ? (array) data_get($contentItem->ai_meta, 'quality_scorecard') : [];
+    $qualityStatus = (string) ($qualityScorecard['publish_readiness_status'] ?? '');
+    $qualityBadge = match ($qualityStatus) {
+        'pass' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        'pass_with_warnings' => 'border-amber-200 bg-amber-50 text-amber-700',
+        'manual_review_required' => 'border-orange-200 bg-orange-50 text-orange-700',
+        'blocked' => 'border-red-200 bg-red-50 text-red-700',
+        default => 'border-gray-200 bg-gray-50 text-gray-700',
+    };
+    $qualityScores = [
+        'Brand voice' => data_get($qualityScorecard, 'brand_voice_score'),
+        'Visual identity' => data_get($qualityScorecard, 'visual_identity_score'),
+        'CTA compliance' => data_get($qualityScorecard, 'cta_compliance_score'),
+        'Reference match' => data_get($qualityScorecard, 'reference_match_score'),
+        'Realism' => data_get($qualityScorecard, 'realism_score'),
+        'Caption quality' => data_get($qualityScorecard, 'caption_quality_score'),
+    ];
 @endphp
 
 <style>
@@ -170,6 +188,53 @@
         @endif
     </div>
 
+    @if(!empty($qualityScorecard))
+        <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900">Quality scorecard</h2>
+                    <p class="mt-1 text-sm text-gray-600">Valutazione finale di qualita e publish readiness basata sui segnali reali salvati nel run.</p>
+                </div>
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $qualityBadge }}">
+                    {{ $qualityStatus !== '' ? $qualityStatus : 'n/a' }}
+                </span>
+            </div>
+
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                @foreach($qualityScores as $label => $score)
+                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <div class="text-xs text-gray-500">{{ $label }}</div>
+                        <div class="mt-1 text-sm font-semibold text-gray-900">
+                            {{ is_numeric($score) ? number_format(((float) $score) * 100, 0) . '%' : '-' }}
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+
+            @if(!empty($qualityScorecard['warnings']))
+                <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p class="text-sm font-semibold text-amber-900">Warnings</p>
+                    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">
+                        @foreach((array) $qualityScorecard['warnings'] as $warning)
+                            <li>{{ $warning }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
+            @if(!empty($qualityScorecard['blocking_reasons']))
+                <div class="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                    <p class="text-sm font-semibold text-red-900">Blocking reasons</p>
+                    <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-red-800">
+                        @foreach((array) $qualityScorecard['blocking_reasons'] as $reason)
+                            <li>{{ $reason }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+        </div>
+    @endif
+
     <div class="grid gap-6 xl:grid-cols-3">
         <div class="space-y-6 xl:col-span-2">
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -270,14 +335,26 @@
                                 @csrf
                                 <input type="hidden" name="sentiment" value="dislike">
 
-                                <div>
-                                    <label for="feedback_category" class="mb-1 block text-sm font-semibold text-gray-700">Motivo principale</label>
-                                    <select id="feedback_category" name="category" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                        <option value="">Seleziona il punto da correggere</option>
-                                        @foreach($feedbackCategories as $key => $label)
-                                            <option value="{{ $key }}" @selected(old('category') === $key)>{{ $label }}</option>
-                                        @endforeach
-                                    </select>
+                                <div class="grid gap-4 sm:grid-cols-2">
+                                    <div>
+                                        <label for="feedback_category" class="mb-1 block text-sm font-semibold text-gray-700">Motivo principale</label>
+                                        <select id="feedback_category" name="category" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                            <option value="">Seleziona il punto da correggere</option>
+                                            @foreach($feedbackCategories as $key => $label)
+                                                <option value="{{ $key }}" @selected(old('category') === $key)>{{ $label }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="feedback_severity" class="mb-1 block text-sm font-semibold text-gray-700">Severita</label>
+                                        <select id="feedback_severity" name="severity" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                            <option value="">Calcolo automatico</option>
+                                            @foreach($feedbackSeverityOptions as $key => $label)
+                                                <option value="{{ $key }}" @selected(old('severity') === $key)>{{ $label }}</option>
+                                            @endforeach
+                                        </select>
+                                        <p class="mt-1 text-xs text-gray-500">Se non la scegli, viene derivata da categoria, motivo e azione.</p>
+                                    </div>
                                 </div>
 
                                 <div>
@@ -340,8 +417,17 @@
                         <div class="mt-3 space-y-3">
                             @foreach($feedbackEntries as $entry)
                                 @php
-                                    $entryCategory = (string) ($entry->category ?? '');
-                                    $entryLabel = $feedbackCategories[$entryCategory] ?? 'Feedback';
+                                    $entryCategory = (string) ($entry->normalized_category ?: $entry->resolvedCategory());
+                                    $entryLabel = $entry->resolvedCategoryLabel() ?? 'Feedback';
+                                    $entrySeverity = (string) ($entry->severity ?: $entry->resolvedSeverity());
+                                    $entrySeverityLabel = $entry->resolvedSeverityLabel();
+                                    $entrySeverityBadge = match ($entrySeverity) {
+                                        'low' => 'border-gray-200 bg-white text-gray-700',
+                                        'medium' => 'border-amber-200 bg-amber-50 text-amber-700',
+                                        'high' => 'border-orange-200 bg-orange-50 text-orange-700',
+                                        'blocking' => 'border-red-200 bg-red-50 text-red-700',
+                                        default => 'border-gray-200 bg-white text-gray-700',
+                                    };
                                 @endphp
                                 <article class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                                     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -354,6 +440,11 @@
                                                     {{ $entryLabel }}
                                                 </span>
                                             @endif
+                                            @if($entry->sentiment === 'dislike' && $entrySeverityLabel)
+                                                <span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold {{ $entrySeverityBadge }}">
+                                                    Severita {{ strtolower($entrySeverityLabel) }}
+                                                </span>
+                                            @endif
                                             @if($entry->action === 'regenerate')
                                                 <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
                                                     Rigenerazione richiesta
@@ -361,7 +452,7 @@
                                             @endif
                                         </div>
                                         <span class="text-[11px] text-gray-500">
-                                            {{ optional($entry->created_at)->format('d/m H:i') }}@if($entry->user) Â· {{ $entry->user->name }}@endif
+                                            {{ optional($entry->created_at)->format('d/m H:i') }}@if($entry->user) · {{ $entry->user->name }}@endif
                                         </span>
                                     </div>
 
@@ -660,9 +751,9 @@
                 }
 
                 const category = (feedbackCategorySelect?.value || '').toLowerCase();
-                const subtitle = category === 'location_integrity'
+                const subtitle = category === 'location_not_consistent' || category === 'location_integrity'
                     ? 'Sto rigenerando il visual mantenendo il luogo reale come ancora principale, senza inventare nuove sale o ambienti.'
-                    : category === 'realism'
+                    : category === 'person_not_consistent' || category === 'low_quality_visual' || category === 'realism'
                         ? 'Sto rigenerando il contenuto con priorita sulla resa realistica e naturale del visual.'
                         : 'Sto rigenerando il contenuto usando la tua obiezione come correzione prioritaria.';
 
@@ -723,3 +814,4 @@
     })();
 </script>
 @endsection
+
