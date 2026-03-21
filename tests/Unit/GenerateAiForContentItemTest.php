@@ -653,6 +653,90 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertSame(['abs-left', 'abs-front', 'abs-half', 'abs-profile'], $abs);
     }
 
+    public function test_it_uses_primary_person_reference_mode_for_openai_identity_videos(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $this->assertTrue($job->shouldUseOpenAiPrimaryPersonReference(
+            'openai',
+            false,
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            ['front.jpg', 'left.jpg']
+        ));
+
+        $this->assertFalse($job->shouldUseOpenAiPrimaryPersonReference(
+            'openai',
+            true,
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            ['front.jpg', 'left.jpg']
+        ));
+    }
+
+    public function test_it_enforces_video_reference_validation_for_identity_locked_assets_even_without_manual_refs(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $this->assertTrue($job->shouldValidateVideoReferenceMatch(
+            false,
+            false,
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            [
+                'asset_identity' => [
+                    'slots' => [
+                        'presenter' => [
+                            'id' => 12,
+                        ],
+                    ],
+                ],
+            ],
+            ['abs-front', 'abs-left']
+        ));
+
+        $this->assertFalse($job->shouldValidateVideoReferenceMatch(
+            false,
+            true,
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Sala',
+                        'kind' => 'location',
+                    ],
+                ],
+            ],
+            [
+                'asset_identity' => [
+                    'slots' => [
+                        'place' => [
+                            'id' => 99,
+                        ],
+                    ],
+                ],
+            ],
+            ['abs-room']
+        ));
+    }
+
     public function test_it_normalizes_structured_feedback_requests_and_keeps_audio_only_feedback_out_of_visual_flow(): void
     {
         $job = new GenerateAiForContentItem(1);

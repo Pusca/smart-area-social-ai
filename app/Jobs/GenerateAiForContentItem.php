@@ -797,6 +797,13 @@ SVG;
             && count($imageReferenceAbsPool) >= 2
             && $this->hasProtectedLocationEnvelope($assetVariables, $imageReferencePathPool);
         $mustEnforceExplicitReferences = $hasExplicitReferences && !empty($imageReferenceAbsPool) && !$locationSequenceMode;
+        $mustValidateReferenceMatch = $this->shouldValidateVideoReferenceMatch(
+            hasExplicitReferences: $hasExplicitReferences,
+            locationSequenceMode: $locationSequenceMode,
+            assetVariables: $assetVariables,
+            meta: $meta,
+            referenceAbsPool: $imageReferenceAbsPool
+        );
         $dualSubjectLock = $this->videoNeedsDualSubjectLock($meta, $videoControlContext, $assetVariables);
         $klingIdentityBoardMode = $videoProvider === 'kling'
             && !$dualSubjectLock
@@ -805,6 +812,12 @@ SVG;
             && !$dualSubjectLock
             && Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel'
             && count($imageReferenceAbsPool) >= 2;
+        $openAiPrimaryPersonReferenceMode = $this->shouldUseOpenAiPrimaryPersonReference(
+            videoProvider: $videoProvider,
+            dualSubjectLock: $dualSubjectLock,
+            assetVariables: $assetVariables,
+            referencePaths: $imageReferencePathPool
+        );
         $validationReferenceAbsPool = array_values(array_slice($imageReferenceAbsPool, 0, 4));
         $generationReferenceAbsPool = $imageReferenceAbsPool;
         $compositionReference = null;
@@ -827,6 +840,12 @@ SVG;
             $compositionMeta = [
                 'used' => false,
                 'mode' => 'runway_primary_anchor_reference',
+                'reference_count' => count($imageReferenceAbsPool),
+            ];
+        } elseif ($openAiPrimaryPersonReferenceMode) {
+            $compositionMeta = [
+                'used' => false,
+                'mode' => 'openai_primary_person_reference',
                 'reference_count' => count($imageReferenceAbsPool),
             ];
         } elseif ($this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool)) {
@@ -877,6 +896,11 @@ SVG;
                 $referencePath = $imageReferencePathPool[0] ?? null;
                 $referencePaths = array_values(array_slice($imageReferencePathPool, 0, 4));
                 $referenceReason = 'runway_primary_anchor_reference';
+            } elseif ($openAiPrimaryPersonReferenceMode) {
+                $referenceAbs = $generationReferenceAbsPool[0];
+                $referencePath = $imageReferencePathPool[0] ?? null;
+                $referencePaths = array_values(array_slice($imageReferencePathPool, 0, 4));
+                $referenceReason = 'openai_primary_person_reference';
             } elseif (count($generationReferenceAbsPool) > 1) {
                 $collage = $this->buildVideoReferenceCollage(array_slice($generationReferenceAbsPool, 0, 4));
                 if (is_string($collage) && $collage !== '') {
@@ -901,7 +925,9 @@ SVG;
             }
         }
 
-        if ($videoProvider !== 'kling' && $logoRequested && $logoAbs) {
+        if ($openAiPrimaryPersonReferenceMode && $logoRequested && $logoAbs) {
+            $referenceReason .= '_logo_prompt_only';
+        } elseif ($videoProvider !== 'kling' && $logoRequested && $logoAbs) {
             if ($referenceAbs) {
                 $composed = $this->buildVideoReferenceImage($referenceAbs, $logoAbs, $logoMode);
                 if ($composed) {
@@ -1000,7 +1026,7 @@ SVG;
                     generationReferenceAbsPool: $generationReferenceAbsPool,
                     imageReferencePathPool: $imageReferencePathPool,
                     validationReferenceAbsPool: $validationReferenceAbsPool,
-                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                     compositionMeta: $compositionMeta,
                     brandDecision: $brandDecision,
                     videoOptions: $videoOptions,
@@ -1072,7 +1098,7 @@ SVG;
                                 generationReferenceAbsPool: $generationReferenceAbsPool,
                                 imageReferencePathPool: $imageReferencePathPool,
                                 validationReferenceAbsPool: $validationReferenceAbsPool,
-                                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                                mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                                 compositionMeta: $compositionMeta,
                                 brandDecision: $brandDecision,
                                 videoOptions: $videoOptions
@@ -1090,7 +1116,7 @@ SVG;
                                 generationReferenceAbsPool: $generationReferenceAbsPool,
                                 imageReferencePathPool: $imageReferencePathPool,
                                 validationReferenceAbsPool: $validationReferenceAbsPool,
-                                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                                mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                                 compositionMeta: $compositionMeta,
                                 brandDecision: $brandDecision,
                                 videoOptions: $videoOptions,
@@ -1159,7 +1185,7 @@ SVG;
                     generationReferenceAbsPool: $generationReferenceAbsPool,
                     imageReferencePathPool: $imageReferencePathPool,
                     validationReferenceAbsPool: $validationReferenceAbsPool,
-                    mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                    mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                     compositionMeta: $compositionMeta,
                     brandDecision: $brandDecision,
                     videoOptions: $videoOptions
@@ -1182,7 +1208,7 @@ SVG;
                         generationReferenceAbsPool: $generationReferenceAbsPool,
                         imageReferencePathPool: $imageReferencePathPool,
                         validationReferenceAbsPool: $validationReferenceAbsPool,
-                        mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                        mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                         compositionMeta: $compositionMeta,
                         brandDecision: $brandDecision,
                         videoOptions: $videoOptions,
@@ -1266,7 +1292,7 @@ SVG;
                 generationReferenceAbsPool: $generationReferenceAbsPool,
                 imageReferencePathPool: $imageReferencePathPool,
                 validationReferenceAbsPool: $validationReferenceAbsPool,
-                mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                 compositionMeta: $compositionMeta,
                 brandDecision: $brandDecision,
                 videoOptions: $videoOptions,
@@ -1298,7 +1324,7 @@ SVG;
                             generationReferenceAbsPool: $generationReferenceAbsPool,
                             imageReferencePathPool: $imageReferencePathPool,
                             validationReferenceAbsPool: $validationReferenceAbsPool,
-                            mustEnforceExplicitReferences: $mustEnforceExplicitReferences,
+                            mustEnforceExplicitReferences: $mustValidateReferenceMatch,
                             compositionMeta: $compositionMeta,
                             brandDecision: $brandDecision,
                             videoOptions: $videoOptions
@@ -4498,6 +4524,58 @@ SVG;
     {
         return $this->singleResolvedPersonVariable($assetVariables) !== null
             && count(array_values(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''))) >= 2;
+    }
+
+    /**
+     * Quando usiamo Sora con una sola persona reale del brand, preferiamo l anchor primaria invece del collage:
+     * e piu stabile per il volto e lascia le altre reference al prompt/validator.
+     *
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<int, string>  $referencePaths
+     */
+    public function shouldUseOpenAiPrimaryPersonReference(
+        string $videoProvider,
+        bool $dualSubjectLock,
+        array $assetVariables,
+        array $referencePaths
+    ): bool {
+        return $videoProvider === 'openai'
+            && !$dualSubjectLock
+            && $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $referencePaths);
+    }
+
+    /**
+     * Valida anche le identita persistenti del brand, non solo le reference esplicite dell utente.
+     *
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<string, mixed>  $meta
+     * @param  array<int, string>  $referenceAbsPool
+     */
+    public function shouldValidateVideoReferenceMatch(
+        bool $hasExplicitReferences,
+        bool $locationSequenceMode,
+        array $assetVariables,
+        array $meta = [],
+        array $referenceAbsPool = []
+    ): bool {
+        $referenceAbsPool = array_values(array_filter(
+            array_map(fn ($path) => trim((string) $path), $referenceAbsPool),
+            fn (string $path) => $path !== ''
+        ));
+
+        if ($locationSequenceMode || empty($referenceAbsPool)) {
+            return false;
+        }
+
+        if ($hasExplicitReferences) {
+            return true;
+        }
+
+        if (!empty((array) data_get($meta, 'asset_identity.slots', []))) {
+            return true;
+        }
+
+        return $this->singleResolvedPersonVariable($assetVariables) !== null;
     }
 
     /**
