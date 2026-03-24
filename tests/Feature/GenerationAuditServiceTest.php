@@ -59,13 +59,14 @@ class GenerationAuditServiceTest extends TestCase
         $this->assertSame('job', $run->trigger_source);
         $this->assertSame('post', $run->format);
         $this->assertSame(1, $run->attempt_count);
-        $this->assertSame('legacy_inline_prompts_v1', data_get($run->version_meta, 'prompt_template_version'));
+        $this->assertSame('professional_content_strategy_prompt_v1', data_get($run->version_meta, 'prompt_template_version'));
         $this->assertSame('editorial_strategy_compose_v1', data_get($run->version_meta, 'strategy_composer_version'));
+        $this->assertSame('content_angle_engine_v1', data_get($run->version_meta, 'content_strategy_engine_version'));
         $this->assertSame('openai_text_adapter_v1', data_get($run->version_meta, 'provider_adapter_versions.text.adapter_version'));
         $this->assertSame('done', $item->ai_status);
         $this->assertSame($run->id, data_get($item->ai_meta, 'generation_audit.latest_run_id'));
         $this->assertSame('succeeded', data_get($item->ai_meta, 'generation_audit.latest_status'));
-        $this->assertSame('legacy_inline_prompts_v1', data_get($item->ai_meta, 'generation_audit.version_map.prompt_template_version'));
+        $this->assertSame('professional_content_strategy_prompt_v1', data_get($item->ai_meta, 'generation_audit.version_map.prompt_template_version'));
 
         $attempt = $run->attempts()->first();
         $this->assertNotNull($attempt);

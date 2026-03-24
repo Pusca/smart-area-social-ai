@@ -3,8 +3,9 @@
 return [
     'versions' => [
         'pipeline' => 'generation_pipeline_v1',
-        'prompt_template' => 'legacy_inline_prompts_v1',
+        'prompt_template' => 'professional_content_strategy_prompt_v1',
         'strategy_composer' => 'editorial_strategy_compose_v1',
+        'content_strategy_engine' => 'content_angle_engine_v1',
         'alignment_policy' => 'content_alignment_v1',
         'asset_selection_policy' => 'asset_reference_selection_v1',
         'feedback_synthesis' => 'tenant_feedback_memory_v1',

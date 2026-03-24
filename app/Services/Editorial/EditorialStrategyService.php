@@ -5,12 +5,19 @@ namespace App\Services\Editorial;
 use App\Models\BrandAsset;
 use App\Models\EditorialStrategy;
 use App\Models\TenantProfile;
+use App\Services\Trends\TrendOpportunitySynthesisService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class EditorialStrategyService
 {
+    public function __construct(
+        private readonly CreativeDirectionComposer $creativeDirectionComposer,
+        private readonly TrendOpportunitySynthesisService $trendOpportunitySynthesis
+    ) {
+    }
+
     public function refreshForTenant(
         int $tenantId,
         ?TenantProfile $profile = null,
@@ -44,9 +51,20 @@ class EditorialStrategyService
             'strict_asset_mode' => (bool) config('generation.strict_asset_mode', true),
         ];
 
-        $analysis = $this->buildAnalysisFramework($tenantId, $profile);
-        $visual = $this->buildVisualSystem($tenantId, $profile);
+        $assetReadiness = $this->loadAssetReadiness($tenantId);
+        $analysis = $this->buildAnalysisFramework($profile, $assetReadiness);
+        $visual = $this->buildVisualSystem($profile, $assetReadiness);
         $publishing = $this->buildPublishingSystem($profile);
+        $creativeDirection = $this->creativeDirectionComposer->compose($profile, $assetReadiness);
+        $trendIntelligence = $this->trendOpportunitySynthesis->buildForTenant($tenantId, $profile, [
+            'strategy' => [
+                'analysis_framework' => $analysis,
+                'publishing_system' => $publishing,
+            ],
+            'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+            'formats' => (array) ($profile?->default_formats ?? ['post']),
+            'asset_readiness' => $assetReadiness,
+        ]);
 
         $payload = [
             'brand_voice' => array_merge($voice, Arr::get($overrides, 'brand_voice', [])),
@@ -57,6 +75,8 @@ class EditorialStrategyService
             'analysis_framework' => array_merge($analysis, Arr::get($overrides, 'analysis_framework', [])),
             'visual_system' => array_merge($visual, Arr::get($overrides, 'visual_system', [])),
             'publishing_system' => array_merge($publishing, Arr::get($overrides, 'publishing_system', [])),
+            'creative_direction' => array_replace_recursive($creativeDirection, Arr::get($overrides, 'creative_direction', [])),
+            'trend_intelligence' => array_replace_recursive($trendIntelligence, Arr::get($overrides, 'trend_intelligence', [])),
             'last_refreshed_at' => Carbon::now(),
         ];
 
@@ -82,10 +102,14 @@ class EditorialStrategyService
         $analysis = array_merge((array) $strategy->analysis_framework, (array) ($studio['analysis_framework'] ?? []));
         $visual = array_merge((array) $strategy->visual_system, (array) ($studio['visual_system'] ?? []));
         $publishing = array_merge((array) $strategy->publishing_system, (array) ($studio['publishing_system'] ?? []));
+        $creativeDirection = array_replace_recursive((array) $strategy->creative_direction, (array) ($studio['creative_direction'] ?? []));
+        $trendIntelligence = array_replace_recursive((array) $strategy->trend_intelligence, (array) ($studio['trend_intelligence'] ?? []));
 
         $strategy->analysis_framework = $analysis;
         $strategy->visual_system = $visual;
         $strategy->publishing_system = $publishing;
+        $strategy->creative_direction = $creativeDirection;
+        $strategy->trend_intelligence = $trendIntelligence;
         $strategy->strategy_notes = (string) ($studio['strategy_notes'] ?? $strategy->strategy_notes ?? '');
         $strategy->is_locked = (bool) ($studio['is_locked'] ?? $strategy->is_locked ?? false);
         $strategy->manual_updated_at = Carbon::now();
@@ -105,6 +129,8 @@ class EditorialStrategyService
             'analysis_framework' => $strategy->analysis_framework ?? [],
             'visual_system' => $strategy->visual_system ?? [],
             'publishing_system' => $strategy->publishing_system ?? [],
+            'creative_direction' => $strategy->creative_direction ?? [],
+            'trend_intelligence' => $strategy->trend_intelligence ?? [],
             'strategy_notes' => (string) ($strategy->strategy_notes ?? ''),
             'strategy_locked' => (bool) ($strategy->is_locked ?? false),
             'strategy_id' => (int) $strategy->id,
@@ -212,24 +238,13 @@ class EditorialStrategyService
         return $out;
     }
 
-    private function buildAnalysisFramework(int $tenantId, ?TenantProfile $profile): array
+    /**
+     * @param  array<string, int>  $assetReadiness
+     * @return array<string, mixed>
+     */
+    private function buildAnalysisFramework(?TenantProfile $profile, array $assetReadiness): array
     {
-        $totalAssets = BrandAsset::query()
-            ->where('tenant_id', $tenantId)
-            ->whereNull('content_plan_id')
-            ->count();
-
-        $imageAssets = BrandAsset::query()
-            ->where('tenant_id', $tenantId)
-            ->whereNull('content_plan_id')
-            ->where('kind', 'image')
-            ->count();
-
-        $logoAssets = BrandAsset::query()
-            ->where('tenant_id', $tenantId)
-            ->whereNull('content_plan_id')
-            ->where('kind', 'logo')
-            ->count();
+        $overlayPreferences = is_array($profile?->overlay_preferences) ? $profile->overlay_preferences : [];
 
         return [
             'primary_goal' => (string) ($profile?->default_goal ?: 'Awareness + Lead'),
@@ -238,29 +253,44 @@ class EditorialStrategyService
             'kpi_secondary' => 'Interazioni utili e conversione contatti',
             'audience_focus' => (string) ($profile?->target ?: ''),
             'offer_focus' => (string) ($profile?->seasonal_offers ?: ''),
+            'trend_appetite' => (string) ($overlayPreferences['trend_appetite'] ?? 'medium'),
+            'preferred_hook_intensity' => (string) ($overlayPreferences['preferred_hook_intensity'] ?? 'medium'),
+            'professionalism_guardrail_level' => (string) ($overlayPreferences['professionalism_guardrail_level'] ?? 'high'),
             'asset_readiness' => [
-                'total' => (int) $totalAssets,
-                'images' => (int) $imageAssets,
-                'logos' => (int) $logoAssets,
+                'total' => (int) ($assetReadiness['total'] ?? 0),
+                'images' => (int) ($assetReadiness['images'] ?? 0),
+                'logos' => (int) ($assetReadiness['logos'] ?? 0),
+                'videos' => (int) ($assetReadiness['videos'] ?? 0),
             ],
         ];
     }
 
-    private function buildVisualSystem(int $tenantId, ?TenantProfile $profile): array
+    /**
+     * @param  array<string, int>  $assetReadiness
+     * @return array<string, mixed>
+     */
+    private function buildVisualSystem(?TenantProfile $profile, array $assetReadiness): array
     {
         $palette = $this->parsePalette((string) ($profile?->brand_palette ?? ''));
-
-        $hasLogo = BrandAsset::query()
-            ->where('tenant_id', $tenantId)
-            ->whereNull('content_plan_id')
-            ->where('kind', 'logo')
-            ->exists();
+        $hasLogo = ((int) ($assetReadiness['logos'] ?? 0)) > 0;
+        $overlayPreferences = is_array($profile?->overlay_preferences) ? $profile->overlay_preferences : [];
 
         return [
             'style' => 'Pulito, moderno, realistico, orientato conversione',
             'mood' => 'Professionale con energia positiva',
             'palette' => $palette,
             'palette_mode' => !empty($palette) ? 'brand_palette' : 'auto_brand_safe',
+            'typography' => [
+                'tone_preset' => (string) ($overlayPreferences['tone_preset'] ?? $overlayPreferences['font_preset'] ?? 'modern'),
+                'font_preset' => (string) ($overlayPreferences['font_preset'] ?? $overlayPreferences['tone_preset'] ?? 'modern'),
+                'font_family' => (string) ($overlayPreferences['font_family'] ?? 'arial'),
+                'fallback_font_family' => (string) ($overlayPreferences['fallback_font_family'] ?? 'segoe_ui'),
+                'preset' => (string) ($overlayPreferences['preset'] ?? 'modern_split_caption'),
+                'safe_area' => (string) ($overlayPreferences['safe_area'] ?? 'upper_third'),
+                'auto_enabled' => (bool) ($overlayPreferences['auto_enabled'] ?? true),
+                'preferred_hook_intensity' => (string) ($overlayPreferences['preferred_hook_intensity'] ?? 'medium'),
+                'professionalism_guardrail_level' => (string) ($overlayPreferences['professionalism_guardrail_level'] ?? 'high'),
+            ],
             'logo_rule' => $hasLogo
                 ? 'Usa solo loghi reali caricati in assets (mai testo logo generato).'
                 : 'Nessun logo disponibile: non inventare logo o brand text.',
@@ -330,5 +360,24 @@ class EditorialStrategyService
         }
 
         return array_values(array_unique($out));
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function loadAssetReadiness(int $tenantId): array
+    {
+        $counts = BrandAsset::query()
+            ->where('tenant_id', $tenantId)
+            ->whereNull('content_plan_id')
+            ->get(['kind'])
+            ->countBy(fn (BrandAsset $asset) => strtolower(trim((string) $asset->kind)));
+
+        return [
+            'total' => (int) $counts->sum(),
+            'images' => (int) ($counts['image'] ?? 0),
+            'logos' => (int) ($counts['logo'] ?? 0),
+            'videos' => (int) ($counts['video'] ?? 0),
+        ];
     }
 }

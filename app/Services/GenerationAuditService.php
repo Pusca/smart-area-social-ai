@@ -291,6 +291,8 @@ class GenerationAuditService
             'version_meta',
             'result_summary',
             'quality_scorecard',
+            'overlay_meta',
+            'storyboard_meta',
             'attempt_count',
             'retry_count',
             'estimated_cost_usd',

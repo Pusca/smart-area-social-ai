@@ -7,13 +7,15 @@ use App\Models\ContentFeedbackEntry;
 use App\Models\ContentItem;
 use App\Models\TenantProfile;
 use App\Services\MemoryBuilderService;
+use App\Services\Trends\TrendOpportunitySynthesisService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class TenantContentIntelligenceService
 {
     public function __construct(
-        private readonly MemoryBuilderService $memoryBuilder
+        private readonly MemoryBuilderService $memoryBuilder,
+        private readonly TrendOpportunitySynthesisService $trendOpportunitySynthesis
     ) {
     }
 
@@ -52,6 +54,17 @@ class TenantContentIntelligenceService
         $examples = $this->selectExamples($tenantId, $brief, $format, $platforms);
         $negativeExamples = $this->selectNegativeExamples($tenantId, $brief, $format, $platforms);
         $feedbackSignals = $this->buildFeedbackSignals($feedbackSummary);
+        $trendIntelligence = $this->trendOpportunitySynthesis->buildForTenant($tenantId, $profile, [
+            'brief' => $brief,
+            'format' => $format,
+            'platforms' => $platforms,
+            'strategy' => [
+                'analysis_framework' => [
+                    'primary_goal' => trim((string) ($profile?->default_goal ?? '')),
+                ],
+            ],
+            'asset_readiness' => $assetCounts,
+        ]);
 
         $knowledgePack = [
             'brand_basics' => [
@@ -97,6 +110,11 @@ class TenantContentIntelligenceService
                 'brief_keywords' => $this->extractKeywords($brief),
                 'requested_format' => $format,
                 'requested_platforms' => $platforms,
+            ],
+            'trend_intelligence' => [
+                'summary' => (array) ($trendIntelligence['summary'] ?? []),
+                'opportunities' => array_slice((array) ($trendIntelligence['opportunities'] ?? []), 0, 4),
+                'platforms' => (array) ($trendIntelligence['platforms'] ?? []),
             ],
         ];
 

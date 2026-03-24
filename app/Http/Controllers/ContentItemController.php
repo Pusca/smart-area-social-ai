@@ -13,6 +13,7 @@ use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\ContentMediaPreviewService;
 use App\Services\Editorial\EditorialStrategyService;
+use App\Services\Overlays\ContentOverlayEngine;
 use App\Services\MemoryBuilderService;
 use App\Services\Social\SocialPublishingService;
 use App\Services\TenantQuotaService;
@@ -34,6 +35,7 @@ class ContentItemController extends Controller
         private readonly AiProviderMatrixService $aiProviderMatrixService,
         private readonly AssetIdentityService $assetIdentityService,
         private readonly EditorialStrategyService $editorialStrategyService,
+        private readonly ContentOverlayEngine $contentOverlayEngine,
         private readonly ContentMediaPreviewService $mediaPreviewService,
         private readonly AssetVariableService $assetVariableService,
         private readonly SocialPublishingService $socialPublishingService,
@@ -222,6 +224,28 @@ class ContentItemController extends Controller
             'place_variable_id' => 'nullable|integer',
             'seasonal_overlay' => 'nullable|string|max:160',
             'consistency_mode' => 'nullable|string|in:strict,balanced,creative',
+            'overlay_mode' => 'nullable|string|max:20',
+            'overlay_preset' => 'nullable|string|max:80',
+            'overlay_text' => 'nullable|string|max:180',
+            'overlay_secondary_text' => 'nullable|string|max:220',
+            'overlay_cta_text' => 'nullable|string|max:180',
+            'overlay_font_family' => 'nullable|string|max:60',
+            'overlay_font_fallback' => 'nullable|string|max:60',
+            'overlay_font_weight' => 'nullable|string|max:10',
+            'overlay_font_size_mode' => 'nullable|string|max:20',
+            'overlay_text_case' => 'nullable|string|max:20',
+            'overlay_alignment' => 'nullable|string|max:20',
+            'overlay_position' => 'nullable|string|max:30',
+            'overlay_safe_area' => 'nullable|string|max:30',
+            'overlay_max_lines' => 'nullable|integer|min:1|max:4',
+            'overlay_color' => 'nullable|string|max:16',
+            'overlay_stroke_color' => 'nullable|string|max:16',
+            'overlay_shadow' => 'nullable|boolean',
+            'overlay_background_style' => 'nullable|string|max:30',
+            'overlay_animation_style' => 'nullable|string|max:30',
+            'overlay_timing_start_ms' => 'nullable|integer|min:0|max:300000',
+            'overlay_timing_end_ms' => 'nullable|integer|min:0|max:300000',
+            'overlay_emphasis_words' => 'nullable|string|max:220',
         ]);
 
         $platforms = $this->extractPlatforms($request, $data);
@@ -264,6 +288,10 @@ class ContentItemController extends Controller
             ->first();
 
         $profileData = $this->buildProfileData($profile);
+        $overlaySettings = $this->buildOverlaySettingsPayload(
+            $data,
+            (array) ($profileData['overlay_preferences'] ?? [])
+        );
         $assets = $this->loadBrandAssets($tenantId);
         $strictAssetMode = (bool) config('generation.strict_asset_mode', true);
         $brandImageCount = collect($assets)
@@ -402,6 +430,7 @@ class ContentItemController extends Controller
             'feedback_signals' => (array) ($tenantIntelligence['feedback_signals'] ?? []),
             'provider_matrix' => $providerMatrix,
             'strategy' => $strategy,
+            'overlay_settings' => $overlaySettings,
             'item_brain' => [
                 'rubric' => 'On Demand',
                 'pillar' => 'Richiesta Manuale',
@@ -420,6 +449,24 @@ class ContentItemController extends Controller
             'image_preference' => $imagePreference,
             'created_at' => now()->toDateTimeString(),
         ];
+        $overlayPack = $this->contentOverlayEngine->build([
+            'platform' => $platformValue,
+            'format' => $format,
+            'tenant_profile' => $profileData,
+            'strategy' => $strategy,
+            'item_brain' => (array) data_get($item->ai_meta, 'item_brain', []),
+            'overlay_settings' => $overlaySettings,
+            'caption' => $brief,
+            'item' => [
+                'platform' => $platformValue,
+                'format' => $format,
+                'title' => $internalTitle,
+            ],
+        ]);
+        $item->ai_meta = array_replace_recursive(
+            is_array($item->ai_meta) ? $item->ai_meta : [],
+            $this->contentOverlayEngine->toMetaFragment($overlayPack)
+        );
 
         $item->save();
 
@@ -481,6 +528,28 @@ class ContentItemController extends Controller
             'ai_caption' => 'nullable|string',
             'ai_image_prompt' => 'nullable|string',
             'status' => 'nullable|string|max:30',
+            'overlay_mode' => 'nullable|string|max:20',
+            'overlay_preset' => 'nullable|string|max:80',
+            'overlay_text' => 'nullable|string|max:180',
+            'overlay_secondary_text' => 'nullable|string|max:220',
+            'overlay_cta_text' => 'nullable|string|max:180',
+            'overlay_font_family' => 'nullable|string|max:60',
+            'overlay_font_fallback' => 'nullable|string|max:60',
+            'overlay_font_weight' => 'nullable|string|max:10',
+            'overlay_font_size_mode' => 'nullable|string|max:20',
+            'overlay_text_case' => 'nullable|string|max:20',
+            'overlay_alignment' => 'nullable|string|max:20',
+            'overlay_position' => 'nullable|string|max:30',
+            'overlay_safe_area' => 'nullable|string|max:30',
+            'overlay_max_lines' => 'nullable|integer|min:1|max:4',
+            'overlay_color' => 'nullable|string|max:16',
+            'overlay_stroke_color' => 'nullable|string|max:16',
+            'overlay_shadow' => 'nullable|boolean',
+            'overlay_background_style' => 'nullable|string|max:30',
+            'overlay_animation_style' => 'nullable|string|max:30',
+            'overlay_timing_start_ms' => 'nullable|integer|min:0|max:300000',
+            'overlay_timing_end_ms' => 'nullable|integer|min:0|max:300000',
+            'overlay_emphasis_words' => 'nullable|string|max:220',
         ]);
 
         $contentItem->platform = $data['platform'];
@@ -506,6 +575,29 @@ class ContentItemController extends Controller
             ? ImageProviderResolver::resolve((string) ($data['image_provider'] ?? ''), $existingImageProvider)
             : ImageProviderResolver::default();
         $meta['provider_matrix'] = $this->aiProviderMatrixService->resolve($meta, (int) $contentItem->tenant_id);
+        $overlaySettings = $this->buildOverlaySettingsPayload(
+            $data,
+            (array) data_get($meta, 'tenant_profile.overlay_preferences', []),
+            (array) data_get($meta, 'overlay_settings', [])
+        );
+        $meta['overlay_settings'] = $overlaySettings;
+        $overlayPack = $this->contentOverlayEngine->build([
+            'platform' => $contentItem->platform,
+            'format' => $contentItem->format,
+            'tenant_profile' => (array) data_get($meta, 'tenant_profile', []),
+            'strategy' => (array) data_get($meta, 'strategy', []),
+            'item_brain' => (array) data_get($meta, 'item_brain', []),
+            'hook_meta' => (array) data_get($meta, 'hook_meta', data_get($meta, 'item_brain.hook_meta', [])),
+            'overlay_settings' => $overlaySettings,
+            'caption' => (string) ($contentItem->ai_caption ?? $contentItem->caption ?? ''),
+            'ai_cta' => (string) ($contentItem->ai_cta ?? ''),
+            'item' => [
+                'platform' => (string) $contentItem->platform,
+                'format' => (string) $contentItem->format,
+                'title' => (string) ($contentItem->title ?? ''),
+            ],
+        ]);
+        $meta = array_replace_recursive($meta, $this->contentOverlayEngine->toMetaFragment($overlayPack));
         $contentItem->ai_meta = $meta;
 
         $contentItem->save();
@@ -579,7 +671,96 @@ class ContentItemController extends Controller
             'business_hours' => $profile?->business_hours,
             'seasonal_offers' => $profile?->seasonal_offers,
             'brand_palette' => $profile?->brand_palette,
+            'overlay_preferences' => is_array($profile?->overlay_preferences) ? $profile->overlay_preferences : [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $brandPreferences
+     * @param  array<string, mixed>  $existing
+     * @return array<string, mixed>
+     */
+    private function buildOverlaySettingsPayload(array $data, array $brandPreferences = [], array $existing = []): array
+    {
+        $allowedModes = (array) config('overlays.ui.modes', ['auto', 'manual', 'off']);
+        $allowedWeights = (array) config('overlays.ui.font_weights', ['400', '500', '600', '700', '800']);
+        $allowedSizes = (array) config('overlays.ui.font_size_modes', ['small', 'medium', 'large', 'xl']);
+        $allowedCases = (array) config('overlays.ui.text_cases', ['sentence', 'title', 'uppercase']);
+        $allowedAlignments = (array) config('overlays.ui.alignments', ['left', 'center', 'right']);
+        $allowedPositions = (array) config('overlays.ui.positions', ['upper_left', 'upper_center', 'center_left', 'center', 'lower_left', 'lower_center']);
+        $allowedSafeAreas = (array) config('overlays.ui.safe_areas', ['upper_third', 'center_safe', 'lower_third']);
+        $allowedBackgrounds = (array) config('overlays.ui.background_styles', ['none', 'dark_box', 'light_box', 'gradient_strip']);
+        $allowedAnimations = (array) config('overlays.ui.animation_styles', ['none', 'fade', 'pop', 'slide_up']);
+        $allowedFonts = array_keys((array) config('overlays.fonts', []));
+        $allowedPresets = array_keys((array) config('overlays.presets', []));
+
+        $defaultMode = (string) ($existing['mode'] ?? config('overlays.default_mode', 'auto'));
+        $manualOverride = [
+            'text' => trim((string) ($data['overlay_text'] ?? data_get($existing, 'manual_override.text', ''))),
+            'secondary_text' => trim((string) ($data['overlay_secondary_text'] ?? data_get($existing, 'manual_override.secondary_text', ''))),
+            'cta_text' => trim((string) ($data['overlay_cta_text'] ?? data_get($existing, 'manual_override.cta_text', ''))),
+            'font_family' => $this->normalizeOverlayOption((string) ($data['overlay_font_family'] ?? data_get($existing, 'manual_override.font_family', $brandPreferences['font_family'] ?? 'arial')), $allowedFonts, (string) ($brandPreferences['font_family'] ?? 'arial')),
+            'fallback_font_family' => $this->normalizeOverlayOption((string) ($data['overlay_font_fallback'] ?? data_get($existing, 'manual_override.fallback_font_family', $brandPreferences['fallback_font_family'] ?? 'segoe_ui')), $allowedFonts, (string) ($brandPreferences['fallback_font_family'] ?? 'segoe_ui')),
+            'font_weight' => $this->normalizeOverlayOption((string) ($data['overlay_font_weight'] ?? data_get($existing, 'manual_override.font_weight', '700')), $allowedWeights, '700'),
+            'font_size_mode' => $this->normalizeOverlayOption((string) ($data['overlay_font_size_mode'] ?? data_get($existing, 'manual_override.font_size_mode', 'large')), $allowedSizes, 'large'),
+            'text_case' => $this->normalizeOverlayOption((string) ($data['overlay_text_case'] ?? data_get($existing, 'manual_override.text_case', 'sentence')), $allowedCases, 'sentence'),
+            'alignment' => $this->normalizeOverlayOption((string) ($data['overlay_alignment'] ?? data_get($existing, 'manual_override.alignment', 'left')), $allowedAlignments, 'left'),
+            'position' => $this->normalizeOverlayOption((string) ($data['overlay_position'] ?? data_get($existing, 'manual_override.position', 'upper_left')), $allowedPositions, 'upper_left'),
+            'safe_area' => $this->normalizeOverlayOption((string) ($data['overlay_safe_area'] ?? data_get($existing, 'manual_override.safe_area', $brandPreferences['safe_area'] ?? 'upper_third')), $allowedSafeAreas, (string) ($brandPreferences['safe_area'] ?? 'upper_third')),
+            'max_lines' => max(1, min(4, (int) ($data['overlay_max_lines'] ?? data_get($existing, 'manual_override.max_lines', 2)))),
+            'color' => $this->normalizeHexColor((string) ($data['overlay_color'] ?? data_get($existing, 'manual_override.color', '#FFFFFF')), '#FFFFFF'),
+            'stroke_color' => $this->normalizeHexColor((string) ($data['overlay_stroke_color'] ?? data_get($existing, 'manual_override.stroke_color', '#111827')), '#111827'),
+            'shadow' => array_key_exists('overlay_shadow', $data)
+                ? (bool) $data['overlay_shadow']
+                : (bool) data_get($existing, 'manual_override.shadow', true),
+            'background_style' => $this->normalizeOverlayOption((string) ($data['overlay_background_style'] ?? data_get($existing, 'manual_override.background_style', 'dark_box')), $allowedBackgrounds, 'dark_box'),
+            'animation_style' => $this->normalizeOverlayOption((string) ($data['overlay_animation_style'] ?? data_get($existing, 'manual_override.animation_style', 'fade')), $allowedAnimations, 'fade'),
+            'timing_start_ms' => max(0, (int) ($data['overlay_timing_start_ms'] ?? data_get($existing, 'manual_override.timing_start_ms', 0))),
+            'timing_end_ms' => max(0, (int) ($data['overlay_timing_end_ms'] ?? data_get($existing, 'manual_override.timing_end_ms', 0))),
+            'emphasis_words' => $this->explodeOverlayWords((string) ($data['overlay_emphasis_words'] ?? '')),
+        ];
+
+        return [
+            'mode' => $this->normalizeOverlayOption((string) ($data['overlay_mode'] ?? $defaultMode), $allowedModes, $defaultMode),
+            'preset' => $this->normalizeOverlayOption((string) ($data['overlay_preset'] ?? ($existing['preset'] ?? ($brandPreferences['preset'] ?? 'modern_split_caption'))), $allowedPresets, (string) ($brandPreferences['preset'] ?? 'modern_split_caption')),
+            'brand_font_family' => (string) ($brandPreferences['font_family'] ?? 'arial'),
+            'brand_fallback_font_family' => (string) ($brandPreferences['fallback_font_family'] ?? 'segoe_ui'),
+            'manual_override' => $manualOverride,
+            'updated_at' => now()->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $allowed
+     */
+    private function normalizeOverlayOption(string $value, array $allowed, string $default): string
+    {
+        $value = trim($value);
+        return in_array($value, $allowed, true) ? $value : $default;
+    }
+
+    private function normalizeHexColor(string $value, string $default): string
+    {
+        $value = strtoupper(trim($value));
+        if (!str_starts_with($value, '#')) {
+            $value = '#' . $value;
+        }
+
+        return preg_match('/^#[0-9A-F]{6}$/', $value) === 1 ? $value : $default;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function explodeOverlayWords(string $value): array
+    {
+        $parts = preg_split('/[,;\n]+/', trim($value)) ?: [];
+
+        return array_values(array_slice(array_unique(array_filter(array_map(
+            fn ($row) => trim((string) $row),
+            $parts
+        ))), 0, 4));
     }
 
     private function loadBrandAssets(int $tenantId): array

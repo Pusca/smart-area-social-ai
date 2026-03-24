@@ -4,9 +4,12 @@ namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
 use App\Services\AI\ContentAlignmentService;
+use App\Services\AI\ContentAngleEngine;
+use App\Services\AI\VideoScenePlanner;
 use App\Services\GenerationAuditService;
 use App\Services\GenerationMetricsService;
 use App\Services\OpenAiService;
+use App\Services\Overlays\ContentOverlayEngine;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -16,6 +19,9 @@ class GenerateBaseTextStep
     public function __construct(
         private readonly OpenAiService $openAi,
         private readonly ContentAlignmentService $contentAlignment,
+        private readonly ContentAngleEngine $contentAngleEngine,
+        private readonly VideoScenePlanner $videoScenePlanner,
+        private readonly ContentOverlayEngine $contentOverlayEngine,
         private readonly GenerationAuditService $generationAudit,
         private readonly GenerationMetricsService $generationMetrics
     ) {
@@ -37,6 +43,60 @@ class GenerateBaseTextStep
         $recentCaptions = (array) $state->get('recent_captions', []);
         $planTitles = (array) $state->get('plan_titles', []);
         $planCaptions = (array) $state->get('plan_captions', []);
+        $contentStrategyPack = $this->contentAngleEngine->build([
+            'platform' => (string) ($item->platform ?? 'instagram'),
+            'format' => (string) ($item->format ?? 'post'),
+            'goal' => (string) data_get($itemBrain, 'objective', data_get($meta, 'plan.goal', data_get($strategy, 'analysis_framework.primary_goal', 'Awareness'))),
+            'audience' => (string) data_get($tenantProfile, 'target', data_get($strategy, 'brand_voice.target', '')),
+            'industry' => (string) data_get($tenantProfile, 'industry', data_get($strategy, 'brand_voice.industry', '')),
+            'topic' => (string) data_get($itemBrain, 'narrative_angle', data_get($itemBrain, 'angle', $item->title ?: $briefSeed)),
+            'rubric' => (string) data_get($itemBrain, 'rubric', $item->rubric),
+            'editorial_mode' => (string) data_get($itemBrain, 'editorial_mode', 'evergreen'),
+            'trend_confidence' => data_get($itemBrain, 'trend_confidence'),
+            'trend_opportunity' => (array) data_get($itemBrain, 'trend_opportunity', []),
+            'tenant_profile' => $tenantProfile,
+            'strategy' => $strategy,
+            'item_brain' => $itemBrain,
+            'plan' => (array) data_get($meta, 'plan', []),
+            'manual_brief' => $briefSeed,
+            'item' => [
+                'platform' => (string) $item->platform,
+                'format' => (string) $item->format,
+                'title' => (string) ($item->title ?? ''),
+            ],
+        ]);
+        $contentStrategyMeta = $this->contentAngleEngine->toMetaFragment($contentStrategyPack);
+        $itemBrain = array_replace_recursive(
+            $itemBrain,
+            (array) data_get($contentStrategyMeta, 'item_brain', [])
+        );
+        $meta = array_replace_recursive($meta, $contentStrategyMeta, [
+            'item_brain' => $itemBrain,
+        ]);
+        $initialOverlayPack = $this->contentOverlayEngine->build([
+            'platform' => (string) ($item->platform ?? 'instagram'),
+            'format' => (string) ($item->format ?? 'post'),
+            'tenant_profile' => $tenantProfile,
+            'strategy' => $strategy,
+            'item_brain' => $itemBrain,
+            'hook_meta' => (array) data_get($meta, 'hook_meta', data_get($itemBrain, 'hook_meta', [])),
+            'overlay_settings' => (array) data_get($meta, 'overlay_settings', []),
+            'caption' => $briefSeed,
+            'item' => [
+                'platform' => (string) $item->platform,
+                'format' => (string) $item->format,
+                'title' => (string) ($item->title ?? ''),
+            ],
+        ]);
+        $meta = array_replace_recursive($meta, $this->contentOverlayEngine->toMetaFragment($initialOverlayPack));
+        $itemBrain = array_replace_recursive(
+            $itemBrain,
+            (array) data_get($meta, 'item_brain', [])
+        );
+        $state->meta = $meta;
+        $state->put('item_brain', $itemBrain);
+        $item->ai_meta = $meta;
+        $item->save();
 
         $textAttempt = $this->generationAudit->startAttempt($state->run, 'text_blueprint', [
             'type' => 'text',
@@ -64,7 +124,17 @@ class GenerateBaseTextStep
                     'analysis_framework' => (array) data_get($strategy, 'analysis_framework', []),
                     'visual_system' => (array) data_get($strategy, 'visual_system', []),
                     'publishing_system' => (array) data_get($strategy, 'publishing_system', []),
+                    'creative_direction' => (array) data_get($strategy, 'creative_direction', []),
+                    'trend_intelligence' => (array) data_get($strategy, 'trend_intelligence', []),
                     'notes' => (string) data_get($strategy, 'strategy_notes', ''),
+                ],
+                'content_strategy_blueprint' => [
+                    'content_strategy' => (array) data_get($meta, 'content_strategy', []),
+                    'hook_meta' => (array) data_get($meta, 'hook_meta', data_get($itemBrain, 'hook_meta', [])),
+                    'authority_signals' => (array) data_get($meta, 'authority_signals', data_get($itemBrain, 'authority_signals', [])),
+                    'trust_signals' => (array) data_get($meta, 'trust_signals', data_get($itemBrain, 'trust_signals', [])),
+                    'viral_angle' => (array) data_get($meta, 'viral_angle', data_get($itemBrain, 'viral_angle_meta', [])),
+                    'content_structure_meta' => (array) data_get($meta, 'content_structure_meta', data_get($itemBrain, 'content_structure_meta', [])),
                 ],
                 'item_brain' => $itemBrain,
                 'manual_brief' => $briefSeed,
@@ -235,6 +305,51 @@ class GenerateBaseTextStep
             if (!empty($normalizedReelBlueprint)) {
                 $nextMeta['reel_blueprint'] = $normalizedReelBlueprint;
             }
+            $storyboardPack = $this->videoScenePlanner->build([
+                'platform' => (string) ($item->platform ?? 'instagram'),
+                'format' => (string) ($item->format ?? 'post'),
+                'tenant_profile' => $tenantProfile,
+                'strategy' => $strategy,
+                'item_brain' => $itemBrain,
+                'hook_meta' => (array) data_get($nextMeta, 'hook_meta', data_get($itemBrain, 'hook_meta', [])),
+                'content_structure_meta' => (array) data_get($nextMeta, 'content_structure_meta', data_get($itemBrain, 'content_structure_meta', [])),
+                'reel_blueprint' => $normalizedReelBlueprint,
+                'asset_identity' => $assetIdentity,
+                'asset_variables' => $assetVariables,
+                'video_voiceover' => $generatedVoiceover !== '' ? $generatedVoiceover : (string) data_get($nextMeta, 'video_voiceover', ''),
+                'video_prompt' => $generatedVideoPrompt !== '' ? $generatedVideoPrompt : (string) data_get($nextMeta, 'video_prompt', ''),
+                'requested_total_seconds' => (int) data_get($nextMeta, 'requested_video_duration_seconds', data_get($nextMeta, 'video_duration_seconds_requested', 0)),
+                'ai_cta' => (string) ($item->ai_cta ?? ''),
+                'caption' => (string) ($item->ai_caption ?? ''),
+                'item' => [
+                    'platform' => (string) $item->platform,
+                    'format' => (string) $item->format,
+                    'title' => (string) ($item->title ?? ''),
+                ],
+            ]);
+            $nextMeta = array_replace_recursive($nextMeta, $this->videoScenePlanner->toMetaFragment($storyboardPack));
+            $overlayPack = $this->contentOverlayEngine->build([
+                'platform' => (string) ($item->platform ?? 'instagram'),
+                'format' => (string) ($item->format ?? 'post'),
+                'tenant_profile' => $tenantProfile,
+                'strategy' => $strategy,
+                'item_brain' => $itemBrain,
+                'hook_meta' => (array) data_get($nextMeta, 'hook_meta', data_get($itemBrain, 'hook_meta', [])),
+                'overlay_settings' => (array) data_get($nextMeta, 'overlay_settings', []),
+                'content_structure_meta' => (array) data_get($nextMeta, 'content_structure_meta', data_get($itemBrain, 'content_structure_meta', [])),
+                'storyboard_meta' => (array) data_get($nextMeta, 'storyboard_meta', []),
+                'caption' => (string) ($item->ai_caption ?? ''),
+                'ai_cta' => (string) ($item->ai_cta ?? ''),
+                'video_generation' => (array) data_get($nextMeta, 'video_generation', []),
+                'video_duration_seconds_requested' => (int) data_get($nextMeta, 'requested_video_duration_seconds', 0),
+                'item' => [
+                    'platform' => (string) $item->platform,
+                    'format' => (string) $item->format,
+                    'title' => (string) ($item->title ?? ''),
+                ],
+            ]);
+            $nextMeta = array_replace_recursive($nextMeta, $this->contentOverlayEngine->toMetaFragment($overlayPack));
+            $itemBrain = array_replace_recursive($itemBrain, (array) data_get($nextMeta, 'item_brain', []));
 
             $item->ai_meta = $nextMeta;
             $item->save();
@@ -249,6 +364,8 @@ class GenerateBaseTextStep
                     'video_prompt_present' => trim((string) $generatedVideoPrompt) !== '',
                     'voiceover_present' => trim((string) $generatedVoiceover) !== '',
                     'reel_blueprint_present' => !empty($normalizedReelBlueprint),
+                    'storyboard_present' => !empty($storyboardPack),
+                    'storyboard_scene_count' => (int) data_get($storyboardPack, 'scene_count', 0),
                     'text_similarity_score' => round($bestScore, 4),
                     'text_alignment_score' => round($bestAlignmentScore, 4),
                 ],
@@ -318,6 +435,7 @@ class GenerateBaseTextStep
         }
 
         $state->meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $state->put('item_brain', (array) data_get($state->meta, 'item_brain', []));
 
         return $state;
     }

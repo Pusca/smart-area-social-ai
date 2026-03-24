@@ -40,6 +40,8 @@ class PersistGenerationOutputsStep
                 'status' => 'failed',
                 'effective_output' => $job->buildRunEffectiveOutput($item),
                 'result_summary' => $job->buildRunResultSummary($item),
+                'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
+                'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
                 'last_error' => (string) $item->ai_error,
                 'version_meta' => $job->generationVersionMeta(
                     is_array($item->ai_meta) ? $item->ai_meta : []
@@ -68,6 +70,8 @@ class PersistGenerationOutputsStep
             'status' => 'succeeded',
             'effective_output' => $job->buildRunEffectiveOutput($item),
             'result_summary' => $job->buildRunResultSummary($item),
+            'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
+            'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
             'version_meta' => $job->generationVersionMeta(
                 is_array($item->ai_meta) ? $item->ai_meta : []
             ),

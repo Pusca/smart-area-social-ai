@@ -17,9 +17,14 @@
         'story' => 'Story',
     ];
 
+    $tz = config('app.timezone', 'Europe/Rome');
+    $createPreset = ($createPreset ?? request()->query('preset', 'default'));
+    $createPreset = $createPreset === 'reel' ? 'reel' : 'default';
+    $isReelPreset = $createPreset === 'reel';
+
     $videoProviderOptions = [
         'openai' => 'Sora + GPT (OpenAI)',
-        'runway' => 'Runway',
+        'runway' => $isReelPreset ? 'Runway image-to-video' : 'Runway',
         'kling' => 'Kling (coerenza persona)',
     ];
     $imageProviderOptions = [
@@ -27,10 +32,6 @@
         'openai' => 'GPT Image (OpenAI)',
     ];
 
-    $tz = config('app.timezone', 'Europe/Rome');
-    $createPreset = ($createPreset ?? request()->query('preset', 'default'));
-    $createPreset = $createPreset === 'reel' ? 'reel' : 'default';
-    $isReelPreset = $createPreset === 'reel';
     $reelCreateUrl = route('posts.reels.create');
     $defaultPlatforms = old('platforms', $profile?->default_platforms ?? ['instagram']);
     if (!is_array($defaultPlatforms)) {
@@ -43,7 +44,7 @@
             ? (string) $profile->default_formats[0]
             : 'post'));
     $defaultVideoProvider = old('video_provider', $isReelPreset
-        ? 'openai'
+        ? 'runway'
         : (string) config('generation.video_provider_default', 'openai'));
     if (!array_key_exists($defaultVideoProvider, $videoProviderOptions)) {
         $defaultVideoProvider = 'openai';
@@ -52,6 +53,31 @@
     if (!array_key_exists($defaultImageProvider, $imageProviderOptions)) {
         $defaultImageProvider = 'nanobanana';
     }
+    $overlayPreferences = is_array($profile?->overlay_preferences ?? null) ? $profile->overlay_preferences : [];
+    $overlayFonts = (array) config('overlays.fonts', []);
+    $overlayPresets = (array) config('overlays.presets', []);
+    $overlayUi = (array) config('overlays.ui', []);
+    $overlayMode = old('overlay_mode', (bool) ($overlayPreferences['auto_enabled'] ?? true) ? 'auto' : 'off');
+    $overlayPreset = old('overlay_preset', (string) ($overlayPreferences['preset'] ?? 'modern_split_caption'));
+    $overlayFontFamily = old('overlay_font_family', (string) ($overlayPreferences['font_family'] ?? 'arial'));
+    $overlayFontFallback = old('overlay_font_fallback', (string) ($overlayPreferences['fallback_font_family'] ?? 'segoe_ui'));
+    $overlayFontPreset = (string) ($overlayPreferences['font_preset'] ?? $overlayPreferences['tone_preset'] ?? 'modern');
+    $brandHookIntensity = (string) ($overlayPreferences['preferred_hook_intensity'] ?? 'medium');
+    $brandTrendAppetite = (string) ($overlayPreferences['trend_appetite'] ?? 'medium');
+    $brandProfessionalismGuardrail = (string) ($overlayPreferences['professionalism_guardrail_level'] ?? 'high');
+    $overlayFontWeight = old('overlay_font_weight', '700');
+    $overlayFontSizeMode = old('overlay_font_size_mode', $isReelPreset ? 'xl' : 'large');
+    $overlayTextCase = old('overlay_text_case', 'sentence');
+    $overlayAlignment = old('overlay_alignment', 'left');
+    $overlayPosition = old('overlay_position', $isReelPreset ? 'upper_center' : 'upper_left');
+    $overlaySafeArea = old('overlay_safe_area', (string) ($overlayPreferences['safe_area'] ?? 'upper_third'));
+    $overlayMaxLines = (int) old('overlay_max_lines', $isReelPreset ? 2 : 3);
+    $overlayColor = old('overlay_color', '#FFFFFF');
+    $overlayStrokeColor = old('overlay_stroke_color', '#111827');
+    $overlayShadow = (bool) old('overlay_shadow', true);
+    $overlayBackgroundStyle = old('overlay_background_style', $isReelPreset ? 'dark_box' : 'gradient_strip');
+    $overlayAnimationStyle = old('overlay_animation_style', $isReelPreset ? 'pop' : 'fade');
+    $overlayCtaText = old('overlay_cta_text', '');
 
     $defaultSchedule = old('scheduled_at', now($tz)->addHour()->startOfHour()->format('Y-m-d\\TH:i'));
     $defaultVideoDurationSeconds = (int) old('video_duration_seconds_requested', $isReelPreset ? 20 : 0);
@@ -527,6 +553,183 @@
                     </div>
                 </div>
 
+                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Text overlays e typography</h2>
+                            <p class="mt-1 text-sm text-gray-600">Sistema brand-aware per hook su immagine/video, CTA finale e leggibilita mobile.</p>
+                        </div>
+                        <span class="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Mobile-first</span>
+                    </div>
+
+                    <div class="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Default brand attivi</p>
+                        <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-700">
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Font preset: {{ ucfirst($overlayFontPreset) }}</span>
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Trend appetite: {{ ucfirst($brandTrendAppetite) }}</span>
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Hook intensity: {{ ucfirst($brandHookIntensity) }}</span>
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Guardrail: {{ ucfirst($brandProfessionalismGuardrail) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <div>
+                            <label for="overlay_mode" class="mb-1 block text-sm font-semibold text-gray-700">Overlay</label>
+                            <select id="overlay_mode" name="overlay_mode" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['modes'] ?? ['auto', 'manual', 'off']) as $mode)
+                                    <option value="{{ $mode }}" @selected($overlayMode === $mode)>{{ ucfirst($mode) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_preset" class="mb-1 block text-sm font-semibold text-gray-700">Preset</label>
+                            <select id="overlay_preset" name="overlay_preset" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($overlayPresets as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayPreset === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_family" class="mb-1 block text-sm font-semibold text-gray-700">Font</label>
+                            <select id="overlay_font_family" name="overlay_font_family" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($overlayFonts as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayFontFamily === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_position" class="mb-1 block text-sm font-semibold text-gray-700">Posizione</label>
+                            <select id="overlay_position" name="overlay_position" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['positions'] ?? ['upper_left', 'upper_center', 'center_left', 'center', 'lower_left', 'lower_center']) as $position)
+                                    <option value="{{ $position }}" @selected($overlayPosition === $position)>{{ ucfirst(str_replace('_', ' ', $position)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label for="overlay_text" class="mb-1 block text-sm font-semibold text-gray-700">Testo primario</label>
+                            <input id="overlay_text" type="text" name="overlay_text" value="{{ old('overlay_text') }}" placeholder="Lascia vuoto per usare il hook automatico" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div class="sm:col-span-2 xl:col-span-3">
+                            <label for="overlay_secondary_text" class="mb-1 block text-sm font-semibold text-gray-700">Testo secondario</label>
+                            <input id="overlay_secondary_text" type="text" name="overlay_secondary_text" value="{{ old('overlay_secondary_text') }}" placeholder="Es. authority cue, payoff o micro-contesto" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div class="sm:col-span-2 xl:col-span-3">
+                            <label for="overlay_cta_text" class="mb-1 block text-sm font-semibold text-gray-700">CTA finale overlay</label>
+                            <input id="overlay_cta_text" type="text" name="overlay_cta_text" value="{{ $overlayCtaText }}" placeholder="Lascia vuoto per usare la CTA automatica del contenuto" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                    </div>
+
+                    <details class="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                        <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-gray-900">
+                            Opzioni avanzate typography
+                        </summary>
+                        <div class="border-t border-gray-100 p-4">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                            <label for="overlay_font_fallback" class="mb-1 block text-sm font-semibold text-gray-700">Fallback font</label>
+                            <select id="overlay_font_fallback" name="overlay_font_fallback" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($overlayFonts as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayFontFallback === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_weight" class="mb-1 block text-sm font-semibold text-gray-700">Peso</label>
+                            <select id="overlay_font_weight" name="overlay_font_weight" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['font_weights'] ?? ['400', '500', '600', '700', '800']) as $weight)
+                                    <option value="{{ $weight }}" @selected($overlayFontWeight === $weight)>{{ $weight }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_size_mode" class="mb-1 block text-sm font-semibold text-gray-700">Size mode</label>
+                            <select id="overlay_font_size_mode" name="overlay_font_size_mode" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['font_size_modes'] ?? ['small', 'medium', 'large', 'xl']) as $sizeMode)
+                                    <option value="{{ $sizeMode }}" @selected($overlayFontSizeMode === $sizeMode)>{{ ucfirst($sizeMode) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_text_case" class="mb-1 block text-sm font-semibold text-gray-700">Text case</label>
+                            <select id="overlay_text_case" name="overlay_text_case" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['text_cases'] ?? ['sentence', 'title', 'uppercase']) as $case)
+                                    <option value="{{ $case }}" @selected($overlayTextCase === $case)>{{ ucfirst($case) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_max_lines" class="mb-1 block text-sm font-semibold text-gray-700">Max lines</label>
+                            <input id="overlay_max_lines" type="number" min="1" max="4" name="overlay_max_lines" value="{{ $overlayMaxLines }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label for="overlay_alignment" class="mb-1 block text-sm font-semibold text-gray-700">Alignment</label>
+                            <select id="overlay_alignment" name="overlay_alignment" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['alignments'] ?? ['left', 'center', 'right']) as $alignment)
+                                    <option value="{{ $alignment }}" @selected($overlayAlignment === $alignment)>{{ ucfirst($alignment) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_safe_area" class="mb-1 block text-sm font-semibold text-gray-700">Safe area</label>
+                            <select id="overlay_safe_area" name="overlay_safe_area" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['safe_areas'] ?? ['upper_third', 'center_safe', 'lower_third']) as $safeArea)
+                                    <option value="{{ $safeArea }}" @selected($overlaySafeArea === $safeArea)>{{ ucfirst(str_replace('_', ' ', $safeArea)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_background_style" class="mb-1 block text-sm font-semibold text-gray-700">Background</label>
+                            <select id="overlay_background_style" name="overlay_background_style" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['background_styles'] ?? ['none', 'dark_box', 'light_box', 'gradient_strip']) as $background)
+                                    <option value="{{ $background }}" @selected($overlayBackgroundStyle === $background)>{{ ucfirst(str_replace('_', ' ', $background)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_animation_style" class="mb-1 block text-sm font-semibold text-gray-700">Animazione</label>
+                            <select id="overlay_animation_style" name="overlay_animation_style" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['animation_styles'] ?? ['none', 'fade', 'pop', 'slide_up']) as $animation)
+                                    <option value="{{ $animation }}" @selected($overlayAnimationStyle === $animation)>{{ ucfirst(str_replace('_', ' ', $animation)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_color" class="mb-1 block text-sm font-semibold text-gray-700">Color</label>
+                            <input id="overlay_color" type="text" name="overlay_color" value="{{ $overlayColor }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label for="overlay_stroke_color" class="mb-1 block text-sm font-semibold text-gray-700">Stroke</label>
+                            <input id="overlay_stroke_color" type="text" name="overlay_stroke_color" value="{{ $overlayStrokeColor }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-semibold text-gray-700">Shadow</label>
+                            <label class="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700">
+                                <input type="hidden" name="overlay_shadow" value="0">
+                                <input type="checkbox" name="overlay_shadow" value="1" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @checked($overlayShadow) />
+                                Attivo
+                            </label>
+                        </div>
+                        <div>
+                            <label for="overlay_timing_start_ms" class="mb-1 block text-sm font-semibold text-gray-700">Start ms</label>
+                            <input id="overlay_timing_start_ms" type="number" min="0" max="300000" name="overlay_timing_start_ms" value="{{ old('overlay_timing_start_ms', 0) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                    <div>
+                            <label for="overlay_timing_end_ms" class="mb-1 block text-sm font-semibold text-gray-700">End ms</label>
+                            <input id="overlay_timing_end_ms" type="number" min="0" max="300000" name="overlay_timing_end_ms" value="{{ old('overlay_timing_end_ms', 0) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div class="sm:col-span-2 xl:col-span-2">
+                            <label for="overlay_emphasis_words" class="mb-1 block text-sm font-semibold text-gray-700">Emphasis words</label>
+                            <input id="overlay_emphasis_words" type="text" name="overlay_emphasis_words" value="{{ old('overlay_emphasis_words') }}" placeholder="Es. strategia, metodo, risultato" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                    </div>
+                        </div>
+                    </details>
+
+                    <p class="mt-3 text-xs text-gray-500">
+                        In `auto` il sistema prende hook e CTA dal blueprint strategico. In `manual` usa questi override mantenendo preset, font e safe area brand-aware.
+                    </p>
+                </div>
+
                 <div class="flex flex-wrap items-center justify-end gap-2">
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Annulla
@@ -763,4 +966,3 @@
     })();
 </script>
 @endsection
-

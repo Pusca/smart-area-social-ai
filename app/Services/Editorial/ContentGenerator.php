@@ -4,6 +4,8 @@ namespace App\Services\Editorial;
 
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
+use App\Services\AI\ContentAngleEngine;
+use App\Services\Overlays\ContentOverlayEngine;
 use App\Support\ImageProviderResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +14,9 @@ use Illuminate\Support\Str;
 class ContentGenerator
 {
     public function __construct(
-        private readonly DuplicateContentGuard $duplicateGuard
+        private readonly DuplicateContentGuard $duplicateGuard,
+        private readonly ContentAngleEngine $contentAngleEngine,
+        private readonly ContentOverlayEngine $contentOverlayEngine
     ) {
     }
 
@@ -66,6 +70,33 @@ class ContentGenerator
                 $fingerprint = $resolved['fingerprint'];
                 $similarityGroup = $resolved['similarity_group'];
                 $inMemoryFingerprints[$fingerprint] = true;
+                $strategicPayload = $this->enrichPayloadWithContentStrategy(
+                    plan: $plan,
+                    payload: (array) $resolved['payload'],
+                    strategy: $strategy,
+                    profileData: $profileData
+                );
+                $contentStrategyMeta = $this->buildContentStrategyMeta(
+                    plan: $plan,
+                    payload: $strategicPayload,
+                    strategy: $strategy,
+                    profileData: $profileData
+                );
+                $overlayPack = $this->contentOverlayEngine->build([
+                    'platform' => (string) ($item['platform'] ?? 'instagram'),
+                    'format' => (string) ($item['format'] ?? 'post'),
+                    'tenant_profile' => $profileData,
+                    'strategy' => $strategy,
+                    'item_brain' => $strategicPayload,
+                    'hook_meta' => (array) data_get($contentStrategyMeta, 'hook_meta', data_get($contentStrategyMeta, 'item_brain.hook_meta', [])),
+                    'overlay_settings' => [
+                        'mode' => 'auto',
+                        'preset' => (string) data_get($profileData, 'overlay_preferences.preset', 'modern_split_caption'),
+                    ],
+                    'caption' => (string) ($strategicPayload['content_angle'] ?? ''),
+                    'ai_cta' => (string) ($strategicPayload['primary_cta'] ?? ''),
+                ]);
+                $overlayMeta = $this->contentOverlayEngine->toMetaFragment($overlayPack);
 
                 $scheduledAt = !empty($item['scheduled_at'])
                     ? Carbon::parse((string) $item['scheduled_at'])
@@ -83,24 +114,24 @@ class ContentGenerator
                     'caption' => null,
                     'hashtags' => [],
                     'assets' => [],
-                    'rubric' => (string) ($resolved['payload']['rubric'] ?? ''),
-                    'series_key' => data_get($resolved['payload'], 'series_key'),
-                    'episode_number' => data_get($resolved['payload'], 'episode_number'),
-                    'pillar' => (string) ($resolved['payload']['pillar'] ?? ''),
-                    'content_angle' => (string) ($resolved['payload']['content_angle'] ?? ''),
+                    'rubric' => (string) ($strategicPayload['rubric'] ?? ''),
+                    'series_key' => data_get($strategicPayload, 'series_key'),
+                    'episode_number' => data_get($strategicPayload, 'episode_number'),
+                    'pillar' => (string) ($strategicPayload['pillar'] ?? ''),
+                    'content_angle' => (string) ($strategicPayload['content_angle'] ?? ''),
                     'fingerprint' => $fingerprint,
                     'similarity_group' => $similarityGroup,
                     'source_refs' => array_merge(
-                        (array) ($resolved['payload']['source_refs'] ?? []),
-                        $this->buildSourceRefsFromAssetVariables((array) ($resolved['payload']['asset_variable_refs'] ?? []))
+                        (array) ($strategicPayload['source_refs'] ?? []),
+                        $this->buildSourceRefsFromAssetVariables((array) ($strategicPayload['asset_variable_refs'] ?? []))
                     ),
                     'ai_status' => 'queued',
-                    'ai_meta' => [
+                    'ai_meta' => array_replace_recursive($contentStrategyMeta, $overlayMeta, [
                         'image_provider' => ImageProviderResolver::default(),
                         'tenant_profile' => $profileData,
                         'brand_assets' => $assets,
                         'asset_variables_catalog' => $assetVariables,
-                        'asset_variables' => $this->buildAssetVariableMeta((array) ($resolved['payload']['asset_variable_refs'] ?? [])),
+                        'asset_variables' => $this->buildAssetVariableMeta((array) ($strategicPayload['asset_variable_refs'] ?? [])),
                         'plan' => [
                             'goal' => data_get($plan->settings, 'goal'),
                             'tone' => data_get($plan->settings, 'tone'),
@@ -119,28 +150,65 @@ class ContentGenerator
                             'analysis_framework' => data_get($strategy, 'analysis_framework', []),
                             'visual_system' => data_get($strategy, 'visual_system', []),
                             'publishing_system' => data_get($strategy, 'publishing_system', []),
+                            'creative_direction' => data_get($strategy, 'creative_direction', []),
+                            'trend_intelligence' => data_get($strategy, 'trend_intelligence', []),
                             'strategy_notes' => data_get($strategy, 'strategy_notes', ''),
                             'strategy_locked' => (bool) data_get($strategy, 'strategy_locked', false),
                             'strategy_id' => data_get($strategy, 'strategy_id'),
                             'strategy_updated_at' => data_get($strategy, 'strategy_updated_at'),
                             'brand_references' => data_get($strategy, 'brand_references', []),
                         ],
+                        'overlay_settings' => [
+                            'mode' => 'auto',
+                            'preset' => (string) data_get($profileData, 'overlay_preferences.preset', 'modern_split_caption'),
+                        ],
                         'item_brain' => [
-                            'rubric' => (string) ($resolved['payload']['rubric'] ?? ''),
-                            'pillar' => (string) ($resolved['payload']['pillar'] ?? ''),
-                            'angle' => (string) ($resolved['payload']['content_angle'] ?? ''),
-                            'objective' => (string) ($resolved['payload']['objective'] ?? 'Awareness'),
-                            'key_points' => (array) ($resolved['payload']['key_points'] ?? []),
-                            'cta' => (string) ($resolved['payload']['primary_cta'] ?? ''),
-                            'image_direction' => (string) ($resolved['payload']['image_direction'] ?? ''),
-                            'feedback_guidance' => (array) ($resolved['payload']['feedback_guidance'] ?? []),
-                            'series_name' => (string) ($resolved['payload']['series_key'] ?? ''),
-                            'series_step' => $resolved['payload']['episode_number'] ?? null,
+                            'rubric' => (string) ($strategicPayload['rubric'] ?? ''),
+                            'pillar' => (string) ($strategicPayload['pillar'] ?? ''),
+                            'angle' => (string) ($strategicPayload['content_angle'] ?? ''),
+                            'objective' => (string) ($strategicPayload['objective'] ?? 'Awareness'),
+                            'key_points' => (array) ($strategicPayload['key_points'] ?? []),
+                            'cta' => (string) ($strategicPayload['primary_cta'] ?? ''),
+                            'image_direction' => (string) ($strategicPayload['image_direction'] ?? ''),
+                            'feedback_guidance' => (array) ($strategicPayload['feedback_guidance'] ?? []),
+                            'professional_brief' => (string) ($strategicPayload['professional_brief'] ?? ''),
+                            'editorial_mode' => (string) ($strategicPayload['editorial_mode'] ?? 'evergreen'),
+                            'viral_hook_style' => (string) ($strategicPayload['viral_hook_style'] ?? ''),
+                            'hook_style' => (string) ($strategicPayload['hook_style'] ?? ''),
+                            'shareability_driver' => (string) ($strategicPayload['shareability_driver'] ?? ''),
+                            'viral_angle' => (string) ($strategicPayload['viral_angle'] ?? ''),
+                            'viral_angle_meta' => (array) ($strategicPayload['viral_angle_meta'] ?? []),
+                            'trend_bridge' => (string) ($strategicPayload['trend_bridge'] ?? ''),
+                            'trend_usage_mode' => (string) ($strategicPayload['trend_usage_mode'] ?? 'none'),
+                            'trend_confidence' => $strategicPayload['trend_confidence'] ?? null,
+                            'trend_opportunity_id' => $strategicPayload['trend_opportunity_id'] ?? null,
+                            'platform_native_format_suggestion' => (string) ($strategicPayload['platform_native_format_suggestion'] ?? ''),
+                            'professionality_guardrails' => (array) ($strategicPayload['professionality_guardrails'] ?? []),
+                            'trend_basis' => (array) ($strategicPayload['trend_basis'] ?? []),
+                            'reason_why_now' => (string) ($strategicPayload['reason_why_now'] ?? ''),
+                            'reason_why_brand_fit' => (string) ($strategicPayload['reason_why_brand_fit'] ?? ''),
+                            'expected_engagement_goal' => (string) ($strategicPayload['expected_engagement_goal'] ?? ''),
+                            'trend_guardrails' => (array) ($strategicPayload['trend_guardrails'] ?? []),
+                            'trend_hook_patterns' => (array) ($strategicPayload['trend_hook_patterns'] ?? []),
+                            'trend_platform_hint' => (string) ($strategicPayload['trend_platform_hint'] ?? ''),
+                            'trend_scores' => (array) ($strategicPayload['trend_scores'] ?? []),
+                            'trend_opportunity' => (array) ($strategicPayload['trend_opportunity'] ?? []),
+                            'overlay_brief' => (string) ($overlayPack['overlay_brief'] ?? ($strategicPayload['overlay_brief'] ?? '')),
+                            'overlay_meta' => $overlayPack,
+                            'continuity_brief' => (string) ($strategicPayload['continuity_brief'] ?? ''),
+                            'content_strategy_type' => (string) ($strategicPayload['content_strategy_type'] ?? ''),
+                            'narrative_angle' => (string) ($strategicPayload['narrative_angle'] ?? ''),
+                            'hook_meta' => (array) ($strategicPayload['hook_meta'] ?? []),
+                            'authority_signals' => (array) ($strategicPayload['authority_signals'] ?? []),
+                            'trust_signals' => (array) ($strategicPayload['trust_signals'] ?? []),
+                            'content_structure_meta' => (array) ($strategicPayload['content_structure_meta'] ?? []),
+                            'series_name' => (string) ($strategicPayload['series_key'] ?? ''),
+                            'series_step' => $strategicPayload['episode_number'] ?? null,
                             'standalone_rule' => 'Il contenuto deve essere completo anche se letto singolarmente.',
                             'connection_hint' => $resolved['connection_hint'],
                             'uniqueness_key' => $fingerprint,
                         ],
-                    ],
+                    ]),
                 ]);
 
                 $created[] = $record;
@@ -367,6 +435,76 @@ class ContentGenerator
             'resolved' => $resolved,
             'recognized_terms' => $terms,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $strategy
+     * @param  array<string, mixed>  $profileData
+     * @return array<string, mixed>
+     */
+    private function enrichPayloadWithContentStrategy(
+        ContentPlan $plan,
+        array $payload,
+        array $strategy,
+        array $profileData
+    ): array {
+        $pack = $this->contentAngleEngine->build([
+            'platform' => (string) ($payload['platform'] ?? 'instagram'),
+            'format' => (string) ($payload['format'] ?? 'post'),
+            'goal' => (string) ($payload['objective'] ?? data_get($plan->settings, 'goal', data_get($strategy, 'analysis_framework.primary_goal', 'Awareness'))),
+            'audience' => (string) data_get($profileData, 'target', data_get($strategy, 'brand_voice.target', '')),
+            'industry' => (string) data_get($profileData, 'industry', data_get($strategy, 'brand_voice.industry', '')),
+            'topic' => (string) ($payload['content_angle'] ?? $payload['pillar'] ?? ''),
+            'rubric' => (string) ($payload['rubric'] ?? ''),
+            'editorial_mode' => (string) ($payload['editorial_mode'] ?? 'evergreen'),
+            'trend_confidence' => $payload['trend_confidence'] ?? null,
+            'trend_opportunity' => (array) ($payload['trend_opportunity'] ?? []),
+            'tenant_profile' => $profileData,
+            'strategy' => $strategy,
+            'item_brain' => $payload,
+            'plan' => [
+                'goal' => data_get($plan->settings, 'goal'),
+                'tone' => data_get($plan->settings, 'tone'),
+            ],
+        ]);
+
+        return array_replace_recursive($payload, $this->contentAngleEngine->toPlanPayloadFragment($pack));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $strategy
+     * @param  array<string, mixed>  $profileData
+     * @return array<string, mixed>
+     */
+    private function buildContentStrategyMeta(
+        ContentPlan $plan,
+        array $payload,
+        array $strategy,
+        array $profileData
+    ): array {
+        $pack = $this->contentAngleEngine->build([
+            'platform' => (string) ($payload['platform'] ?? 'instagram'),
+            'format' => (string) ($payload['format'] ?? 'post'),
+            'goal' => (string) ($payload['objective'] ?? data_get($plan->settings, 'goal', data_get($strategy, 'analysis_framework.primary_goal', 'Awareness'))),
+            'audience' => (string) data_get($profileData, 'target', data_get($strategy, 'brand_voice.target', '')),
+            'industry' => (string) data_get($profileData, 'industry', data_get($strategy, 'brand_voice.industry', '')),
+            'topic' => (string) ($payload['narrative_angle'] ?? $payload['content_angle'] ?? $payload['pillar'] ?? ''),
+            'rubric' => (string) ($payload['rubric'] ?? ''),
+            'editorial_mode' => (string) ($payload['editorial_mode'] ?? 'evergreen'),
+            'trend_confidence' => $payload['trend_confidence'] ?? null,
+            'trend_opportunity' => (array) ($payload['trend_opportunity'] ?? []),
+            'tenant_profile' => $profileData,
+            'strategy' => $strategy,
+            'item_brain' => $payload,
+            'plan' => [
+                'goal' => data_get($plan->settings, 'goal'),
+                'tone' => data_get($plan->settings, 'tone'),
+            ],
+        ]);
+
+        return $this->contentAngleEngine->toMetaFragment($pack);
     }
 }
 

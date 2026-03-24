@@ -33,8 +33,9 @@ class GenerationVersionRegistryTest extends TestCase
         );
 
         $this->assertSame('generation_pipeline_v1', $versionMap['pipeline_version']);
-        $this->assertSame('legacy_inline_prompts_v1', $versionMap['prompt_template_version']);
+        $this->assertSame('professional_content_strategy_prompt_v1', $versionMap['prompt_template_version']);
         $this->assertSame('editorial_strategy_compose_v1', $versionMap['strategy_composer_version']);
+        $this->assertSame('content_angle_engine_v1', $versionMap['content_strategy_engine_version']);
         $this->assertSame('tenant_feedback_memory_v1', $versionMap['feedback_synthesis_version']);
         $this->assertSame(GenerateAiForContentItem::class, $versionMap['job_class']);
         $this->assertSame('runway', data_get($versionMap, 'provider_adapter_versions.video.provider'));

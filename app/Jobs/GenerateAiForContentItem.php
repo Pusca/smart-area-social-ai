@@ -115,6 +115,8 @@ class GenerateAiForContentItem implements ShouldQueue
                 'status' => 'succeeded',
                 'effective_output' => $this->buildRunEffectiveOutput($item),
                 'result_summary' => $this->buildRunResultSummary($item),
+                'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
+                'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
                 'version_meta' => $this->generationVersionMeta(
                     is_array($item->ai_meta) ? $item->ai_meta : []
                 ),
@@ -163,6 +165,8 @@ class GenerateAiForContentItem implements ShouldQueue
             [
                 'effective_output' => $this->buildRunEffectiveOutput($item),
                 'result_summary' => $this->buildRunResultSummary($item),
+                'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
+                'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
                 'last_error' => (string) $item->ai_error,
                 'version_meta' => $this->generationVersionMeta(
                     is_array($item->ai_meta) ? $item->ai_meta : []
@@ -228,6 +232,9 @@ class GenerateAiForContentItem implements ShouldQueue
             'video_provider_lock' => (bool) data_get($meta, 'video_provider_lock', false),
             'image_provider' => (string) data_get($meta, 'image_provider', ''),
             'requested_video_seconds' => (int) data_get($meta, 'video_duration_seconds_requested', 0),
+            'overlay_mode' => (string) data_get($meta, 'overlay_settings.mode', data_get($meta, 'overlay_meta.mode', 'auto')),
+            'overlay_preset' => (string) data_get($meta, 'overlay_settings.preset', data_get($meta, 'overlay_meta.preset.key', '')),
+            'asset_selection' => $this->buildAssetSelectionAuditSummary($meta, true),
         ];
     }
 
@@ -247,6 +254,12 @@ class GenerateAiForContentItem implements ShouldQueue
             'target_total_seconds' => (int) data_get($meta, 'video_generation.target_total_seconds', 0),
             'segment_count' => (int) data_get($meta, 'video_generation.segment_count', 0),
             'audio_applied' => (bool) data_get($meta, 'video_generation.audio.applied', false),
+            'overlay_enabled' => (string) data_get($meta, 'overlay_meta.mode', 'auto') !== 'off',
+            'overlay_render_applied' => (bool) data_get($meta, 'overlay_meta.rendering.applied', false),
+            'overlay_render_output_path' => (string) data_get($meta, 'overlay_meta.rendering.output_path', ''),
+            'storyboard_scene_count' => (int) data_get($meta, 'storyboard_meta.scene_count', 0),
+            'storyboard_hook_scene_present' => (bool) data_get($meta, 'storyboard_meta.hook_scene_present', false),
+            'storyboard_cta_scene_present' => (bool) data_get($meta, 'storyboard_meta.cta_scene_present', false),
         ];
     }
 
@@ -261,7 +274,41 @@ class GenerateAiForContentItem implements ShouldQueue
             'image_path_present' => trim((string) ($item->ai_image_path ?? '')) !== '',
             'video_path_present' => trim((string) data_get($meta, 'video_generation.video_path', '')) !== '',
             'visual_provider_last_used' => $this->resolveVisualProviderLastUsed($item),
+            'overlay_mode' => (string) data_get($meta, 'overlay_meta.mode', ''),
+            'overlay_render_applied' => (bool) data_get($meta, 'overlay_meta.rendering.applied', false),
+            'overlay_readability_score' => data_get($meta, 'overlay_meta.readability.overall_score'),
+            'storyboard_scene_count' => (int) data_get($meta, 'storyboard_meta.scene_count', 0),
+            'storyboard_hook_scene_present' => (bool) data_get($meta, 'storyboard_meta.hook_scene_present', false),
+            'storyboard_cta_scene_present' => (bool) data_get($meta, 'storyboard_meta.cta_scene_present', false),
+            'asset_selection' => $this->buildAssetSelectionAuditSummary($meta, true),
         ];
+    }
+
+    public function buildAssetSelectionAuditSummary(array $meta, bool $includeRanking = false): array
+    {
+        $scoring = (array) data_get($meta, 'asset_scoring', []);
+        if ($scoring === []) {
+            return [];
+        }
+
+        $summary = [
+            'version' => (string) data_get($scoring, 'version', 'asset_scoring_engine_v1'),
+            'selection_area' => (string) data_get($scoring, 'selection_area', ''),
+            'provider' => (string) data_get($scoring, 'provider', ''),
+            'primary_asset' => data_get($scoring, 'primary_asset'),
+            'supporting_assets' => array_slice((array) data_get($scoring, 'supporting_assets', []), 0, 4),
+            'excluded_assets' => array_slice((array) data_get($scoring, 'excluded_assets', []), 0, 6),
+            'fallback_assets' => array_slice((array) data_get($scoring, 'fallback_assets', []), 0, 4),
+            'reference_paths' => array_values(array_filter(array_map('strval', (array) data_get($scoring, 'reference_paths', [])))),
+            'identity_confidence' => (float) data_get($scoring, 'identity_confidence', 0.0),
+            'selection_summary' => (array) data_get($scoring, 'selection_summary', []),
+        ];
+
+        if ($includeRanking) {
+            $summary['asset_ranking'] = array_slice((array) data_get($scoring, 'asset_ranking', []), 0, 12);
+        }
+
+        return $summary;
     }
 
     public function buildVisualAttemptOutputSummary(ContentItem $item): array
@@ -278,6 +325,8 @@ class GenerateAiForContentItem implements ShouldQueue
                 'segment_count' => (int) data_get($meta, 'video_generation.segment_count', 0),
                 'generation_attempts' => (int) data_get($meta, 'video_generation.generation_attempts', 0),
                 'audio_applied' => (bool) data_get($meta, 'video_generation.audio.applied', false),
+                'storyboard_scene_count' => (int) data_get($meta, 'storyboard_meta.scene_count', 0),
+                'asset_selection' => $this->buildAssetSelectionAuditSummary($meta, false),
             ];
         }
 
@@ -288,6 +337,7 @@ class GenerateAiForContentItem implements ShouldQueue
             'image_path_present' => trim((string) ($item->ai_image_path ?? '')) !== '',
             'fallback' => (string) data_get($meta, 'image_generation.fallback', data_get($meta, 'image_fallback', '')),
             'logo_overlay_applied' => (bool) data_get($meta, 'image_generation.logo_overlay.applied', false),
+            'asset_selection' => $this->buildAssetSelectionAuditSummary($meta, false),
         ];
     }
 
@@ -346,6 +396,7 @@ class GenerateAiForContentItem implements ShouldQueue
                     array_map('strval', (array) data_get($meta, 'video_generation.reference_paths', [])),
                     fn ($path) => $path !== ''
                 )),
+                'asset_selection_ranking' => array_slice((array) data_get($meta, 'asset_scoring.asset_ranking', []), 0, 12),
             ];
         }
 
@@ -355,6 +406,7 @@ class GenerateAiForContentItem implements ShouldQueue
                 array_map('strval', (array) data_get($meta, 'image_generation.brand_source_paths', [])),
                 fn ($path) => $path !== ''
             )),
+            'asset_selection_ranking' => array_slice((array) data_get($meta, 'asset_scoring.asset_ranking', []), 0, 12),
         ];
     }
 
@@ -517,21 +569,21 @@ class GenerateAiForContentItem implements ShouldQueue
         $presets = [
             [
                 'title' => 'Prezzi dinamici senza stress',
-                'caption' => "Uno degli errori piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ comuni negli affitti brevi ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ margine e meno camere ferme.",
+                'caption' => "Uno degli errori piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ comuni negli affitti brevi ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ aggiornare i prezzi solo a mano. {$brand} automatizza tariffe e disponibilitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  in base alla domanda reale, eventi locali e storico prenotazioni. Risultato: piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ margine e meno camere ferme.",
                 'hashtags' => ['#Hostup', '#AffittiBrevi', '#RevenueManagement', '#PropertyManagement', '#Automazione'],
                 'cta' => "Vuoi vedere il flusso completo in azione? {$ctaDefault}",
                 'image_prompt' => "Dashboard moderna di revenue management per affitti brevi, stile pulito tech, palette brand, scena realistica senza testo.",
             ],
             [
                 'title' => 'Canali OTA allineati in tempo reale',
-                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â , restrizioni e regole vengono aggiornate automaticamente.",
+                'caption' => "Sincronizzare manualmente Booking, Airbnb e sito diretto crea overbooking e perdita di tempo. Con {$brand} il calendario resta coerente su tutti i canali: disponibilitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â , restrizioni e regole vengono aggiornate automaticamente.",
                 'hashtags' => ['#Hostup', '#ChannelManager', '#AirbnbHost', '#BookingCom', '#ShortTermRental'],
                 'cta' => "Se vuoi, ti mostriamo in 10 minuti come configurarlo sul tuo portfolio.",
                 'image_prompt' => "Interfaccia channel manager multi-canale con card OTA, look future-tech, senza watermark e senza testo.",
             ],
             [
-                'title' => 'Meno operativitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â , piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ controllo',
-                'caption' => "La gestione efficace non ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  del servizio.",
+                'title' => 'Meno operativitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â , piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ controllo',
+                'caption' => "La gestione efficace non ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ fare tutto a mano, ma avere regole chiare e automazioni affidabili. {$brand} riduce attivitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  ripetitive e ti lascia tempo per decisioni strategiche: occupazione, pricing e qualitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  del servizio.",
                 'hashtags' => ['#Hostup', '#HospitalityTech', '#AffittiBreviItalia', '#Automation', '#SmartOperations'],
                 'cta' => "Scrivici e prepariamo un setup pilota sui tuoi annunci.",
                 'image_prompt' => "Team operativo hospitality che monitora KPI su schermo, stile professionale, luci soft, no testo sovraimpresso.",
@@ -545,14 +597,14 @@ class GenerateAiForContentItem implements ShouldQueue
             ],
             [
                 'title' => 'Template operativi pronti',
-                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  costante.",
-                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â ', '#DigitalHospitality'],
+                'caption' => "Standardizzare i processi fa la differenza quando il numero di annunci cresce. {$brand} applica template e regole ripetibili per velocizzare operazioni quotidiane e mantenere qualitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  costante.",
+                'hashtags' => ['#Hostup', '#Processi', '#PropertyOps', '#ScalabilitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ', '#DigitalHospitality'],
                 'cta' => "Vuoi una checklist pronta per partire? Te la condividiamo.",
                 'image_prompt' => "Vista workflow operativo per property management, cards ordinate e look minimal futuristico.",
             ],
             [
                 'title' => 'Setup rapido per team piccoli',
-                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¹ controllo centralizzato. {$brand} organizza attivitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â , prioritÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  e pubblicazione contenuti in un unico flusso chiaro.",
+                'caption' => "Anche con un team ridotto puoi gestire in modo professionale: meno tool scollegati, piÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ controllo centralizzato. {$brand} organizza attivitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â , prioritÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  e pubblicazione contenuti in un unico flusso chiaro.",
                 'hashtags' => ['#Hostup', '#TeamProduttivo', '#Workflow', '#SmartTools', '#BusinessGrowth'],
                 'cta' => "Prenota una prova: impostiamo insieme il primo piano operativo.",
                 'image_prompt' => "Scrivania moderna con laptop e pannello operativo, mood tech pulito, nessun testo visibile.",
@@ -1652,10 +1704,14 @@ SVG;
         $blueprint = is_array(data_get($meta, 'reel_blueprint', []))
             ? (array) data_get($meta, 'reel_blueprint', [])
             : [];
+        $storyboard = is_array(data_get($meta, 'storyboard_meta', []))
+            ? (array) data_get($meta, 'storyboard_meta', [])
+            : [];
         $hook = trim((string) ($blueprint['hook'] ?? ''));
         $continuityLock = trim((string) ($blueprint['continuity_lock'] ?? ''));
         $visualPayoff = trim((string) ($blueprint['visual_payoff'] ?? ''));
         $shotChunks = $this->chunkReelBlueprintShots((array) ($blueprint['shots'] ?? []), $segmentCount);
+        $sceneChunks = $this->chunkStoryboardScenes((array) data_get($storyboard, 'scene_list', []), $segmentCount);
         $limit = $this->videoPromptCharLimitForProvider($provider);
         $prompts = [];
 
@@ -1684,6 +1740,11 @@ SVG;
                 $parts[] = "Continuity lock: {$continuityLock}.";
             }
 
+            $sceneSummary = $this->summarizeStoryboardSceneChunk($sceneChunks[$index] ?? []);
+            if ($sceneSummary !== '') {
+                $parts[] = "Scene plan for this segment: {$sceneSummary}.";
+            }
+
             $shotSummary = $this->summarizeReelShotChunk($shotChunks[$index] ?? []);
             if ($shotSummary !== '') {
                 $parts[] = "Shot focus for this segment: {$shotSummary}.";
@@ -1710,6 +1771,41 @@ SVG;
     }
 
     /**
+     * @param  array<string, mixed>  $storyboard
+     * @return array<string, mixed>|null
+     */
+    public function compactStoryboardSummary(array $storyboard): ?array
+    {
+        if (empty((array) ($storyboard['scene_list'] ?? []))) {
+            return null;
+        }
+
+        $scenes = collect((array) ($storyboard['scene_list'] ?? []))
+            ->filter(fn ($scene) => is_array($scene))
+            ->map(function (array $scene): array {
+                return [
+                    'scene_index' => (int) ($scene['scene_index'] ?? 0),
+                    'scene_type' => Str::limit(trim((string) ($scene['scene_type'] ?? '')), 24, ''),
+                    'duration_target' => (int) ($scene['duration_target'] ?? 0),
+                    'overlay_safe_area' => (string) data_get($scene, 'text_overlay.safe_area', ''),
+                    'cta_role' => (string) ($scene['cta_role'] ?? $scene['CTA_role'] ?? ''),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'version' => (string) ($storyboard['version'] ?? ''),
+            'scene_count' => count($scenes),
+            'total_duration_ms' => (int) ($storyboard['total_duration_ms'] ?? 0),
+            'hook_scene_present' => (bool) ($storyboard['hook_scene_present'] ?? false),
+            'cta_scene_present' => (bool) ($storyboard['cta_scene_present'] ?? false),
+            'identity_first' => (bool) ($storyboard['identity_first'] ?? false),
+            'scenes' => $scenes,
+        ];
+    }
+
+    /**
      * @param  array<int, mixed>  $shots
      * @return array<int, array<int, array<string, mixed>>>
      */
@@ -1726,6 +1822,28 @@ SVG;
 
         for ($index = 0; $index < $segmentCount; $index++) {
             $chunks[] = array_slice($shots, $index * $chunkSize, $chunkSize);
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * @param  array<int, mixed>  $scenes
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    public function chunkStoryboardScenes(array $scenes, int $segmentCount): array
+    {
+        $scenes = array_values(array_filter($scenes, fn ($scene) => is_array($scene)));
+        if (empty($scenes)) {
+            return array_fill(0, max(2, $segmentCount), []);
+        }
+
+        $segmentCount = max(2, $segmentCount);
+        $chunkSize = (int) ceil(count($scenes) / $segmentCount);
+        $chunks = [];
+
+        for ($index = 0; $index < $segmentCount; $index++) {
+            $chunks[] = array_slice($scenes, $index * $chunkSize, $chunkSize);
         }
 
         return $chunks;
@@ -1751,6 +1869,35 @@ SVG;
                 trim((string) ($shot['subject'] ?? '')),
                 trim((string) ($shot['camera'] ?? '')),
                 trim((string) ($shot['motion'] ?? '')),
+            ])));
+
+            if ($summary !== '') {
+                $parts[] = $summary;
+            }
+        }
+
+        return Str::limit(implode(' | ', $parts), 420, '');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $scenes
+     */
+    public function summarizeStoryboardSceneChunk(array $scenes): string
+    {
+        if (empty($scenes)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($scenes as $scene) {
+            if (!is_array($scene)) {
+                continue;
+            }
+
+            $summary = implode(', ', array_values(array_filter([
+                trim((string) ($scene['scene_type'] ?? '')),
+                trim((string) ($scene['shot_objective'] ?? '')),
+                trim((string) data_get($scene, 'text_overlay.safe_area', '')),
             ])));
 
             if ($summary !== '') {
@@ -1825,6 +1972,7 @@ SVG;
             'kling' => $klingExecutionPrompt,
             default => $openAiExecutionPrompt,
         };
+        $storyboardChunks = $this->chunkStoryboardScenes((array) data_get($meta, 'storyboard_meta.scene_list', []), count($segmentDurations));
         $segmentPrompts = $this->buildExtendedVideoSegmentPrompts(
             provider: $videoProvider,
             item: $item,
@@ -1953,6 +2101,10 @@ SVG;
                 'video_path' => $segmentVideoPath,
                 'thumbnail_path' => trim((string) ($segmentResult['thumbnail_path'] ?? '')),
                 'reference_reason' => trim((string) ($segmentResult['reference_reason'] ?? $segmentReferenceReason)),
+                'storyboard_scene_indexes' => array_values(array_filter(array_map(
+                    fn ($scene) => is_array($scene) ? (int) ($scene['scene_index'] ?? 0) : null,
+                    (array) ($storyboardChunks[$index] ?? [])
+                ))),
                 'request_summary' => $segmentResult['request_summary'] ?? null,
                 'playback_postprocess' => $segmentPlayback,
             ];
@@ -1982,6 +2134,7 @@ SVG;
                 'segment_count' => count($segments),
                 'segment_durations' => $segmentDurations,
                 'size' => (string) ($videoOptions['size'] ?? ''),
+                'storyboard' => $this->compactStoryboardSummary((array) data_get($meta, 'storyboard_meta', [])),
             ],
             'reference_input_summary' => [
                 'requested_reference_count' => count($imageReferencePathPool),
@@ -2049,6 +2202,10 @@ SVG;
         $assetIdentityHint = $this->buildAssetIdentityPromptHint((array) data_get($meta, 'asset_identity', []));
         if ($assetIdentityHint !== '') {
             $parts[] = 'Vincoli identitari: ' . $assetIdentityHint . '.';
+        }
+        $storyboardHint = $this->storyboardPromptInstruction((array) data_get($meta, 'storyboard_meta', []));
+        if ($storyboardHint !== '') {
+            $parts[] = $storyboardHint;
         }
 
         if ($locationSequenceMode) {
@@ -2159,6 +2316,8 @@ SVG;
         $objective = trim((string) data_get($meta, 'item_brain.objective', data_get($meta, 'plan.goal', 'awareness')));
         $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
         $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
+        $mainHook = trim((string) data_get($meta, 'item_brain.hook_meta.main_hook', ''));
+        $videoSegments = (array) data_get($meta, 'item_brain.content_structure_meta.video_segments', []);
         $hasPersonVariable = $this->hasPersonAssetVariable($assetVariables);
         $controlContext = $this->videoSubjectContextText($meta, (string) data_get($meta, 'manual_brief', ''), $videoPrompt);
         $needsDualSubjectLock = $this->videoNeedsDualSubjectLock($meta, $controlContext, $assetVariables);
@@ -2187,6 +2346,14 @@ SVG;
         $hook = $objective !== ''
             ? "apertura forte entro il primo secondo per far percepire {$objective}"
             : 'apertura forte entro il primo secondo con soggetto chiaro e leggibile';
+        if (trim((string) ($videoSegments['payoff_reveal'] ?? '')) !== '') {
+            $payoff = trim((string) $videoSegments['payoff_reveal']);
+        }
+        if (trim((string) ($videoSegments['hook_0_3'] ?? '')) !== '') {
+            $hook = trim((string) $videoSegments['hook_0_3']);
+        } elseif ($mainHook !== '') {
+            $hook = $mainHook;
+        }
         $toneHint = $tone !== '' ? "con tono {$tone}" : 'con tono coerente al brand';
 
         $shotTwoSubject = $needsDualSubjectLock
@@ -2211,14 +2378,18 @@ SVG;
                 ],
                 [
                     'order' => 2,
-                    'purpose' => $angle !== '' ? "sviluppo dell angolo {$angle}" : 'sviluppo del contesto e del valore del contenuto',
+                    'purpose' => trim((string) ($videoSegments['development_3_8'] ?? '')) !== ''
+                        ? trim((string) $videoSegments['development_3_8'])
+                        : ($angle !== '' ? "sviluppo dell angolo {$angle}" : 'sviluppo del contesto e del valore del contenuto'),
                     'subject' => $shotTwoSubject,
                     'camera' => 'angolazione diversa ma coerente',
                     'motion' => 'tracking morbido o micro parallax',
                 ],
                 [
                     'order' => 3,
-                    'purpose' => $objective !== '' ? "chiusura che spinge {$objective}" : 'payoff finale del reel',
+                    'purpose' => trim((string) ($videoSegments['cta_ending'] ?? '')) !== ''
+                        ? trim((string) $videoSegments['cta_ending'])
+                        : ($objective !== '' ? "chiusura che spinge {$objective}" : 'payoff finale del reel'),
                     'subject' => $shotThreeSubject,
                     'camera' => 'close medium o dettaglio premium',
                     'motion' => 'movimento pulito e conclusivo',
@@ -2264,6 +2435,29 @@ SVG;
             'shot_count' => count($shots),
             'shots' => $shots,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $storyboard
+     */
+    public function storyboardPromptInstruction(array $storyboard): string
+    {
+        $sceneSummary = $this->summarizeStoryboardSceneChunk((array) ($storyboard['scene_list'] ?? []));
+        if ($sceneSummary === '') {
+            return '';
+        }
+
+        $parts = [
+            'Scene planner attivo: usa una progressione chiara per scene, non una clip indistinta.',
+            'Storyboard: ' . $sceneSummary . '.',
+            'Lascia spazio pulito per overlay temporizzati senza generare testo dentro il video.',
+        ];
+
+        if ((bool) ($storyboard['identity_first'] ?? false)) {
+            $parts[] = 'Evita di coprire volto, prodotto o altri elementi identitari chiave nella zona focale centrale.';
+        }
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), 720, '');
     }
 
     /**
@@ -2662,6 +2856,8 @@ SVG;
         $total = max(1, $this->totalItemsInPlan($item));
         $seriesName = trim((string) data_get($itemBrain, 'series_name', ''));
         $connectionHint = trim((string) data_get($itemBrain, 'connection_hint', ''));
+        $overlayBrief = trim((string) data_get($itemBrain, 'overlay_brief', ''));
+        $trendBridge = trim((string) data_get($itemBrain, 'trend_bridge', ''));
 
         $parts = [
             "Questo contenuto fa parte di un piano di pubblicazioni social: posizione {$position} di {$total}.",
@@ -2676,8 +2872,66 @@ SVG;
         if ($connectionHint !== '') {
             $parts[] = "Ruolo nel piano: {$connectionHint}";
         }
+        if ($overlayBrief !== '') {
+            $parts[] = "Predisponi il layout per overlay tipografico senza farlo renderizzare dal modello: {$overlayBrief}.";
+        }
+        if ($trendBridge !== '') {
+            $parts[] = "Se usi meccaniche trend, applicale cosi: {$trendBridge}.";
+        }
 
         return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $strategy
+     * @param  array<string, mixed>  $itemBrain
+     */
+    public function creativeDirectionPromptInstruction(array $strategy, array $itemBrain): string
+    {
+        $creativeDirection = (array) data_get($strategy, 'creative_direction', []);
+        $parts = [];
+
+        $qualityBar = trim((string) data_get($creativeDirection, 'professional_direction.quality_bar', ''));
+        if ($qualityBar !== '') {
+            $parts[] = $qualityBar;
+        }
+
+        $viralHookStyle = trim((string) data_get($itemBrain, 'viral_hook_style', ''));
+        if ($viralHookStyle !== '') {
+            $parts[] = 'Hook social: ' . $viralHookStyle;
+        }
+
+        $shareabilityDriver = trim((string) data_get($itemBrain, 'shareability_driver', ''));
+        if ($shareabilityDriver !== '') {
+            $parts[] = 'Shareability: ' . $shareabilityDriver;
+        }
+
+        $trendBridge = trim((string) data_get($itemBrain, 'trend_bridge', ''));
+        if ($trendBridge !== '') {
+            $parts[] = 'Trend brand-safe: ' . $trendBridge;
+        }
+
+        $trendGuardrails = collect((array) data_get($itemBrain, 'trend_guardrails', data_get($creativeDirection, 'trend_policy.disallowed_mechanics', [])))
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn (string $value) => $value !== '')
+            ->take(4)
+            ->values()
+            ->all();
+        if (!empty($trendGuardrails)) {
+            $parts[] = 'Evita: ' . implode(', ', $trendGuardrails);
+        }
+
+        $overlayBrief = trim((string) data_get($itemBrain, 'overlay_brief', ''));
+        if ($overlayBrief !== '') {
+            $parts[] = 'Composizione overlay-ready: ' . $overlayBrief;
+        }
+
+        $continuityBrief = trim((string) data_get($itemBrain, 'continuity_brief', ''));
+        if ($continuityBrief !== '') {
+            $parts[] = 'Continuita identitaria: ' . $continuityBrief;
+        }
+
+        return Str::limit(implode(' ', array_filter($parts)), 780, '');
     }
 
     /**
@@ -2874,7 +3128,7 @@ SVG;
         foreach ([
             'non sembra lei',
             'non e lei',
-            'non ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ lei',
+            'non ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ lei',
             'volto diverso',
             'viso diverso',
             'faccia diversa',
@@ -3557,6 +3811,9 @@ SVG;
                     $reelBlueprintSummary = $this->compactReelBlueprintSummary(
                         is_array(data_get($item->ai_meta, 'reel_blueprint', [])) ? (array) data_get($item->ai_meta, 'reel_blueprint', []) : []
                     );
+                    $storyboardSummary = $this->compactStoryboardSummary(
+                        is_array(data_get($item->ai_meta, 'storyboard_meta', [])) ? (array) data_get($item->ai_meta, 'storyboard_meta', []) : []
+                    );
 
                     return [
                         'source' => 'runway_video_generation',
@@ -3579,6 +3836,7 @@ SVG;
                             'size' => (string) ($planOptions['size'] ?? ''),
                             'has_prompt_image' => is_string($attemptReferenceAbs) && $attemptReferenceAbs !== '',
                             'reel_blueprint' => $reelBlueprintSummary,
+                            'storyboard' => $storyboardSummary,
                             'retry_plan' => $planReason,
                         ],
                         'reference_input_summary' => [
@@ -4671,12 +4929,27 @@ SVG;
         array $paths,
         array $assetVariables,
         array $assetIdentity = [],
-        bool $strictAssetMode = false
+        bool $strictAssetMode = false,
+        array $assetScoring = []
     ): array {
         $paths = array_values(array_unique(array_filter(array_map(
             fn ($path) => trim((string) $path),
             $paths
         ))));
+
+        $rankedPaths = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($assetScoring, 'reference_paths', [])
+        )));
+        $fallbackPaths = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($assetScoring, 'fallback_paths', [])
+        )));
+        if (!empty($rankedPaths)) {
+            $ordered = array_values(array_unique(array_merge($rankedPaths, $strictAssetMode ? [] : $fallbackPaths, $paths)));
+
+            return $strictAssetMode ? array_values(array_unique($rankedPaths)) : $ordered;
+        }
 
         if (empty($paths)) {
             return [];
@@ -6786,6 +7059,11 @@ SVG;
             'series_step' => data_get($itemBrain, 'series_step'),
             'connection_hint' => (string) data_get($itemBrain, 'connection_hint', ''),
             'standalone_rule' => (string) data_get($itemBrain, 'standalone_rule', ''),
+            'viral_hook_style' => (string) data_get($itemBrain, 'viral_hook_style', ''),
+            'shareability_driver' => (string) data_get($itemBrain, 'shareability_driver', ''),
+            'trend_bridge' => (string) data_get($itemBrain, 'trend_bridge', ''),
+            'overlay_brief' => (string) data_get($itemBrain, 'overlay_brief', ''),
+            'continuity_brief' => (string) data_get($itemBrain, 'continuity_brief', ''),
             'goal' => 'Creare un contenuto pensato per il feed social: chiaro, memorabile, fermascroll e coerente con l insieme delle pubblicazioni.',
             'nearby_titles' => array_values(array_slice($planTitles, 0, 5)),
             'nearby_captions' => array_values(array_slice($planCaptions, 0, 4)),
@@ -7229,7 +7507,7 @@ SVG;
                     'voice_label' => $voiceLabel,
                     'video_path' => $videoPath,
                     'audio_path' => $storedAudioPath,
-                    'error' => $error ?: 'FFmpeg non ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨ riuscito ad agganciare l audio al video',
+                    'error' => $error ?: 'FFmpeg non ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¨ riuscito ad agganciare l audio al video',
                 ];
             }
 
@@ -7305,6 +7583,11 @@ SVG;
     public function resolveNarrationTextForVideo(ContentItem $item): string
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $storyboardNarration = $this->resolveStoryboardNarrationText($meta);
+        if ($storyboardNarration !== '') {
+            return $this->sanitizeNarrationText($storyboardNarration);
+        }
+
         $voiceover = trim((string) data_get($meta, 'video_voiceover', ''));
         if ($voiceover !== '') {
             return $this->sanitizeNarrationText($voiceover);
@@ -7325,6 +7608,28 @@ SVG;
         if ($fallback !== '') {
             return $this->sanitizeNarrationText($fallback);
         }
+        return '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public function resolveStoryboardNarrationText(array $meta): string
+    {
+        $fullText = trim((string) data_get($meta, 'storyboard_meta.speech_plan.full_text', ''));
+        if ($fullText !== '') {
+            return $fullText;
+        }
+
+        $segments = array_values(array_filter(array_map(
+            fn ($segment) => is_array($segment) ? trim((string) ($segment['text'] ?? '')) : '',
+            (array) data_get($meta, 'storyboard_meta.speech_plan.segments', [])
+        )));
+
+        if ($segments !== []) {
+            return trim(implode(' ', $segments));
+        }
+
         return '';
     }
 
@@ -8086,6 +8391,7 @@ SVG;
         return false;
     }
 }
+
 
 
 

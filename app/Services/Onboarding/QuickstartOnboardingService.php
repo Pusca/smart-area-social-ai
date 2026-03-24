@@ -551,6 +551,7 @@ class QuickstartOnboardingService
             'business_hours' => $profile->business_hours,
             'seasonal_offers' => $profile->seasonal_offers,
             'brand_palette' => $profile->brand_palette,
+            'overlay_preferences' => is_array($profile->overlay_preferences) ? $profile->overlay_preferences : [],
         ];
     }
 

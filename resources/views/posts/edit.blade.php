@@ -64,6 +64,7 @@
     $lastAppliedFeedback = data_get($contentItem->ai_meta, 'feedback_loop.last_applied');
     $shouldOpenFeedbackModal = old('sentiment') === 'dislike' || $errors->has('category') || $errors->has('reason');
     $qualityScorecard = is_array(data_get($contentItem->ai_meta, 'quality_scorecard')) ? (array) data_get($contentItem->ai_meta, 'quality_scorecard') : [];
+    $qualityScoreSources = is_array(data_get($qualityScorecard, 'score_sources')) ? (array) data_get($qualityScorecard, 'score_sources') : [];
     $qualityStatus = (string) ($qualityScorecard['publish_readiness_status'] ?? '');
     $qualityBadge = match ($qualityStatus) {
         'pass' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -73,13 +74,35 @@
         default => 'border-gray-200 bg-gray-50 text-gray-700',
     };
     $qualityScores = [
-        'Brand voice' => data_get($qualityScorecard, 'brand_voice_score'),
-        'Visual identity' => data_get($qualityScorecard, 'visual_identity_score'),
-        'CTA compliance' => data_get($qualityScorecard, 'cta_compliance_score'),
-        'Reference match' => data_get($qualityScorecard, 'reference_match_score'),
-        'Realism' => data_get($qualityScorecard, 'realism_score'),
-        'Caption quality' => data_get($qualityScorecard, 'caption_quality_score'),
+        'brand_voice_score' => 'Brand voice',
+        'visual_identity_score' => 'Visual identity',
+        'cta_compliance_score' => 'CTA compliance',
+        'reference_match_score' => 'Reference match',
+        'realism_score' => 'Realism',
+        'caption_quality_score' => 'Caption quality',
+        'professionalism_score' => 'Professionalism',
+        'trend_relevance_score' => 'Trend relevance',
+        'trend_brand_fit_score' => 'Trend brand fit',
+        'hook_strength_score' => 'Hook strength',
+        'first_seconds_strength_score' => 'First seconds',
+        'overlay_readability_score' => 'Overlay readability',
+        'mobile_legibility_score' => 'Mobile legibility',
+        'viral_readiness_score' => 'Viral readiness',
     ];
+    $overlayMeta = is_array(data_get($contentItem->ai_meta, 'overlay_meta')) ? (array) data_get($contentItem->ai_meta, 'overlay_meta') : [];
+    $overlaySettings = is_array(data_get($contentItem->ai_meta, 'overlay_settings')) ? (array) data_get($contentItem->ai_meta, 'overlay_settings') : [];
+    $overlayBrandPreferences = is_array(data_get($contentItem->ai_meta, 'tenant_profile.overlay_preferences')) ? (array) data_get($contentItem->ai_meta, 'tenant_profile.overlay_preferences') : [];
+    $overlayFonts = (array) config('overlays.fonts', []);
+    $overlayPresets = (array) config('overlays.presets', []);
+    $overlayUi = (array) config('overlays.ui', []);
+    $overlayMode = old('overlay_mode', (string) ($overlaySettings['mode'] ?? ((bool) ($overlayBrandPreferences['auto_enabled'] ?? true) ? 'auto' : 'off')));
+    $overlayPreset = old('overlay_preset', (string) ($overlaySettings['preset'] ?? ($overlayBrandPreferences['preset'] ?? 'modern_split_caption')));
+    $overlayManual = is_array($overlaySettings['manual_override'] ?? null) ? $overlaySettings['manual_override'] : [];
+    $overlayFontPreset = (string) ($overlayBrandPreferences['font_preset'] ?? $overlayBrandPreferences['tone_preset'] ?? 'modern');
+    $brandHookIntensity = (string) ($overlayBrandPreferences['preferred_hook_intensity'] ?? 'medium');
+    $brandTrendAppetite = (string) ($overlayBrandPreferences['trend_appetite'] ?? 'medium');
+    $brandProfessionalismGuardrail = (string) ($overlayBrandPreferences['professionalism_guardrail_level'] ?? 'high');
+    $overlayCtaText = old('overlay_cta_text', (string) ($overlayManual['cta_text'] ?? data_get($overlayMeta, 'caption_card_final', '')));
 @endphp
 
 <style>
@@ -201,11 +224,18 @@
             </div>
 
             <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                @foreach($qualityScores as $label => $score)
+                @foreach($qualityScores as $scoreKey => $label)
+                    @php
+                        $score = data_get($qualityScorecard, $scoreKey);
+                        $scoreSource = is_array(data_get($qualityScoreSources, $scoreKey)) ? (array) data_get($qualityScoreSources, $scoreKey) : [];
+                    @endphp
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <div class="text-xs text-gray-500">{{ $label }}</div>
                         <div class="mt-1 text-sm font-semibold text-gray-900">
                             {{ is_numeric($score) ? number_format(((float) $score) * 100, 0) . '%' : '-' }}
+                        </div>
+                        <div class="mt-1 text-[11px] text-gray-500">
+                            {{ (string) ($scoreSource['mode'] ?? 'missing') }} | {{ (string) ($scoreSource['source'] ?? 'n/a') }}
                         </div>
                     </div>
                 @endforeach
@@ -452,7 +482,7 @@
                                             @endif
                                         </div>
                                         <span class="text-[11px] text-gray-500">
-                                            {{ optional($entry->created_at)->format('d/m H:i') }}@if($entry->user) � {{ $entry->user->name }}@endif
+                                            {{ optional($entry->created_at)->format('d/m H:i') }}@if($entry->user) · {{ $entry->user->name }}@endif
                                         </span>
                                     </div>
 
@@ -574,6 +604,184 @@
                     <textarea name="ai_image_prompt" rows="8" class="js-autogrow mt-4 block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">{{ old('ai_image_prompt', $contentItem->ai_image_prompt) }}</textarea>
                 </div>
 
+                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Overlay typography</h2>
+                            <p class="mt-1 text-sm text-gray-600">Override manuale opzionale per hook, intro reel e CTA finale. Dopo il salvataggio va rilanciata la rigenerazione visual per applicarlo all asset.</p>
+                        </div>
+                        <span class="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700">
+                            {{ (bool) data_get($overlayMeta, 'rendering.applied', false) ? 'Render applicato' : 'Da renderizzare' }}
+                        </span>
+                    </div>
+
+                    <div class="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Default brand attivi</p>
+                        <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-700">
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Font preset: {{ ucfirst($overlayFontPreset) }}</span>
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Trend appetite: {{ ucfirst($brandTrendAppetite) }}</span>
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Hook intensity: {{ ucfirst($brandHookIntensity) }}</span>
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1">Guardrail: {{ ucfirst($brandProfessionalismGuardrail) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <div>
+                            <label for="overlay_mode" class="mb-1 block text-sm font-semibold text-gray-700">Overlay</label>
+                            <select id="overlay_mode" name="overlay_mode" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['modes'] ?? ['auto', 'manual', 'off']) as $mode)
+                                    <option value="{{ $mode }}" @selected($overlayMode === $mode)>{{ ucfirst($mode) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_preset" class="mb-1 block text-sm font-semibold text-gray-700">Preset</label>
+                            <select id="overlay_preset" name="overlay_preset" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($overlayPresets as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayPreset === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_family" class="mb-1 block text-sm font-semibold text-gray-700">Font</label>
+                            <select id="overlay_font_family" name="overlay_font_family" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($overlayFonts as $key => $row)
+                                    <option value="{{ $key }}" @selected(old('overlay_font_family', (string) ($overlayManual['font_family'] ?? ($overlayBrandPreferences['font_family'] ?? 'arial'))) === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_position" class="mb-1 block text-sm font-semibold text-gray-700">Posizione</label>
+                            <select id="overlay_position" name="overlay_position" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['positions'] ?? ['upper_left', 'upper_center', 'center_left', 'center', 'lower_left', 'lower_center']) as $position)
+                                    <option value="{{ $position }}" @selected(old('overlay_position', (string) ($overlayManual['position'] ?? 'upper_left')) === $position)>{{ ucfirst(str_replace('_', ' ', $position)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label for="overlay_text" class="mb-1 block text-sm font-semibold text-gray-700">Testo primario</label>
+                            <input id="overlay_text" type="text" name="overlay_text" value="{{ old('overlay_text', (string) ($overlayManual['text'] ?? '')) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div class="sm:col-span-2 xl:col-span-3">
+                            <label for="overlay_secondary_text" class="mb-1 block text-sm font-semibold text-gray-700">Testo secondario</label>
+                            <input id="overlay_secondary_text" type="text" name="overlay_secondary_text" value="{{ old('overlay_secondary_text', (string) ($overlayManual['secondary_text'] ?? '')) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div class="sm:col-span-2 xl:col-span-3">
+                            <label for="overlay_cta_text" class="mb-1 block text-sm font-semibold text-gray-700">CTA finale overlay</label>
+                            <input id="overlay_cta_text" type="text" name="overlay_cta_text" value="{{ $overlayCtaText }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                    </div>
+                    <details class="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                        <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-gray-900">
+                            Opzioni avanzate typography
+                        </summary>
+                        <div class="border-t border-gray-100 p-4">
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                            <label for="overlay_font_fallback" class="mb-1 block text-sm font-semibold text-gray-700">Fallback</label>
+                            <select id="overlay_font_fallback" name="overlay_font_fallback" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach($overlayFonts as $key => $row)
+                                    <option value="{{ $key }}" @selected(old('overlay_font_fallback', (string) ($overlayManual['fallback_font_family'] ?? ($overlayBrandPreferences['fallback_font_family'] ?? 'segoe_ui'))) === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_weight" class="mb-1 block text-sm font-semibold text-gray-700">Weight</label>
+                            <select id="overlay_font_weight" name="overlay_font_weight" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['font_weights'] ?? ['400', '500', '600', '700', '800']) as $weight)
+                                    <option value="{{ $weight }}" @selected(old('overlay_font_weight', (string) ($overlayManual['font_weight'] ?? '700')) === $weight)>{{ $weight }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_size_mode" class="mb-1 block text-sm font-semibold text-gray-700">Size mode</label>
+                            <select id="overlay_font_size_mode" name="overlay_font_size_mode" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['font_size_modes'] ?? ['small', 'medium', 'large', 'xl']) as $sizeMode)
+                                    <option value="{{ $sizeMode }}" @selected(old('overlay_font_size_mode', (string) ($overlayManual['font_size_mode'] ?? 'large')) === $sizeMode)>{{ ucfirst($sizeMode) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_text_case" class="mb-1 block text-sm font-semibold text-gray-700">Text case</label>
+                            <select id="overlay_text_case" name="overlay_text_case" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['text_cases'] ?? ['sentence', 'title', 'uppercase']) as $case)
+                                    <option value="{{ $case }}" @selected(old('overlay_text_case', (string) ($overlayManual['text_case'] ?? 'sentence')) === $case)>{{ ucfirst($case) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_alignment" class="mb-1 block text-sm font-semibold text-gray-700">Alignment</label>
+                            <select id="overlay_alignment" name="overlay_alignment" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['alignments'] ?? ['left', 'center', 'right']) as $alignment)
+                                    <option value="{{ $alignment }}" @selected(old('overlay_alignment', (string) ($overlayManual['alignment'] ?? 'left')) === $alignment)>{{ ucfirst($alignment) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_safe_area" class="mb-1 block text-sm font-semibold text-gray-700">Safe area</label>
+                            <select id="overlay_safe_area" name="overlay_safe_area" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['safe_areas'] ?? ['upper_third', 'center_safe', 'lower_third']) as $safeArea)
+                                    <option value="{{ $safeArea }}" @selected(old('overlay_safe_area', (string) ($overlayManual['safe_area'] ?? ($overlayBrandPreferences['safe_area'] ?? 'upper_third'))) === $safeArea)>{{ ucfirst(str_replace('_', ' ', $safeArea)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_max_lines" class="mb-1 block text-sm font-semibold text-gray-700">Max lines</label>
+                            <input id="overlay_max_lines" type="number" min="1" max="4" name="overlay_max_lines" value="{{ old('overlay_max_lines', (int) ($overlayManual['max_lines'] ?? 2)) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label for="overlay_color" class="mb-1 block text-sm font-semibold text-gray-700">Color</label>
+                            <input id="overlay_color" type="text" name="overlay_color" value="{{ old('overlay_color', (string) ($overlayManual['color'] ?? '#FFFFFF')) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label for="overlay_stroke_color" class="mb-1 block text-sm font-semibold text-gray-700">Stroke</label>
+                            <input id="overlay_stroke_color" type="text" name="overlay_stroke_color" value="{{ old('overlay_stroke_color', (string) ($overlayManual['stroke_color'] ?? '#111827')) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label for="overlay_background_style" class="mb-1 block text-sm font-semibold text-gray-700">Background</label>
+                            <select id="overlay_background_style" name="overlay_background_style" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['background_styles'] ?? ['none', 'dark_box', 'light_box', 'gradient_strip']) as $background)
+                                    <option value="{{ $background }}" @selected(old('overlay_background_style', (string) ($overlayManual['background_style'] ?? 'dark_box')) === $background)>{{ ucfirst(str_replace('_', ' ', $background)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_animation_style" class="mb-1 block text-sm font-semibold text-gray-700">Animazione</label>
+                            <select id="overlay_animation_style" name="overlay_animation_style" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                @foreach(($overlayUi['animation_styles'] ?? ['none', 'fade', 'pop', 'slide_up']) as $animation)
+                                    <option value="{{ $animation }}" @selected(old('overlay_animation_style', (string) ($overlayManual['animation_style'] ?? 'fade')) === $animation)>{{ ucfirst(str_replace('_', ' ', $animation)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-semibold text-gray-700">Shadow</label>
+                            <label class="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700">
+                                <input type="hidden" name="overlay_shadow" value="0">
+                                <input type="checkbox" name="overlay_shadow" value="1" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @checked((bool) old('overlay_shadow', (bool) ($overlayManual['shadow'] ?? true))) />
+                                Attivo
+                            </label>
+                        </div>
+                        <div>
+                            <label for="overlay_timing_start_ms" class="mb-1 block text-sm font-semibold text-gray-700">Start ms</label>
+                            <input id="overlay_timing_start_ms" type="number" min="0" max="300000" name="overlay_timing_start_ms" value="{{ old('overlay_timing_start_ms', (int) ($overlayManual['timing_start_ms'] ?? 0)) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div>
+                            <label for="overlay_timing_end_ms" class="mb-1 block text-sm font-semibold text-gray-700">End ms</label>
+                            <input id="overlay_timing_end_ms" type="number" min="0" max="300000" name="overlay_timing_end_ms" value="{{ old('overlay_timing_end_ms', (int) ($overlayManual['timing_end_ms'] ?? 0)) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                        <div class="sm:col-span-2 xl:col-span-2">
+                            <label for="overlay_emphasis_words" class="mb-1 block text-sm font-semibold text-gray-700">Emphasis words</label>
+                            <input id="overlay_emphasis_words" type="text" name="overlay_emphasis_words" value="{{ old('overlay_emphasis_words', implode(', ', (array) ($overlayManual['emphasis_words'] ?? []))) }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                        </div>
+                    </div>
+                        </div>
+                    </details>
+
+                    <p class="mt-3 text-xs text-gray-500">
+                        In `auto` il sistema ricalcola hook e CTA dal blueprint corrente. In `manual` usa questi override mantenendo preset, font e safe area brand-aware.
+                    </p>
+                </div>
+
                 <div class="flex flex-wrap items-center gap-2">
                     <button type="submit" class="ui-btn-primary">
                         Salva modifiche
@@ -635,6 +843,14 @@
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">AI generato il</p>
                         <p class="mt-1 text-sm font-semibold text-gray-900">{{ optional($contentItem->ai_generated_at)->format('d/m/Y H:i') ?: '-' }}</p>
+                    </div>
+                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <p class="text-xs text-gray-500">Overlay</p>
+                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ data_get($overlayMeta, 'preset.label', data_get($overlayMeta, 'preset.key', 'n/d')) }}</p>
+                        <p class="mt-1 text-xs text-gray-500">
+                            contrast {{ is_numeric(data_get($overlayMeta, 'readability.contrast_score')) ? number_format(((float) data_get($overlayMeta, 'readability.contrast_score')) * 100, 0) . '%' : '-' }}
+                            • safe area {{ is_numeric(data_get($overlayMeta, 'readability.safe_area_score')) ? number_format(((float) data_get($overlayMeta, 'readability.safe_area_score')) * 100, 0) . '%' : '-' }}
+                        </p>
                     </div>
                 </div>
             </div>

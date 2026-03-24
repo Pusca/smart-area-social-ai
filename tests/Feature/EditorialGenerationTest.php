@@ -196,6 +196,119 @@ class EditorialGenerationTest extends TestCase
         $this->assertGreaterThanOrEqual(2, (int) ($counts['Offerta'] ?? 0));
     }
 
+    public function test_it_balances_editorial_modes_without_turning_everything_into_trend_content(): void
+    {
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-mode-mix');
+        $strategy = app(EditorialStrategyService::class)->refreshForTenant((int) $tenant->id, $profile);
+        $builder = app(EditorialPlanBuilder::class);
+
+        $rows = $builder->buildPlan(
+            tenantId: (int) $tenant->id,
+            strategy: $strategy->toArray(),
+            history: ['promo_recent_ratio' => 0.0, 'last_pillars' => []],
+            period: [
+                'start' => now()->toDateString(),
+                'end' => now()->addDays(13)->toDateString(),
+                'total_posts' => 14,
+            ],
+            options: [
+                'platforms' => ['instagram'],
+                'formats' => ['post', 'carousel', 'reel'],
+            ]
+        );
+
+        $this->assertCount(14, $rows);
+        $modeCounts = [];
+        foreach ($rows as $row) {
+            $mode = (string) ($row['editorial_mode'] ?? '');
+            $modeCounts[$mode] = ($modeCounts[$mode] ?? 0) + 1;
+        }
+
+        $this->assertGreaterThanOrEqual(2, (int) ($modeCounts['evergreen'] ?? 0));
+        $this->assertGreaterThanOrEqual(4, (int) ($modeCounts['authority-building'] ?? 0));
+        $this->assertGreaterThanOrEqual(2, (int) ($modeCounts['conversion-oriented'] ?? 0));
+        $this->assertGreaterThanOrEqual(1, ((int) ($modeCounts['trend-aware'] ?? 0)) + ((int) ($modeCounts['reactive'] ?? 0)));
+        $this->assertLessThanOrEqual(2, ((int) ($modeCounts['trend-aware'] ?? 0)) + ((int) ($modeCounts['reactive'] ?? 0)));
+    }
+
+    public function test_it_filters_out_incoherent_trends_before_using_them_in_plan(): void
+    {
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-trend-filter');
+        $strategy = app(EditorialStrategyService::class)->refreshForTenant((int) $tenant->id, $profile)->toArray();
+        $strategy['trend_intelligence'] = [
+            'enabled' => true,
+            'summary' => ['opportunities_count' => 2],
+            'opportunities' => [
+                [
+                    'signal_id' => 991,
+                    'snapshot_id' => 88,
+                    'headline' => 'Trend audio imitation meme',
+                    'topic' => 'trend audio imitation meme',
+                    'platform' => 'tiktok',
+                    'format_type' => 'reel',
+                    'hook_patterns' => ['Replica audio con battuta memetica.'],
+                    'style_notes' => ['Ritmo memetico.'],
+                    'brand_safe_hook' => 'Apri con un hook virale.',
+                    'recommended_angle' => 'Copia il meme del momento.',
+                    'why_it_fits' => 'Non dovrebbe passare.',
+                    'risk_flags' => ['brand_conflict'],
+                    'freshness_score' => 0.93,
+                    'estimated_relevance_score' => 0.78,
+                    'brand_fit_score' => 0.31,
+                    'novelty_score' => 0.91,
+                    'execution_feasibility_score' => 0.82,
+                    'viral_potential_score' => 0.88,
+                    'source_type' => 'manual_test',
+                ],
+                [
+                    'signal_id' => 992,
+                    'snapshot_id' => 89,
+                    'headline' => 'Operator insight with practical lesson',
+                    'topic' => 'operator insight with practical lesson',
+                    'platform' => 'linkedin',
+                    'format_type' => 'post',
+                    'hook_patterns' => ['Apri con un insight concreto vissuto sul campo.'],
+                    'style_notes' => ['Tono competente e utile.'],
+                    'brand_safe_hook' => 'Apri con un insight controintuitivo ma concreto.',
+                    'recommended_angle' => 'Traduci il trend in un insight operativo per founder B2B.',
+                    'why_it_fits' => 'Funziona per un tenant SaaS professionale e orientato alla lead generation.',
+                    'risk_flags' => [],
+                    'freshness_score' => 0.74,
+                    'estimated_relevance_score' => 0.79,
+                    'brand_fit_score' => 0.83,
+                    'novelty_score' => 0.69,
+                    'execution_feasibility_score' => 0.77,
+                    'viral_potential_score' => 0.63,
+                    'source_type' => 'manual_test',
+                ],
+            ],
+        ];
+
+        $rows = app(EditorialPlanBuilder::class)->buildPlan(
+            tenantId: (int) $tenant->id,
+            strategy: $strategy,
+            history: ['promo_recent_ratio' => 0.0, 'last_pillars' => []],
+            period: [
+                'start' => now()->toDateString(),
+                'end' => now()->addDays(13)->toDateString(),
+                'total_posts' => 8,
+            ],
+            options: [
+                'platforms' => ['instagram', 'linkedin'],
+                'formats' => ['post', 'reel'],
+            ]
+        );
+
+        $trendRows = array_values(array_filter($rows, fn (array $row) => (string) ($row['rubric'] ?? '') === 'Trend'));
+
+        $this->assertCount(1, $trendRows);
+        $this->assertSame('operator insight with practical lesson', (string) data_get($trendRows[0], 'trend_basis.topic'));
+        $this->assertSame('trend_signal', (string) data_get($trendRows[0], 'trend_basis.source'));
+        $this->assertSame([], array_values(array_filter($rows, function (array $row): bool {
+            return (string) data_get($row, 'trend_basis.topic') === 'trend audio imitation meme';
+        })));
+    }
+
     public function test_it_clamps_period_when_end_date_precedes_start_date(): void
     {
         [$tenant, , $profile] = $this->bootstrapTenant('tenant-clamp');

@@ -22,6 +22,7 @@ class GenerationVersionRegistry
             'pipeline_version' => (string) data_get($versions, 'pipeline', 'generation_pipeline_v1'),
             'prompt_template_version' => (string) data_get($versions, 'prompt_template', 'legacy_inline_prompts_v1'),
             'strategy_composer_version' => (string) data_get($versions, 'strategy_composer', 'editorial_strategy_compose_v1'),
+            'content_strategy_engine_version' => (string) data_get($versions, 'content_strategy_engine', config('content_strategy.version', 'content_angle_engine_v1')),
             'alignment_policy_version' => (string) data_get($versions, 'alignment_policy', 'content_alignment_v1'),
             'asset_selection_policy_version' => (string) data_get($versions, 'asset_selection_policy', 'asset_reference_selection_v1'),
             'feedback_synthesis_version' => (string) data_get($versions, 'feedback_synthesis', 'tenant_feedback_memory_v1'),

@@ -9,11 +9,14 @@ use App\Models\GenerationAttempt;
 use App\Models\Tenant;
 use App\Models\TenantProfile;
 use App\Models\User;
+use App\Services\AI\ContentAlignmentService;
 use App\Services\AI\Pipeline\BuildGenerationContextStep;
+use App\Services\AI\Pipeline\GenerateBaseTextStep;
 use App\Services\AI\Pipeline\GenerationPipelineState;
 use App\Services\AI\Pipeline\PersistGenerationOutputsStep;
 use App\Services\AI\Pipeline\ResolveProviderMatrixStep;
 use App\Services\GenerationAuditService;
+use App\Services\OpenAiService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
@@ -60,9 +63,139 @@ class GenerationPipelineStepsTest extends TestCase
         $this->assertSame('runway', data_get($state->run?->resolved_provider_matrix, 'video.provider'));
         $this->assertSame('runway', data_get($state->run?->version_meta, 'provider_adapter_versions.video.provider'));
         $this->assertSame('runway_video_adapter_v1', data_get($item->ai_meta, 'generation_audit.version_map.provider_adapter_versions.video.adapter_version'));
+        $this->assertIsArray(data_get($state->meta, 'strategy_snapshot.creative_direction'));
         $this->assertSame('Mostra il locale e la titolare', $state->get('brief_seed'));
         $this->assertIsArray($state->get('tenant_profile'));
         $this->assertIsArray($state->get('asset_variables'));
+    }
+
+    public function test_it_builds_and_persists_content_strategy_before_text_generation(): void
+    {
+        [$tenant, $user] = $this->bootstrapTenant('tenant-pipeline-text-strategy');
+        $plan = $this->createPlan($tenant, $user);
+        $item = $this->createContentItem($tenant, $user, $plan, [
+            'format' => 'reel',
+            'title' => 'Pipeline strategy reel',
+            'caption' => 'Mostra il locale con un angolo umano e premium',
+            'ai_meta' => [
+                'tenant_profile' => [
+                    'business_name' => 'Do Mori',
+                    'industry' => 'Ristorante',
+                    'target' => 'Turisti e residenti',
+                    'cta' => 'Prenota ora.',
+                ],
+                'plan' => [
+                    'goal' => 'Awareness',
+                    'tone' => 'caldo',
+                ],
+                'strategy' => [
+                    'brand_voice' => [
+                        'target' => 'Turisti e residenti',
+                        'industry' => 'Ristorante',
+                    ],
+                    'analysis_framework' => [
+                        'primary_goal' => 'Awareness',
+                    ],
+                    'creative_direction' => [
+                        'content_strategy' => [
+                            'hook_policy' => [
+                                'rule' => 'Hook forti ma puliti.',
+                            ],
+                        ],
+                    ],
+                ],
+                'item_brain' => [
+                    'objective' => 'Awareness',
+                    'angle' => 'atmosfera reale del locale',
+                    'rubric' => 'Storia Brand',
+                    'editorial_mode' => 'evergreen',
+                ],
+            ],
+        ]);
+
+        $capturedContext = null;
+
+        $this->mock(OpenAiService::class, function ($mock) use (&$capturedContext): void {
+            $mock->shouldReceive('generateContent')
+                ->once()
+                ->withArgs(function (array $context) use (&$capturedContext): bool {
+                    $capturedContext = $context;
+                    return true;
+                })
+                ->andReturn([
+                    'caption' => 'Caption finale coerente e utile.',
+                    'hashtags' => ['#domori'],
+                    'cta' => 'Prenota ora.',
+                    'image_prompt' => 'Visual realistico del locale.',
+                    'video_prompt' => 'Reel verticale realistico del locale.',
+                    'voiceover' => 'Vivi un momento vero nel cuore di Venezia.',
+                    'reel_blueprint' => null,
+                    'usage' => [],
+                    'response_id' => 'resp_test_strategy',
+                ]);
+        });
+
+        $this->mock(ContentAlignmentService::class, function ($mock): void {
+            $mock->shouldReceive('gradeTextDraft')
+                ->once()
+                ->andReturn([
+                    'overall_score' => 0.84,
+                    'should_retry' => false,
+                    'feedback' => null,
+                    'heuristic' => [
+                        'cta_score' => 0.9,
+                        'hard_rule_violations' => [],
+                    ],
+                    'llm' => [
+                        'brand_alignment_score' => 0.86,
+                        'brief_alignment_score' => 0.83,
+                        'issues' => [],
+                    ],
+                ]);
+        });
+
+        $job = new GenerateAiForContentItem((int) $item->id, 'pipeline-text-strategy-run');
+        $state = GenerationPipelineState::fromItem($item->fresh(['plan']));
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $state->meta = $meta;
+        $state->put('provider_matrix', [
+            'text' => ['provider' => 'openai'],
+            'grader' => ['provider' => 'openai'],
+        ])->put('tenant_profile', (array) data_get($meta, 'tenant_profile', []))
+            ->put('item_brain', (array) data_get($meta, 'item_brain', []))
+            ->put('strategy', (array) data_get($meta, 'strategy', []))
+            ->put('memory_summary', [])
+            ->put('active_feedback_request', [])
+            ->put('asset_variables', [])
+            ->put('asset_identity', [])
+            ->put('brief_seed', 'Mostra il locale con un angolo umano e premium')
+            ->put('recent_captions', [])
+            ->put('plan_titles', [])
+            ->put('plan_captions', []);
+
+        app(GenerateBaseTextStep::class)->handle($job, $state);
+
+        $item->refresh();
+
+        $this->assertSame('Caption finale coerente e utile.', $item->ai_caption);
+        $this->assertNotSame('', (string) data_get($item->ai_meta, 'hook_meta.main_hook'));
+        $this->assertNotSame('', (string) data_get($item->ai_meta, 'item_brain.content_strategy_type'));
+        $this->assertNotSame('', (string) data_get($item->ai_meta, 'item_brain.content_structure_meta.video_segments.hook_0_3'));
+        $this->assertNotSame('', (string) data_get($capturedContext, 'content_strategy_blueprint.hook_meta.main_hook'));
+        $this->assertNotSame('', (string) data_get($capturedContext, 'content_strategy_blueprint.content_structure_meta.video_segments.payoff_reveal'));
+        $this->assertIsArray(data_get($item->ai_meta, 'reel_blueprint.shots'));
+        $this->assertIsArray(data_get($item->ai_meta, 'storyboard_meta.scene_list'));
+        $this->assertSame('hook', data_get($item->ai_meta, 'storyboard_meta.scene_list.0.scene_type'));
+        $this->assertSame('cta', data_get($item->ai_meta, 'storyboard_meta.scene_list.3.scene_type'));
+        $this->assertSame('upper_third', data_get($item->ai_meta, 'storyboard_meta.scene_list.0.text_overlay.safe_area'));
+        $this->assertSame('lower_third', data_get($item->ai_meta, 'storyboard_meta.scene_list.3.text_overlay.safe_area'));
+        $this->assertSame('hook', data_get($item->ai_meta, 'overlay_meta.templates.0.role'));
+        $this->assertSame('final_cta', data_get($item->ai_meta, 'overlay_meta.templates.3.role'));
+        $this->assertSame(0, data_get($item->ai_meta, 'overlay_meta.templates.0.timing_start_ms'));
+        $this->assertSame(
+            data_get($item->ai_meta, 'storyboard_meta.scene_list.3.timing_window.start_ms'),
+            data_get($item->ai_meta, 'overlay_meta.templates.3.timing_start_ms')
+        );
     }
 
     public function test_it_marks_generation_as_done_when_visual_output_exists(): void

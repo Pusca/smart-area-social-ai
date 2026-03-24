@@ -17,6 +17,7 @@ class TenantProfile extends Model
         'business_hours',
         'seasonal_offers',
         'brand_palette',
+        'overlay_preferences',
         'services',
         'target',
         'cta',
@@ -36,6 +37,7 @@ class TenantProfile extends Model
     protected $casts = [
         'default_platforms' => 'array',
         'default_formats' => 'array',
+        'overlay_preferences' => 'array',
         'completed_at' => 'datetime',
         'onboarding_started_at' => 'datetime',
         'onboarding_completed_at' => 'datetime',

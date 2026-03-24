@@ -22,11 +22,16 @@ class BuildVisualPromptStep
         $activeFeedbackRequest = (array) $state->get('active_feedback_request', []);
         $assetVariables = (array) $state->get('asset_variables', []);
         $assetIdentity = (array) $state->get('asset_identity', []);
+        $assetScoring = (array) $state->get('asset_scoring', (array) data_get($meta, 'asset_scoring', []));
 
         $prompt = trim((string) ($item->ai_image_prompt ?? ''));
         $brandImageSources = $job->resolveBrandImageSources($strategy, $meta, (int) $item->tenant_id);
         $brandDecision = $job->decideBrandImageUsage($item, $brandImageSources, $this->openAi);
-        if ($state->strictAssetMode && !((bool) ($brandDecision['use_brand'] ?? false))) {
+        $scoredReferencePaths = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($assetScoring, 'reference_paths', [])
+        )));
+        if ($state->strictAssetMode && !((bool) ($brandDecision['use_brand'] ?? false)) && empty($scoredReferencePaths)) {
             throw new \RuntimeException('Strict mode: nessuna immagine brand valida trovata per avviare la generazione.');
         }
 
@@ -49,7 +54,8 @@ class BuildVisualPromptStep
             $selectedBrandImagePaths,
             $assetVariables,
             $assetIdentity,
-            $state->strictAssetMode
+            $state->strictAssetMode,
+            $assetScoring
         );
         $selectedBrandImage = $selectedBrandImagePaths[0] ?? $selectedBrandImage;
 
@@ -67,6 +73,7 @@ class BuildVisualPromptStep
             $analysisGoal = (string) data_get($strategy, 'analysis_framework.primary_goal', '');
             $publishingCadence = (string) data_get($strategy, 'publishing_system.cadence_rule', '');
             $strategyNotes = (string) data_get($strategy, 'strategy_notes', '');
+            $creativeDirectionHint = $job->creativeDirectionPromptInstruction($strategy, $itemBrain);
             $assetVariableHint = $job->buildAssetVariablePromptHint($assetVariables);
             $assetIdentityHint = $job->buildAssetIdentityPromptHint($assetIdentity);
             $locationEnvelopeHint = $job->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
@@ -89,6 +96,7 @@ class BuildVisualPromptStep
                 . ($logoRule !== '' ? "Regola logo: {$logoRule}. " : '')
                 . ($publishingCadence !== '' ? "Coerenza publishing: {$publishingCadence}. " : '')
                 . ($strategyNotes !== '' ? "Note strategiche: {$strategyNotes}. " : '')
+                . ($creativeDirectionHint !== '' ? "Direzione creativa operativa: {$creativeDirectionHint}. " : '')
                 . ($assetVariableHint !== '' ? "Variabili asset obbligatorie: {$assetVariableHint}. " : '')
                 . ($assetIdentityHint !== '' ? "Regole identitarie del contenuto: {$assetIdentityHint}. " : '')
                 . ($locationEnvelopeHint !== '' ? $locationEnvelopeHint . ' ' : '')
@@ -96,8 +104,7 @@ class BuildVisualPromptStep
                 . ($socialPublicationHint !== '' ? $socialPublicationHint . ' ' : '')
                 . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
                 . ($selectedBrandImage ? "Parti dai riferimenti brand forniti e trasformali in un visual editoriale strategico, non in una semplice copia della foto originale. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
-                . "Non generare loghi finti, nome brand scritto, watermark o testo sovraimpresso nell'immagine. "
-                . "Se e necessario includere testo grafico nell'immagine, usa solo italiano corretto. "
+                . "Non generare loghi finti, nome brand scritto, watermark o testo tipografico lungo direttamente nell'immagine: prepara piuttosto una composizione overlay-ready. "
                 . "Stile professionale, coerente con il brand e totalmente in italiano.";
 
             $item->ai_image_prompt = $prompt;

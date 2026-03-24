@@ -160,6 +160,16 @@ class TenantProfileController extends Controller
             'business_hours' => 'nullable|string|max:1000',
             'seasonal_offers' => 'nullable|string|max:2000',
             'brand_palette' => 'nullable|string|max:255',
+            'overlay_font_preset' => 'nullable|string|max:40',
+            'overlay_tone_preset' => 'nullable|string|max:40',
+            'overlay_font_family' => 'nullable|string|max:60',
+            'overlay_font_fallback' => 'nullable|string|max:60',
+            'overlay_preset' => 'nullable|string|max:80',
+            'overlay_safe_area' => 'nullable|string|max:40',
+            'overlay_auto_enabled' => 'nullable|boolean',
+            'preferred_hook_intensity' => 'nullable|string|max:20',
+            'trend_appetite' => 'nullable|string|max:20',
+            'professionalism_guardrail_level' => 'nullable|string|max:20',
 
             'services' => 'nullable|string|max:2000',
             'target' => 'nullable|string|max:2000',
@@ -216,6 +226,16 @@ class TenantProfileController extends Controller
 
         DB::beginTransaction();
         try {
+            $existingOverlayPreferences = is_array($existingProfile?->overlay_preferences)
+                ? $existingProfile->overlay_preferences
+                : [];
+            $fontPreset = (string) (
+                $data['overlay_font_preset']
+                ?? $data['overlay_tone_preset']
+                ?? $existingOverlayPreferences['font_preset']
+                ?? $existingOverlayPreferences['tone_preset']
+                ?? 'modern'
+            );
             $profile = TenantProfile::query()->updateOrCreate(
                 ['tenant_id' => $tenantId],
                 [
@@ -228,6 +248,18 @@ class TenantProfileController extends Controller
                     'business_hours' => $data['business_hours'] ?? null,
                     'seasonal_offers' => $data['seasonal_offers'] ?? null,
                     'brand_palette' => $data['brand_palette'] ?? null,
+                    'overlay_preferences' => array_merge($existingOverlayPreferences, [
+                        'font_preset' => $fontPreset,
+                        'tone_preset' => $fontPreset,
+                        'font_family' => $data['overlay_font_family'] ?? 'arial',
+                        'fallback_font_family' => $data['overlay_font_fallback'] ?? 'segoe_ui',
+                        'preset' => $data['overlay_preset'] ?? 'modern_split_caption',
+                        'safe_area' => $data['overlay_safe_area'] ?? 'upper_third',
+                        'auto_enabled' => (bool) ($data['overlay_auto_enabled'] ?? true),
+                        'preferred_hook_intensity' => $data['preferred_hook_intensity'] ?? 'medium',
+                        'trend_appetite' => $data['trend_appetite'] ?? 'medium',
+                        'professionalism_guardrail_level' => $data['professionalism_guardrail_level'] ?? 'high',
+                    ]),
                     'services' => $data['services'] ?? null,
                     'target' => $data['target'] ?? null,
                     'cta' => $data['cta'] ?? null,

@@ -210,6 +210,8 @@ class AssetIdentityService
                 'original_name' => (string) ($asset->original_name ?? ''),
                 'mime' => (string) ($asset->mime ?? ''),
                 'meta' => is_array($asset->meta) ? $asset->meta : [],
+                'created_at' => $asset->created_at?->toDateTimeString(),
+                'updated_at' => $asset->updated_at?->toDateTimeString(),
             ])->all(),
         ]);
     }
@@ -521,6 +523,9 @@ class AssetIdentityService
             'path' => (string) ($asset['path'] ?? ''),
             'original_name' => (string) ($asset['original_name'] ?? ''),
             'mime' => (string) ($asset['mime'] ?? ''),
+            'meta' => is_array($asset['meta'] ?? null) ? $asset['meta'] : [],
+            'created_at' => $this->normalizeDateValue($asset['created_at'] ?? null),
+            'updated_at' => $this->normalizeDateValue($asset['updated_at'] ?? null),
             'label' => trim((string) ($context['label'] ?? 'reference')),
             'is_primary' => (bool) ($context['is_primary'] ?? false),
             'source' => (string) ($context['source'] ?? 'asset_pool'),
@@ -560,6 +565,8 @@ class AssetIdentityService
             'original_name' => (string) ($asset['original_name'] ?? ''),
             'mime' => (string) ($asset['mime'] ?? ''),
             'meta' => is_array($asset['meta'] ?? null) ? $asset['meta'] : [],
+            'created_at' => $this->normalizeDateValue($asset['created_at'] ?? null),
+            'updated_at' => $this->normalizeDateValue($asset['updated_at'] ?? null),
         ];
     }
 
@@ -573,6 +580,21 @@ class AssetIdentityService
      * @param  array<int, string>|null  $identitySignals
      * @return array<string, mixed>
      */
+        private function normalizeDateValue(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+
+        return $text !== '' ? $text : null;
+    }
+
     private function buildIdentityPack(
         string $kind,
         string $strictnessLevel,
@@ -627,3 +649,7 @@ class AssetIdentityService
         return trim(implode('. ', $parts));
     }
 }
+
+
+
+

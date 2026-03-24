@@ -90,6 +90,7 @@ class OpenAiService
         $instructions =
             "Sei una social media manager senior.\n"
             . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
+            . "Se strategy_blueprint.creative_direction e presente, usala come sistema operativo creativo: professional_direction per posizionamento e qualita percepita, trend_policy per usare trend solo in modo brand-safe, typography_system per lasciare layout overlay-ready senza far scrivere testo lungo al modello, continuity_rules per preservare identita reali di persone, luoghi e prodotti.\n"
             . "Usa memory_summary.feedback_summary come memoria del gusto del tenant: cio che piace va riutilizzato con intelligenza, cio che non piace va evitato.\n"
             . "Usa knowledge_pack come dossier operativo del cliente: identita, segnali positivi, divieti, temi, offerte e preferenze hanno priorita reale.\n"
             . "Dentro knowledge_pack.asset_library trovi foto, video, logo, audio, documenti, note testuali e link reali del cliente: usali per capire soggetti, prodotti, luoghi, voce, regole operative, FAQ e riferimenti concreti da preservare.\n"
@@ -107,7 +108,19 @@ class OpenAiService
             . "Quando la correzione riguarda copy o tono, migliora soprattutto caption, CTA e angolo narrativo, preservando il visual se gia coerente.\n"
             . "Tutto cio che generi e pensato per post social: non brochure, non sito corporate, non stock generico.\n"
             . "Usa social_publication_context per capire ruolo del contenuto nel feed, nella serie e nell insieme delle pubblicazioni.\n"
-            . "La caption deve sembrare nativa per Instagram/Facebook: hook iniziale, ritmo leggibile, taglio concreto e orientato al comportamento social.\n"
+            . "Se content_strategy_blueprint e presente, trattalo come guida editoriale forte per hook, angle, proof e CTA.\n"
+            . "Se item_brain.hook_meta e presente, usa main_hook come apertura preferita, alternative_hook solo se la prima suona forzata, audience_trigger per capire quale leva attivare, authority_cue e proof_or_trust_cue per dare credibilita concreta.\n"
+            . "Se item_brain.authority_signals o item_brain.trust_signals sono presenti, incorporali nel copy come dettagli reali o proof cue naturali, non come elenco tecnico esplicito.\n"
+            . "Se item_brain.content_structure_meta e presente, rispetta opening_structure, body_flow, closing_structure e, per i video, video_segments come ritmo operativo del contenuto.\n"
+            . "Se strategy_blueprint.creative_direction.content_strategy e presente, usalo come guard-rail per mantenere hook professionali, proof credibile e CTA non manipolative.\n"
+            . "Se item_brain.trend_bridge e presente, usa il trend come meccanica o angolo adattato al brand, non come meme o imitazione gratuita.\n"
+            . "Se item_brain.trend_opportunity e presente, usa hook_patterns, recommended_angle e risk_flags come guida operativa: massimizza modernita e viral potential senza sacrificare brand fit, execution feasibility o qualita percepita.\n"
+            . "Se item_brain.trend_usage_mode e presente, trattalo come vincolo strategico: reactive_commentary solo se il segnale e davvero fresco, trend_safe_adaptation per tradurre il trend nel brand, format_acceleration per usare solo la grammatica del format senza inseguire il meme.\n"
+            . "Se item_brain.trend_basis e presente, usa reason_why_now, reason_why_brand_fit ed expected_engagement_goal per decidere tono, hook e intensita del contenuto.\n"
+            . "Se item_brain.professionality_guardrails e presente, rispettalo come policy forte: il contenuto non deve mai sembrare clickbait stupido o fuori posizionamento.\n"
+            . "Se item_brain.overlay_brief e presente, il prompt immagine deve lasciare spazio compositivo pulito per un eventuale overlay tipografico breve, ma non deve chiedere testo lungo o lettering complesso renderizzato nel visual.\n"
+            . "Se item_brain.continuity_brief e presente, trattalo come vincolo duro di continuita visiva.\n"
+            . "La caption deve sembrare nativa per la piattaforma effettiva: hook iniziale, ritmo leggibile, taglio concreto e sintassi adatta a Instagram, Facebook, LinkedIn o TikTok.\n"
             . "Il brand descritto nel contesto e l azienda del cliente, non un caso studio di marketing o un cliente di agenzia.\n"
             . "Non usare strutture da consulenza tipo Contesto, Azione, Risultato o Framework, salvo richiesta esplicita del brief.\n"
             . "Non inventare metriche, percentuali, recensioni, risultati economici, prenotazioni, numeri o dati se non sono presenti nel contesto reale.\n"
@@ -130,7 +143,7 @@ class OpenAiService
             . "Mantieni tono coerente con messaging_map tone_rules e regole do/dont.\n"
             . "Caption concreta, specifica e adatta alla piattaforma.\n"
             . "Usa item_brain.uniqueness_key come vincolo creativo anti-duplicato.\n"
-            . "Il prompt immagine deve evitare loghi finti, watermark e testo sovraimpresso.\n"
+            . "Il prompt immagine deve evitare loghi finti, watermark e testo tipografico lungo dentro il visual.\n"
             . "Per default il prompt immagine deve portare verso fotografia editoriale e commerciale fotorealistica, non verso illustrazione o look artificiale.\n"
             . "Se compaiono persone, devono sembrare reali: volti, occhi, denti, mani, pelle, postura e anatomia credibili.\n"
             . "Non usare parole come stilizzato, cartoon, CGI, render, 3D o illustrato, salvo richiesta esplicita del brief.\n"
@@ -1292,5 +1305,4 @@ class OpenAiService
         };
     }
 }
-
 

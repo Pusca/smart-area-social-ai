@@ -69,6 +69,36 @@ class GenerateAiForContentItemTest extends TestCase
         ]));
     }
 
+    public function test_it_builds_creative_direction_prompt_instructions_for_overlay_and_continuity(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'creativeDirectionPromptInstruction');
+        $method->setAccessible(true);
+
+        $instruction = $method->invoke($job, [
+            'creative_direction' => [
+                'professional_direction' => [
+                    'quality_bar' => 'Il contenuto deve sembrare costruito per un pubblico reale e specifico.',
+                ],
+                'trend_policy' => [
+                    'disallowed_mechanics' => ['meme scollegati dal brand'],
+                ],
+            ],
+        ], [
+            'viral_hook_style' => 'Hook forte nel primo secondo.',
+            'shareability_driver' => 'Takeaway salvabile.',
+            'trend_bridge' => 'Usa il trend come struttura, non come meme.',
+            'overlay_brief' => 'safe area upper third, max 5 parole.',
+            'continuity_brief' => 'Mantieni volto e showroom reali.',
+        ]);
+
+        $this->assertStringContainsString('pubblico reale e specifico', $instruction);
+        $this->assertStringContainsString('Hook social', $instruction);
+        $this->assertStringContainsString('overlay-ready', $instruction);
+        $this->assertStringContainsString('Mantieni volto e showroom reali', $instruction);
+        $this->assertStringContainsString('meme scollegati dal brand', $instruction);
+    }
+
     public function test_it_builds_a_safer_openai_fallback_prompt_for_multi_reference_videos(): void
     {
         $job = new GenerateAiForContentItem(1);
@@ -869,6 +899,84 @@ class GenerateAiForContentItemTest extends TestCase
         );
 
         $this->assertSame(['primary.jpg'], $selected);
+    }
+
+    public function test_it_uses_storyboard_speech_plan_for_video_narration(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $item = new \App\Models\ContentItem([
+            'format' => 'reel',
+            'ai_meta' => [
+                'storyboard_meta' => [
+                    'speech_plan' => [
+                        'full_text' => 'Apri sul contrasto giusto. Poi accompagna il passaggio chiave. Chiudi con una CTA morbida.',
+                    ],
+                ],
+                'video_voiceover' => 'Questo testo non dovrebbe essere usato.',
+            ],
+        ]);
+
+        $narration = $job->resolveNarrationTextForVideo($item);
+
+        $this->assertStringContainsString('Apri sul contrasto giusto', $narration);
+        $this->assertStringNotContainsString('non dovrebbe essere usato', $narration);
+    }
+
+    public function test_it_builds_extended_segment_prompts_from_storyboard_scenes(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $prompts = $job->buildExtendedVideoSegmentPrompts(
+            provider: 'runway',
+            item: new \App\Models\ContentItem(['format' => 'reel']),
+            meta: [
+                'reel_blueprint' => [
+                    'hook' => 'Hook forte',
+                    'continuity_lock' => 'Stessa persona e stesso prodotto',
+                    'visual_payoff' => 'Payoff finale',
+                    'shots' => [
+                        ['purpose' => 'hook', 'subject' => 'persona', 'camera' => 'wide', 'motion' => 'push-in'],
+                        ['purpose' => 'sviluppo', 'subject' => 'prodotto', 'camera' => 'medium', 'motion' => 'tracking'],
+                        ['purpose' => 'payoff', 'subject' => 'persona e prodotto', 'camera' => 'close', 'motion' => 'micro parallax'],
+                    ],
+                ],
+                'storyboard_meta' => [
+                    'scene_list' => [
+                        [
+                            'scene_index' => 1,
+                            'scene_type' => 'hook',
+                            'shot_objective' => 'hook iniziale',
+                            'text_overlay' => ['safe_area' => 'upper_third'],
+                        ],
+                        [
+                            'scene_index' => 2,
+                            'scene_type' => 'development',
+                            'shot_objective' => 'sviluppo tecnico',
+                            'text_overlay' => ['safe_area' => 'upper_third'],
+                        ],
+                        [
+                            'scene_index' => 3,
+                            'scene_type' => 'payoff',
+                            'shot_objective' => 'payoff finale',
+                            'text_overlay' => ['safe_area' => 'lower_third'],
+                        ],
+                        [
+                            'scene_index' => 4,
+                            'scene_type' => 'cta',
+                            'shot_objective' => 'CTA finale',
+                            'text_overlay' => ['safe_area' => 'lower_third'],
+                        ],
+                    ],
+                ],
+            ],
+            basePrompt: 'Crea un reel premium verticale 9:16.',
+            segmentCount: 2
+        );
+
+        $this->assertCount(2, $prompts);
+        $this->assertStringContainsString('Scene plan for this segment', $prompts[0]);
+        $this->assertStringContainsString('hook iniziale', $prompts[0]);
+        $this->assertStringContainsString('CTA finale', $prompts[1]);
     }
 }
 

@@ -58,7 +58,7 @@ class AssetVariableService
             ->where('tenant_id', $tenantId)
             ->whereNull('content_plan_id')
             ->whereIn('id', $allAssetIds)
-            ->get(['id', 'kind', 'path', 'original_name', 'mime', 'meta'])
+            ->get(['id', 'kind', 'path', 'original_name', 'mime', 'meta', 'created_at', 'updated_at'])
             ->keyBy('id');
 
         $out = [];
@@ -125,6 +125,8 @@ class AssetVariableService
                     'original_name' => (string) ($asset->original_name ?? ''),
                     'mime' => (string) ($asset->mime ?? ''),
                     'meta' => is_array($asset->meta) ? $asset->meta : [],
+                    'created_at' => $asset->created_at?->toDateTimeString(),
+                    'updated_at' => $asset->updated_at?->toDateTimeString(),
                 ])->all(),
                 'voice_asset' => $voiceAsset ? [
                     'id' => (int) ($voiceAsset->id ?? 0),
@@ -133,6 +135,8 @@ class AssetVariableService
                     'original_name' => (string) ($voiceAsset->original_name ?? ''),
                     'mime' => (string) ($voiceAsset->mime ?? ''),
                     'meta' => is_array($voiceAsset->meta) ? $voiceAsset->meta : [],
+                    'created_at' => $voiceAsset->created_at?->toDateTimeString(),
+                    'updated_at' => $voiceAsset->updated_at?->toDateTimeString(),
                 ] : null,
             ];
         }
@@ -429,3 +433,5 @@ class AssetVariableService
         return $value;
     }
 }
+
+

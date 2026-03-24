@@ -4,13 +4,15 @@ namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
 use App\Services\AI\AiProviderMatrixService;
+use App\Services\Assets\AssetScoringEngine;
 use App\Services\GenerationAuditService;
 
 class ResolveProviderMatrixStep
 {
     public function __construct(
         private readonly AiProviderMatrixService $aiProviderMatrixService,
-        private readonly GenerationAuditService $generationAudit
+        private readonly GenerationAuditService $generationAudit,
+        private readonly AssetScoringEngine $assetScoringEngine
     ) {
     }
 
@@ -19,6 +21,23 @@ class ResolveProviderMatrixStep
         $providerMatrix = $this->aiProviderMatrixService->resolve($state->meta, (int) $state->item->tenant_id);
         $state->meta['provider_matrix'] = $providerMatrix;
         $state->put('provider_matrix', $providerMatrix);
+
+        $assetScoring = $this->assetScoringEngine->score(
+            assetVariables: (array) $state->get('asset_variables', []),
+            assetIdentity: (array) $state->get('asset_identity', []),
+            context: [
+                'tenant_id' => (int) $state->item->tenant_id,
+                'content_item_id' => (int) $state->item->id,
+                'format' => (string) $state->item->format,
+                'platform' => (string) $state->item->platform,
+                'strict_asset_mode' => $state->strictAssetMode,
+                'provider_matrix' => $providerMatrix,
+                'image_provider' => (string) data_get($providerMatrix, 'image.provider', ''),
+                'video_provider' => (string) data_get($providerMatrix, 'video.provider', ''),
+            ]
+        );
+        $state->meta['asset_scoring'] = $assetScoring;
+        $state->put('asset_scoring', $assetScoring);
 
         $state->run = $this->generationAudit->syncRun($state->run, [
             'requested_provider_matrix' => $job->requestedProviderMatrixSnapshot($state->meta),

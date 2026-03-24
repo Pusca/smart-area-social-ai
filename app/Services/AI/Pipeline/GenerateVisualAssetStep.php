@@ -9,6 +9,7 @@ use App\Services\GenerationMetricsService;
 use App\Services\KlingService;
 use App\Services\NanoBananaService;
 use App\Services\OpenAiService;
+use App\Services\Overlays\ContentOverlayRenderer;
 use App\Services\RunwayService;
 use App\Services\SpeechSynthesisService;
 use Illuminate\Support\Facades\Log;
@@ -25,6 +26,7 @@ class GenerateVisualAssetStep
         private readonly NanoBananaService $nanoBanana,
         private readonly ContentAlignmentService $contentAlignment,
         private readonly SpeechSynthesisService $speechSynthesis,
+        private readonly ContentOverlayRenderer $contentOverlayRenderer,
         private readonly GenerationAuditService $generationAudit,
         private readonly GenerationMetricsService $generationMetrics
     ) {
@@ -87,6 +89,10 @@ class GenerateVisualAssetStep
                 'strict_asset_mode' => $state->strictAssetMode,
                 'requested_video_seconds' => $visualRequestedSeconds,
                 'normalized_video_seconds' => $visualNormalizedSeconds,
+                'asset_selection' => $job->buildAssetSelectionAuditSummary(
+                    is_array($item->ai_meta) ? $item->ai_meta : [],
+                    true
+                ),
             ],
         ]);
 
@@ -163,6 +169,7 @@ class GenerateVisualAssetStep
                     }
 
                     $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
+                    $storyboardMeta = (array) data_get($metaNow, 'storyboard_meta', []);
                     $metaNow['video_generation'] = [
                         'source' => (string) ($videoResult['source'] ?? 'sora_video'),
                         'provider' => (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai')),
@@ -190,6 +197,7 @@ class GenerateVisualAssetStep
                         'segment_count' => (int) ($videoResult['segment_count'] ?? count((array) ($videoResult['segments'] ?? []))),
                         'target_total_seconds' => (int) ($videoResult['target_total_seconds'] ?? 0),
                         'segments' => (array) ($videoResult['segments'] ?? []),
+                        'storyboard_summary' => $job->compactStoryboardSummary($storyboardMeta),
                         'extended_fallback' => $videoResult['extended_fallback'] ?? null,
                         'audio' => $audioAttach,
                         'playback_postprocess' => $videoPlaybackPostprocess,
@@ -410,6 +418,10 @@ class GenerateVisualAssetStep
                 }
             }
 
+            if ($job->hasGeneratedVisualOutput($item)) {
+                $this->contentOverlayRenderer->apply($item);
+            }
+
             $visualOutputPersisted = $job->hasGeneratedVisualOutput($item);
             $visualAttemptAuditAttributes = $job->buildVisualAttemptAuditAttributes($item);
             $visualAttemptMetrics = $this->generationMetrics->buildVisualAttemptMetrics($item, [
@@ -508,3 +520,4 @@ class GenerateVisualAssetStep
         return $state;
     }
 }
+

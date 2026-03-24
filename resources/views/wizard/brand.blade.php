@@ -58,6 +58,23 @@
     }
 
     $tone = old('default_tone', $profile?->default_tone ?? 'professionale');
+    $overlayPreferences = is_array($profile?->overlay_preferences ?? null) ? $profile->overlay_preferences : [];
+    $overlayFonts = (array) config('overlays.fonts', []);
+    $overlayToneOptions = (array) config('overlays.tone_presets', []);
+    $overlayPresetOptions = (array) config('overlays.presets', []);
+    $overlaySafeAreaOptions = (array) config('overlays.ui.safe_areas', []);
+    $overlayFontPreset = old('overlay_font_preset', $overlayPreferences['font_preset'] ?? $overlayPreferences['tone_preset'] ?? 'modern');
+    $overlayFontFamily = old('overlay_font_family', $overlayPreferences['font_family'] ?? 'arial');
+    $overlayFontFallback = old('overlay_font_fallback', $overlayPreferences['fallback_font_family'] ?? 'segoe_ui');
+    $overlayPreset = old('overlay_preset', $overlayPreferences['preset'] ?? 'modern_split_caption');
+    $overlaySafeArea = old('overlay_safe_area', $overlayPreferences['safe_area'] ?? 'upper_third');
+    $overlayAutoEnabled = (bool) old('overlay_auto_enabled', $overlayPreferences['auto_enabled'] ?? true);
+    $preferredHookIntensity = old('preferred_hook_intensity', $overlayPreferences['preferred_hook_intensity'] ?? 'medium');
+    $trendAppetite = old('trend_appetite', $overlayPreferences['trend_appetite'] ?? 'medium');
+    $professionalismGuardrailLevel = old('professionalism_guardrail_level', $overlayPreferences['professionalism_guardrail_level'] ?? 'high');
+    $hookIntensityOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
+    $trendAppetiteOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
+    $guardrailOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
 
     $profileChecks = [
         old('business_name', $profile?->business_name ?? ''),
@@ -742,6 +759,30 @@
                             <input id="brand_palette" type="text" name="brand_palette" value="{{ old('brand_palette', $profile?->brand_palette ?? '') }}" placeholder="Es. #0F172A, #2563EB, #F59E0B" class="{{ $inputClass }}" />
                         </div>
                         <div>
+                            <label for="overlay_font_preset" class="{{ $labelClass }}">Font preset brand</label>
+                            <select id="overlay_font_preset" name="overlay_font_preset" class="{{ $inputClass }}">
+                                @foreach($overlayToneOptions as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayFontPreset === $key)>{{ $row['label'] ?? ucfirst($key) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_family" class="{{ $labelClass }}">Font primario overlay</label>
+                            <select id="overlay_font_family" name="overlay_font_family" class="{{ $inputClass }}">
+                                @foreach($overlayFonts as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayFontFamily === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_font_fallback" class="{{ $labelClass }}">Fallback font</label>
+                            <select id="overlay_font_fallback" name="overlay_font_fallback" class="{{ $inputClass }}">
+                                @foreach($overlayFonts as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayFontFallback === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
                             <label for="seasonal_offers" class="{{ $labelClass }}">Offerte/promozioni periodo (opzionale)</label>
                             <textarea id="seasonal_offers" name="seasonal_offers" rows="3" class="{{ $inputClass }}" placeholder="Es. promo mese, bundle, sconto primo mese">{{ old('seasonal_offers', $profile?->seasonal_offers ?? '') }}</textarea>
                         </div>
@@ -780,6 +821,56 @@
                         <div>
                             <label for="default_posts_per_week" class="{{ $labelClass }}">Post/settimana default</label>
                             <input id="default_posts_per_week" type="number" min="1" max="21" step="1" name="default_posts_per_week" value="{{ old('default_posts_per_week', $profile?->default_posts_per_week ?? 5) }}" class="{{ $inputClass }}" />
+                        </div>
+                        <div>
+                            <label for="overlay_preset" class="{{ $labelClass }}">Text overlay style preset</label>
+                            <select id="overlay_preset" name="overlay_preset" class="{{ $inputClass }}">
+                                @foreach($overlayPresetOptions as $key => $row)
+                                    <option value="{{ $key }}" @selected($overlayPreset === $key)>{{ $row['label'] ?? $key }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="preferred_hook_intensity" class="{{ $labelClass }}">Preferred hook intensity</label>
+                            <select id="preferred_hook_intensity" name="preferred_hook_intensity" class="{{ $inputClass }}">
+                                @foreach($hookIntensityOptions as $key => $label)
+                                    <option value="{{ $key }}" @selected($preferredHookIntensity === $key)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="trend_appetite" class="{{ $labelClass }}">Trend appetite</label>
+                            <select id="trend_appetite" name="trend_appetite" class="{{ $inputClass }}">
+                                @foreach($trendAppetiteOptions as $key => $label)
+                                    <option value="{{ $key }}" @selected($trendAppetite === $key)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="professionalism_guardrail_level" class="{{ $labelClass }}">Professionalism guardrail</label>
+                            <select id="professionalism_guardrail_level" name="professionalism_guardrail_level" class="{{ $inputClass }}">
+                                @foreach($guardrailOptions as $key => $label)
+                                    <option value="{{ $key }}" @selected($professionalismGuardrailLevel === $key)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label for="overlay_safe_area" class="{{ $labelClass }}">Safe area overlay</label>
+                            <select id="overlay_safe_area" name="overlay_safe_area" class="{{ $inputClass }}">
+                                @foreach($overlaySafeAreaOptions as $safeAreaOption)
+                                    <option value="{{ $safeAreaOption }}" @selected($overlaySafeArea === $safeAreaOption)>{{ ucfirst(str_replace('_', ' ', $safeAreaOption)) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+                            <label class="flex items-start gap-3">
+                                <input type="hidden" name="overlay_auto_enabled" value="0">
+                                <input type="checkbox" name="overlay_auto_enabled" value="1" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" @checked($overlayAutoEnabled) />
+                                <span>
+                                    <span class="block text-sm font-semibold text-gray-900">Overlay automatici attivi</span>
+                                    <span class="mt-1 block text-xs text-gray-600">Se attivo, Social AI pianifica e renderizza headline/CTA overlay in modo brand-aware su immagini e video.</span>
+                                </span>
+                            </label>
                         </div>
 
                         <div>

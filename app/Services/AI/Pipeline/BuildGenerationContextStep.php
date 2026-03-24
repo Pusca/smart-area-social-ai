@@ -68,6 +68,8 @@ class BuildGenerationContextStep
             'analysis_framework' => (array) data_get($strategy, 'analysis_framework', []),
             'visual_system' => (array) data_get($strategy, 'visual_system', []),
             'publishing_system' => (array) data_get($strategy, 'publishing_system', []),
+            'creative_direction' => (array) data_get($strategy, 'creative_direction', []),
+            'trend_intelligence' => (array) data_get($strategy, 'trend_intelligence', []),
             'strategy_notes' => (string) data_get($strategy, 'strategy_notes', ''),
             'captured_at' => now()->toDateTimeString(),
         ];
