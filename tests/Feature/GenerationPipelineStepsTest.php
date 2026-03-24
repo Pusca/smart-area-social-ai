@@ -198,6 +198,109 @@ class GenerationPipelineStepsTest extends TestCase
         );
     }
 
+    public function test_it_normalizes_structured_text_fields_from_generation_payload(): void
+    {
+        [$tenant, $user] = $this->bootstrapTenant('tenant-pipeline-structured-text');
+        $plan = $this->createPlan($tenant, $user);
+        $item = $this->createContentItem($tenant, $user, $plan, [
+            'format' => 'reel',
+            'title' => 'Pipeline structured reel',
+            'caption' => 'Mostra un reel con hook e payoff chiari',
+            'ai_meta' => [
+                'tenant_profile' => [
+                    'business_name' => 'Do Mori',
+                    'industry' => 'Ristorante',
+                    'target' => 'Turisti e residenti',
+                    'cta' => 'Prenota ora.',
+                ],
+                'plan' => [
+                    'goal' => 'Awareness',
+                    'tone' => 'caldo',
+                ],
+                'strategy' => [
+                    'brand_voice' => [
+                        'target' => 'Turisti e residenti',
+                        'industry' => 'Ristorante',
+                    ],
+                    'analysis_framework' => [
+                        'primary_goal' => 'Awareness',
+                    ],
+                ],
+                'item_brain' => [
+                    'objective' => 'Awareness',
+                    'angle' => 'atmosfera reale del locale',
+                    'rubric' => 'Storia Brand',
+                    'editorial_mode' => 'evergreen',
+                ],
+            ],
+        ]);
+
+        $this->mock(OpenAiService::class, function ($mock): void {
+            $mock->shouldReceive('generateContent')
+                ->once()
+                ->andReturn([
+                    'caption' => ['Caption finale', ['coerente e utile.']],
+                    'hashtags' => [['#domori'], '#venezia'],
+                    'cta' => ['Prenota', 'ora.'],
+                    'image_prompt' => ['Visual realistico', 'del locale.'],
+                    'video_prompt' => ['Reel verticale', ['realistico del locale.']],
+                    'voiceover' => ['Vivi', ['un momento vero nel cuore di Venezia.']],
+                    'reel_blueprint' => null,
+                    'usage' => [],
+                    'response_id' => 'resp_test_structured_text',
+                ]);
+        });
+
+        $this->mock(ContentAlignmentService::class, function ($mock): void {
+            $mock->shouldReceive('gradeTextDraft')
+                ->once()
+                ->andReturn([
+                    'overall_score' => 0.84,
+                    'should_retry' => false,
+                    'feedback' => null,
+                    'heuristic' => [
+                        'cta_score' => 0.9,
+                        'hard_rule_violations' => [],
+                    ],
+                    'llm' => [
+                        'brand_alignment_score' => 0.86,
+                        'brief_alignment_score' => 0.83,
+                        'issues' => [],
+                    ],
+                ]);
+        });
+
+        $job = new GenerateAiForContentItem((int) $item->id, 'pipeline-structured-text-run');
+        $state = GenerationPipelineState::fromItem($item->fresh(['plan']));
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $state->meta = $meta;
+        $state->put('provider_matrix', [
+            'text' => ['provider' => 'openai'],
+            'grader' => ['provider' => 'openai'],
+        ])->put('tenant_profile', (array) data_get($meta, 'tenant_profile', []))
+            ->put('item_brain', (array) data_get($meta, 'item_brain', []))
+            ->put('strategy', (array) data_get($meta, 'strategy', []))
+            ->put('memory_summary', [])
+            ->put('active_feedback_request', [])
+            ->put('asset_variables', [])
+            ->put('asset_identity', [])
+            ->put('brief_seed', 'Mostra un reel con hook e payoff chiari')
+            ->put('recent_captions', [])
+            ->put('plan_titles', [])
+            ->put('plan_captions', []);
+
+        app(GenerateBaseTextStep::class)->handle($job, $state);
+
+        $item->refresh();
+
+        $this->assertSame('Caption finale coerente e utile.', $item->ai_caption);
+        $this->assertSame(['#domori', '#venezia'], $item->ai_hashtags);
+        $this->assertSame('Prenota ora.', $item->ai_cta);
+        $this->assertSame('Visual realistico del locale.', $item->ai_image_prompt);
+        $this->assertSame('Reel verticale realistico del locale.', data_get($item->ai_meta, 'video_prompt'));
+        $this->assertSame('Vivi un momento vero nel cuore di Venezia.', data_get($item->ai_meta, 'video_voiceover'));
+    }
+
     public function test_it_marks_generation_as_done_when_visual_output_exists(): void
     {
         Notification::fake();

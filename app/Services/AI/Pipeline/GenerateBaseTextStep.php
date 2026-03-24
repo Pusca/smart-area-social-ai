@@ -216,7 +216,10 @@ class GenerateBaseTextStep
                     $iterContext['generation_guard'] = $generationGuard;
                 }
 
-                $gen = $this->openAi->generateContent($iterContext);
+                $generatedPayload = $this->openAi->generateContent($iterContext);
+                $gen = $this->normalizeGeneratedPayload(
+                    is_array($generatedPayload) ? $generatedPayload : []
+                );
                 $generationAttemptsUsed = $attempt + 1;
                 $caption = trim((string) ($gen['caption'] ?? ''));
                 $score = $job->maxTextSimilarity($caption, $comparisonTexts);
@@ -438,5 +441,77 @@ class GenerateBaseTextStep
         $state->put('item_brain', (array) data_get($state->meta, 'item_brain', []));
 
         return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function normalizeGeneratedPayload(array $payload): array
+    {
+        $payload['caption'] = $this->flattenGeneratedText($payload['caption'] ?? '');
+        $payload['cta'] = $this->flattenGeneratedText($payload['cta'] ?? '');
+        $payload['image_prompt'] = $this->flattenGeneratedText($payload['image_prompt'] ?? '');
+        $payload['video_prompt'] = $this->flattenGeneratedText($payload['video_prompt'] ?? '');
+        $payload['voiceover'] = $this->flattenGeneratedText($payload['voiceover'] ?? '');
+        $payload['hashtags'] = $this->normalizeGeneratedHashtags($payload['hashtags'] ?? []);
+        $payload['reel_blueprint'] = is_array($payload['reel_blueprint'] ?? null)
+            ? (array) $payload['reel_blueprint']
+            : null;
+
+        return $payload;
+    }
+
+    private function flattenGeneratedText(mixed $value): string
+    {
+        if (is_string($value) || is_numeric($value)) {
+            return trim((string) $value);
+        }
+
+        if (!is_array($value)) {
+            return '';
+        }
+
+        $parts = [];
+        array_walk_recursive($value, function ($item) use (&$parts): void {
+            if (!is_string($item) && !is_numeric($item)) {
+                return;
+            }
+
+            $text = trim((string) $item);
+            if ($text !== '') {
+                $parts[] = $text;
+            }
+        });
+
+        return trim(implode(' ', array_values(array_unique($parts))));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeGeneratedHashtags(mixed $value): array
+    {
+        if (is_string($value)) {
+            $value = preg_split('/[\s,]+/', trim($value)) ?: [];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $hashtags = [];
+        array_walk_recursive($value, function ($item) use (&$hashtags): void {
+            if (!is_string($item) && !is_numeric($item)) {
+                return;
+            }
+
+            $text = trim((string) $item);
+            if ($text !== '') {
+                $hashtags[] = $text;
+            }
+        });
+
+        return array_values(array_unique(array_filter($hashtags)));
     }
 }
