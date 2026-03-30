@@ -10,7 +10,9 @@ use App\Models\TenantProfile;
 use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\Editorial\EditorialStrategyService;
+use App\Services\Editorial\TrendBriefService;
 use App\Services\GuidedAssetVariableService;
+use App\Services\Learning\TenantLearningLoopService;
 use App\Services\Onboarding\QuickstartOnboardingService;
 use App\Services\TenantQuotaService;
 use App\Support\SpeechProviderResolver;
@@ -26,10 +28,12 @@ class TenantProfileController extends Controller
 {
     public function __construct(
         private readonly EditorialStrategyService $editorialStrategyService,
+        private readonly TrendBriefService $trendBriefService,
         private readonly AssetIdentityService $assetIdentityService,
         private readonly AssetVariableService $assetVariableService,
         private readonly GuidedAssetVariableService $guidedAssetVariableService,
         private readonly QuickstartOnboardingService $quickstartOnboardingService,
+        private readonly TenantLearningLoopService $tenantLearningLoopService,
         private readonly TenantQuotaService $tenantQuotaService
     ) {
     }
@@ -44,6 +48,24 @@ class TenantProfileController extends Controller
         if (!$strategy && $profile) {
             $strategy = $this->editorialStrategyService->refreshForTenant($tenantId, $profile);
         }
+        $learningProfile = is_array($profile?->learning_preferences) && !empty($profile->learning_preferences)
+            ? (array) $profile->learning_preferences
+            : ((bool) config('social_manager.features.tenant_learning_v1', true)
+                ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
+                : []);
+        $trendBrief = (bool) config('social_manager.features.trend_brief_v1', true)
+            ? $this->trendBriefService->getBriefForTenant(
+                $tenantId,
+                $profile,
+                $strategy?->toArray() ?? [],
+                [
+                    'strategy' => $strategy?->toArray() ?? [],
+                    'learning_preferences' => $learningProfile,
+                    'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+                    'formats' => (array) ($profile?->default_formats ?? ['post']),
+                ]
+            )
+            : [];
 
         $assets = BrandAsset::query()
             ->where('tenant_id', $tenantId)
@@ -70,6 +92,8 @@ class TenantProfileController extends Controller
             'profile',
             'assets',
             'strategy',
+            'trendBrief',
+            'learningProfile',
             'assetVariables',
             'assetVariableCatalog',
             'demoPlan',
@@ -77,6 +101,32 @@ class TenantProfileController extends Controller
             'quickstartDismissed',
             'shouldShowQuickstart'
         ));
+    }
+
+    public function refreshTrendBrief(Request $request)
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+        $profile = TenantProfile::query()->where('tenant_id', $tenantId)->first();
+        $strategy = $this->editorialStrategyService->forTenant($tenantId);
+        $learningProfile = (bool) config('social_manager.features.tenant_learning_v1', true)
+            ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
+            : [];
+
+        $this->trendBriefService->getBriefForTenant(
+            $tenantId,
+            $profile,
+            $strategy?->toArray() ?? [],
+            [
+                'strategy' => $strategy?->toArray() ?? [],
+                'learning_preferences' => $learningProfile,
+                'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+                'formats' => (array) ($profile?->default_formats ?? ['post']),
+            ]
+        );
+
+        return redirect()
+            ->route('profile.brand')
+            ->with('status', 'Trend Brief aggiornato.');
     }
 
     public function storeQuickstart(Request $request)

@@ -5,6 +5,7 @@ namespace App\Services\Editorial;
 use App\Models\BrandAsset;
 use App\Models\EditorialStrategy;
 use App\Models\TenantProfile;
+use App\Services\Learning\TenantLearningLoopService;
 use App\Services\Trends\TrendOpportunitySynthesisService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -14,7 +15,9 @@ class EditorialStrategyService
 {
     public function __construct(
         private readonly CreativeDirectionComposer $creativeDirectionComposer,
-        private readonly TrendOpportunitySynthesisService $trendOpportunitySynthesis
+        private readonly TrendOpportunitySynthesisService $trendOpportunitySynthesis,
+        private readonly TrendBriefService $trendBriefService,
+        private readonly TenantLearningLoopService $tenantLearningLoopService
     ) {
     }
 
@@ -56,6 +59,9 @@ class EditorialStrategyService
         $visual = $this->buildVisualSystem($profile, $assetReadiness);
         $publishing = $this->buildPublishingSystem($profile);
         $creativeDirection = $this->creativeDirectionComposer->compose($profile, $assetReadiness);
+        $learningPreferences = (bool) config('social_manager.features.tenant_learning_v1', true)
+            ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
+            : (array) ($profile?->learning_preferences ?? []);
         $trendIntelligence = $this->trendOpportunitySynthesis->buildForTenant($tenantId, $profile, [
             'strategy' => [
                 'analysis_framework' => $analysis,
@@ -64,6 +70,7 @@ class EditorialStrategyService
             'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
             'formats' => (array) ($profile?->default_formats ?? ['post']),
             'asset_readiness' => $assetReadiness,
+            'learning_preferences' => $learningPreferences,
         ]);
 
         $payload = [
@@ -120,6 +127,23 @@ class EditorialStrategyService
 
     public function toRuntimeContext(EditorialStrategy $strategy, array $brandReferences = []): array
     {
+        $tenantId = (int) $strategy->tenant_id;
+        $profile = TenantProfile::query()->where('tenant_id', $tenantId)->first();
+        $tenantLearning = (bool) config('social_manager.features.tenant_learning_v1', true)
+            ? ((is_array($profile?->learning_preferences) && !empty($profile->learning_preferences))
+                ? (array) $profile->learning_preferences
+                : $this->tenantLearningLoopService->refreshForTenant($tenantId))
+            : [];
+        $trendBrief = (bool) config('social_manager.features.trend_brief_v1', true)
+            ? $this->trendBriefService->getBriefForTenant($tenantId, $profile, [
+                'trend_intelligence' => $strategy->trend_intelligence ?? [],
+            ], [
+                'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+                'formats' => (array) ($profile?->default_formats ?? ['post']),
+                'learning_preferences' => $tenantLearning,
+            ])
+            : [];
+
         return [
             'brand_voice' => $strategy->brand_voice ?? [],
             'pillars' => $strategy->pillars ?? [],
@@ -136,6 +160,8 @@ class EditorialStrategyService
             'strategy_id' => (int) $strategy->id,
             'strategy_updated_at' => optional($strategy->updated_at)->toDateTimeString(),
             'brand_references' => $brandReferences,
+            'trend_brief' => $trendBrief,
+            'tenant_learning' => $tenantLearning,
         ];
     }
 

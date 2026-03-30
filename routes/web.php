@@ -51,6 +51,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::post('/profile/brand/quickstart/regenerate', [TenantProfileController::class, 'regenerateQuickstartDemo'])->name('profile.brand.quickstart.regenerate');
     Route::delete('/profile/brand/quickstart', [TenantProfileController::class, 'destroyQuickstartDemo'])->name('profile.brand.quickstart.destroy');
     Route::post('/profile/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
+    Route::post('/profile/brand/trends/refresh', [TenantProfileController::class, 'refreshTrendBrief'])->name('profile.brand.trends.refresh');
     Route::post('/profile/brand/variables', [TenantProfileController::class, 'storeVariable'])->name('profile.brand.variables.store');
     Route::post('/profile/brand/variables/persona-pack', [TenantProfileController::class, 'storeGuidedPersonaVariable'])->name('profile.brand.variables.persona.store');
     Route::post('/profile/brand/variables/{assetVariable}/assets', [TenantProfileController::class, 'storeVariableAssets'])->name('profile.brand.variables.assets.store');

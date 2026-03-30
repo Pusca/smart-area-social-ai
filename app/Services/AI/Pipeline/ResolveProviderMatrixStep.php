@@ -3,6 +3,7 @@
 namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Services\AI\IdentityGuard;
 use App\Services\AI\AiProviderMatrixService;
 use App\Services\Assets\AssetScoringEngine;
 use App\Services\GenerationAuditService;
@@ -12,7 +13,8 @@ class ResolveProviderMatrixStep
     public function __construct(
         private readonly AiProviderMatrixService $aiProviderMatrixService,
         private readonly GenerationAuditService $generationAudit,
-        private readonly AssetScoringEngine $assetScoringEngine
+        private readonly AssetScoringEngine $assetScoringEngine,
+        private readonly IdentityGuard $identityGuard
     ) {
     }
 
@@ -38,6 +40,23 @@ class ResolveProviderMatrixStep
         );
         $state->meta['asset_scoring'] = $assetScoring;
         $state->put('asset_scoring', $assetScoring);
+        $identityPreflight = (bool) config('social_manager.features.identity_guard_v1', true)
+            ? $this->identityGuard->preflight(
+                (array) $state->get('asset_identity', []),
+                $assetScoring,
+                $providerMatrix,
+                [
+                    'strict_asset_mode' => $state->strictAssetMode,
+                ]
+            )
+            : [];
+        if ($identityPreflight !== []) {
+            $state->meta['identity_guard'] = array_replace_recursive(
+                (array) data_get($state->meta, 'identity_guard', []),
+                ['preflight' => $identityPreflight]
+            );
+            $state->put('identity_preflight', $identityPreflight);
+        }
 
         $state->run = $this->generationAudit->syncRun($state->run, [
             'requested_provider_matrix' => $job->requestedProviderMatrixSnapshot($state->meta),

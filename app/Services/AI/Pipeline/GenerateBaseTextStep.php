@@ -36,9 +36,13 @@ class GenerateBaseTextStep
         $itemBrain = (array) $state->get('item_brain', []);
         $strategy = (array) $state->get('strategy', []);
         $memorySummary = (array) $state->get('memory_summary', []);
+        $tenantLearning = (array) $state->get('tenant_learning', data_get($meta, 'tenant_learning', []));
+        $trendBrief = (array) $state->get('trend_brief', data_get($meta, 'trend_brief', []));
+        $creativeBrief = (array) $state->get('creative_brief', data_get($meta, 'creative_brief', []));
         $activeFeedbackRequest = (array) $state->get('active_feedback_request', []);
         $assetVariables = (array) $state->get('asset_variables', []);
         $assetIdentity = (array) $state->get('asset_identity', []);
+        $identityPreflight = (array) $state->get('identity_preflight', data_get($meta, 'identity_guard.preflight', []));
         $briefSeed = (string) $state->get('brief_seed', '');
         $recentCaptions = (array) $state->get('recent_captions', []);
         $planTitles = (array) $state->get('plan_titles', []);
@@ -139,6 +143,9 @@ class GenerateBaseTextStep
                 'item_brain' => $itemBrain,
                 'manual_brief' => $briefSeed,
                 'memory_summary' => $memorySummary,
+                'tenant_learning' => $tenantLearning,
+                'trend_brief' => $trendBrief,
+                'creative_brief' => $creativeBrief,
                 'knowledge_pack' => (array) data_get($meta, 'knowledge_pack', []),
                 'examples' => (array) data_get($meta, 'examples', []),
                 'negative_examples' => (array) data_get($meta, 'negative_examples', []),
@@ -157,6 +164,9 @@ class GenerateBaseTextStep
                 ),
                 'asset_variables' => $assetVariables,
                 'asset_identity' => $assetIdentity,
+                'identity_guard' => [
+                    'preflight' => $identityPreflight,
+                ],
                 'repetition_rules' => [
                     'avoid_list' => array_values(array_unique(array_filter(array_merge(
                         (array) data_get($itemBrain, 'avoid_list', []),

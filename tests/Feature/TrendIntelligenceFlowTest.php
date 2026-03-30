@@ -5,12 +5,15 @@ namespace Tests\Feature;
 use App\Models\ContentPlan;
 use App\Models\Tenant;
 use App\Models\TenantProfile;
+use App\Models\TrendBrief;
+use App\Models\TrendIngestionRun;
 use App\Models\TrendSignal;
 use App\Models\TrendSnapshot;
 use App\Models\User;
 use App\Services\Editorial\ContentGenerator;
 use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
+use App\Services\Editorial\TrendBriefService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -27,9 +30,16 @@ class TrendIntelligenceFlowTest extends TestCase
         $this->assertIsArray($strategy->trend_intelligence);
         $this->assertGreaterThan(0, (int) data_get($strategy->trend_intelligence, 'summary.opportunities_count', 0));
         $this->assertSame(1, TrendSnapshot::query()->where('tenant_id', $tenant->id)->count());
+        $this->assertSame(1, TrendIngestionRun::query()->where('tenant_id', $tenant->id)->count());
         $this->assertGreaterThan(0, TrendSignal::query()->where('tenant_id', $tenant->id)->count());
         $this->assertGreaterThan(0.40, (float) data_get($strategy->trend_intelligence, 'opportunities.0.brand_fit_score', 0.0));
         $this->assertEmpty(array_intersect((array) data_get($strategy->trend_intelligence, 'opportunities.0.risk_flags', []), (array) config('trends.risk_block_flags', [])));
+        $signal = TrendSignal::query()->where('tenant_id', $tenant->id)->first();
+        $this->assertNotNull($signal);
+        $this->assertNotSame('', (string) $signal?->source_ref);
+        $this->assertNotSame('', (string) $signal?->title);
+        $this->assertNotSame('', (string) $signal?->summary);
+        $this->assertIsArray($signal?->niche_tags);
     }
 
     public function test_it_builds_trend_safe_plan_items_with_structured_opportunities(): void
@@ -126,6 +136,31 @@ class TrendIntelligenceFlowTest extends TestCase
         $this->assertNotSame('', (string) data_get($meta, 'item_brain.expected_engagement_goal', ''));
         $this->assertNotEmpty((array) data_get($meta, 'item_brain.professionality_guardrails', []));
         $this->assertGreaterThan(0, (int) data_get($meta, 'strategy.trend_intelligence.summary.opportunities_count', 0));
+    }
+
+    public function test_it_persists_a_reusable_trend_brief_with_freshness_and_confidence(): void
+    {
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-trend-brief');
+        $strategy = app(EditorialStrategyService::class)->refreshForTenant((int) $tenant->id, $profile);
+
+        $brief = app(TrendBriefService::class)->getBriefForTenant(
+            (int) $tenant->id,
+            $profile,
+            $strategy->toArray(),
+            [
+                'strategy' => $strategy->toArray(),
+                'platforms' => ['instagram'],
+                'formats' => ['reel', 'post'],
+            ]
+        );
+
+        $this->assertSame(1, TrendBrief::query()->where('tenant_id', $tenant->id)->count());
+        $this->assertGreaterThan(0.0, (float) ($brief['freshness_score'] ?? 0));
+        $this->assertGreaterThan(0.0, (float) ($brief['confidence_score'] ?? 0));
+        $this->assertNotEmpty((array) ($brief['current_relevant_themes'] ?? []));
+        $this->assertNotEmpty((array) ($brief['recommended_hook_patterns'] ?? []));
+        $this->assertIsArray((array) ($brief['signals_freshness'] ?? []));
+        $this->assertNotNull(TrendBrief::query()->where('tenant_id', $tenant->id)->value('source_snapshot_id'));
     }
 
     private function bootstrapTenant(string $slug): array

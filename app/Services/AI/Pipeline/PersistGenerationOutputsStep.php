@@ -3,6 +3,8 @@
 namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Services\AI\IdentityGuard;
+use App\Services\AI\PublishReadinessGate;
 use App\Services\AI\GenerationQualityScorecardService;
 use App\Services\GenerationAuditService;
 use App\Services\GenerationMetricsService;
@@ -14,6 +16,8 @@ class PersistGenerationOutputsStep
         private readonly GenerationAuditService $generationAudit,
         private readonly GenerationMetricsService $generationMetrics,
         private readonly GenerationQualityScorecardService $qualityScorecard,
+        private readonly IdentityGuard $identityGuard,
+        private readonly PublishReadinessGate $publishReadinessGate,
         private readonly WorkspaceNotificationService $workspaceNotifications
     ) {
     }
@@ -48,13 +52,23 @@ class PersistGenerationOutputsStep
                 ),
             ] + $runMetrics);
             $scorecard = $this->qualityScorecard->buildForContentItem($item, $state->run);
+            $identityValidation = $this->identityGuard->validateFinal($item, $state->run);
+            $publishGate = $this->publishReadinessGate->decideForContentItem($item, $state->run, $scorecard);
             $state->run = $this->generationAudit->syncRun($state->run, [
                 'quality_scorecard' => $scorecard,
+                'creative_brief' => (array) data_get($item->ai_meta, 'creative_brief', []),
+                'identity_validation' => $identityValidation,
+                'publish_gate' => $publishGate,
             ]);
+            $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+            $meta['identity_validation'] = $identityValidation;
+            $meta['publish_gate'] = $publishGate;
+            $item->ai_meta = $meta;
             $this->qualityScorecard->storeOnContentItem($item, $scorecard, $state->run);
             $job->updateGenerationAuditMeta($item, $state->run?->id, 'failed', [
                 'failed_at' => now()->toDateTimeString(),
                 'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
+                'publish_gate_decision' => (string) ($publishGate['decision'] ?? ''),
             ]);
             $item->save();
             $job->notifyAiFailure($item, $this->workspaceNotifications, (string) $item->ai_error);
@@ -77,13 +91,23 @@ class PersistGenerationOutputsStep
             ),
         ] + $runMetrics);
         $scorecard = $this->qualityScorecard->buildForContentItem($item, $state->run);
+        $identityValidation = $this->identityGuard->validateFinal($item, $state->run);
+        $publishGate = $this->publishReadinessGate->decideForContentItem($item, $state->run, $scorecard);
         $state->run = $this->generationAudit->syncRun($state->run, [
             'quality_scorecard' => $scorecard,
+            'creative_brief' => (array) data_get($item->ai_meta, 'creative_brief', []),
+            'identity_validation' => $identityValidation,
+            'publish_gate' => $publishGate,
         ]);
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $meta['identity_validation'] = $identityValidation;
+        $meta['publish_gate'] = $publishGate;
+        $item->ai_meta = $meta;
         $this->qualityScorecard->storeOnContentItem($item, $scorecard, $state->run);
         $job->updateGenerationAuditMeta($item, $state->run?->id, 'succeeded', [
             'completed_at' => now()->toDateTimeString(),
             'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
+            'publish_gate_decision' => (string) ($publishGate['decision'] ?? ''),
         ]);
         $item->save();
         $job->notifyAiSuccess($item, $this->workspaceNotifications);

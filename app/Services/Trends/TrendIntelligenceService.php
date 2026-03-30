@@ -3,6 +3,7 @@
 namespace App\Services\Trends;
 
 use App\Models\TenantProfile;
+use App\Models\TrendIngestionRun;
 use App\Models\TrendSignal;
 use App\Models\TrendSnapshot;
 use App\Services\Trends\Adapters\ConfigTrendSourceAdapter;
@@ -34,20 +35,30 @@ class TrendIntelligenceService
             return $latest->loadMissing('signals');
         }
 
-        $signals = collect();
-        foreach ($this->adapters() as $adapter) {
-            $signals = $signals->merge($adapter->collect($context));
-        }
+        $ingestionRun = TrendIngestionRun::query()->create([
+            'tenant_id' => $tenantId,
+            'run_key' => (string) Str::uuid(),
+            'source_type' => 'mixed',
+            'status' => 'running',
+            'context' => $this->normalizeIngestionContext($context),
+            'started_at' => Carbon::now(),
+        ]);
 
-        $scored = $signals
-            ->map(fn (array $signal) => $this->scoreSignal($tenantId, $signal, $profile, $context))
-            ->filter(fn ($signal) => is_array($signal) && trim((string) ($signal['topic'] ?? '')) !== '')
-            ->values();
+        try {
+            $signals = collect();
+            foreach ($this->adapters() as $adapter) {
+                $signals = $signals->merge($adapter->collect($context));
+            }
 
-        return DB::transaction(function () use ($tenantId, $scored, $context): TrendSnapshot {
-            $snapshot = TrendSnapshot::create([
-                'tenant_id' => $tenantId,
-                'status' => 'ready',
+            $scored = $signals
+                ->map(fn (array $signal) => $this->scoreSignal($tenantId, $signal, $profile, $context))
+                ->filter(fn ($signal) => is_array($signal) && trim((string) ($signal['topic'] ?? '')) !== '')
+                ->values();
+
+            return DB::transaction(function () use ($tenantId, $scored, $context, $ingestionRun): TrendSnapshot {
+                $snapshot = TrendSnapshot::create([
+                    'tenant_id' => $tenantId,
+                    'status' => 'ready',
                 'source_type' => $this->resolveSourceType($scored),
                 'version' => 'trend_snapshot_v1',
                 'summary' => $this->buildSummary($scored),
@@ -67,10 +78,13 @@ class TrendIntelligenceService
                     'tenant_id' => $tenantId,
                     'platform' => (string) ($signal['platform'] ?? 'instagram'),
                     'topic' => (string) ($signal['topic'] ?? ''),
+                    'title' => trim((string) ($signal['title'] ?? $signal['topic'] ?? '')),
+                    'summary' => trim((string) ($signal['summary'] ?? '')),
                     'format_type' => (string) ($signal['format_type'] ?? 'post'),
                     'hook_patterns' => (array) ($signal['hook_patterns'] ?? []),
                     'style_notes' => (array) ($signal['style_notes'] ?? []),
                     'freshness_score' => $signal['freshness_score'] ?? null,
+                    'confidence_score' => $signal['confidence_score'] ?? null,
                     'saturation_score' => $signal['saturation_score'] ?? null,
                     'estimated_relevance_score' => $signal['estimated_relevance_score'] ?? null,
                     'brand_fit_score' => $signal['brand_fit_score'] ?? null,
@@ -79,13 +93,48 @@ class TrendIntelligenceService
                     'viral_potential_score' => $signal['viral_potential_score'] ?? null,
                     'risk_flags' => (array) ($signal['risk_flags'] ?? []),
                     'source_type' => (string) ($signal['source_type'] ?? 'config_seed'),
+                    'source_ref' => trim((string) ($signal['source_ref'] ?? '')),
+                    'niche_tags' => (array) ($signal['niche_tags'] ?? []),
+                    'format_tags' => (array) ($signal['format_tags'] ?? []),
+                    'platform_tags' => (array) ($signal['platform_tags'] ?? []),
                     'observed_at' => Carbon::parse((string) ($signal['observed_at'] ?? Carbon::now()->toDateTimeString())),
+                    'expires_at' => !empty($signal['expires_at'])
+                        ? Carbon::parse((string) $signal['expires_at'])
+                        : Carbon::now()->addHours((int) config('social_manager.trend_brief.default_expiry_hours', 96)),
                     'meta' => (array) ($signal['meta'] ?? []),
+                    'evidence_payload' => (array) ($signal['evidence_payload'] ?? []),
                 ]);
             }
 
-            return $snapshot->load('signals');
-        });
+            $ingestionRun->forceFill([
+                'status' => 'succeeded',
+                'source_type' => $this->resolveSourceType($scored),
+                'signals_count' => $scored->count(),
+                'freshness_score' => $this->collectionAverage($scored, 'freshness_score'),
+                'confidence_score' => $this->collectionAverage($scored, 'confidence_score'),
+                'result_summary' => [
+                    'snapshot_id' => (int) $snapshot->id,
+                    'signals_count' => $scored->count(),
+                    'platform_breakdown' => $scored->countBy(fn (array $signal) => (string) ($signal['platform'] ?? 'unknown'))->all(),
+                ],
+                'meta' => [
+                    'cached' => false,
+                    'summary' => $snapshot->summary,
+                ],
+                'finished_at' => Carbon::now(),
+            ])->save();
+
+                return $snapshot->load('signals');
+            });
+        } catch (\Throwable $e) {
+            $ingestionRun->forceFill([
+                'status' => 'failed',
+                'error_message' => trim($e->getMessage()),
+                'finished_at' => Carbon::now(),
+            ])->save();
+
+            throw $e;
+        }
     }
 
     /**
@@ -113,11 +162,22 @@ class TrendIntelligenceService
     {
         $platform = strtolower(trim((string) ($signal['platform'] ?? 'instagram')));
         $topic = trim((string) ($signal['topic'] ?? ''));
+        $title = trim((string) ($signal['title'] ?? $topic));
+        $summary = trim((string) ($signal['summary'] ?? ''));
         $formatType = strtolower(trim((string) ($signal['format_type'] ?? 'post')));
         $freshness = $this->clamp((float) ($signal['freshness_score'] ?? 0.5));
+        $confidence = $this->clamp((float) ($signal['confidence_score'] ?? 0.72));
         $saturation = $this->clamp((float) ($signal['saturation_score'] ?? 0.5));
         $riskFlags = array_values(array_unique(array_filter(array_map('strval', (array) ($signal['risk_flags'] ?? [])))));
         $meta = is_array($signal['meta'] ?? null) ? (array) $signal['meta'] : [];
+        $learning = is_array($context['learning_preferences'] ?? null)
+            ? (array) $context['learning_preferences']
+            : [];
+        $nicheTags = array_values(array_unique(array_filter(array_map('strval', (array) ($signal['niche_tags'] ?? ($meta['industries'] ?? []))))));
+        $formatTags = array_values(array_unique(array_filter(array_map('strval', (array) ($signal['format_tags'] ?? [$formatType])))));
+        $platformTags = array_values(array_unique(array_filter(array_map('strval', (array) ($signal['platform_tags'] ?? [$platform])))));
+        $sourceRef = trim((string) ($signal['source_ref'] ?? ('signal:' . $platform . ':' . $topic)));
+        $evidencePayload = is_array($signal['evidence_payload'] ?? null) ? (array) $signal['evidence_payload'] : [];
 
         $industryTokens = $this->extractKeywords((string) ($profile?->industry ?? '') . ' ' . (string) ($profile?->services ?? ''));
         $audienceTokens = $this->extractKeywords((string) ($profile?->target ?? ''));
@@ -153,6 +213,12 @@ class TrendIntelligenceService
         $execution = $this->buildExecutionFeasibilityScore($formatType, (array) ($meta['requires'] ?? []), $assetReadiness);
         $viral = $this->clamp(0.30 + ($freshness * 0.24) + ((1 - $saturation) * 0.10) + ((count((array) ($signal['hook_patterns'] ?? [])) > 1) ? 0.10 : 0.05) + ($platformScore * 0.12) + ($formatScore * 0.08) - ($riskPenalty * 0.35));
         $relevance = $this->clamp(($novelty * 0.22) + ($brandFit * 0.36) + ($execution * 0.18) + ($viral * 0.24));
+        $learningBias = $this->learningBias($topic, $formatType, $learning);
+
+        $brandFit = $this->clamp($brandFit + ($learningBias['brand_fit_delta'] ?? 0.0));
+        $execution = $this->clamp($execution + ($learningBias['execution_delta'] ?? 0.0));
+        $viral = $this->clamp($viral + ($learningBias['viral_delta'] ?? 0.0));
+        $relevance = $this->clamp($relevance + ($learningBias['relevance_delta'] ?? 0.0));
 
         if ($saturation >= 0.85) {
             $riskFlags[] = 'trend_fatigue';
@@ -168,10 +234,13 @@ class TrendIntelligenceService
             'tenant_id' => $tenantId,
             'platform' => $platform,
             'topic' => $topic,
+            'title' => $title,
+            'summary' => $summary,
             'format_type' => $formatType,
             'hook_patterns' => array_values(array_filter(array_map('strval', (array) ($signal['hook_patterns'] ?? [])))),
             'style_notes' => array_values(array_filter(array_map('strval', (array) ($signal['style_notes'] ?? [])))),
             'freshness_score' => round($freshness, 4),
+            'confidence_score' => round($confidence, 4),
             'saturation_score' => round($saturation, 4),
             'estimated_relevance_score' => round($relevance, 4),
             'brand_fit_score' => round($brandFit, 4),
@@ -180,7 +249,12 @@ class TrendIntelligenceService
             'viral_potential_score' => round($viral, 4),
             'risk_flags' => array_values(array_unique($riskFlags)),
             'source_type' => trim((string) ($signal['source_type'] ?? 'config_seed')),
+            'source_ref' => $sourceRef,
+            'niche_tags' => $nicheTags,
+            'format_tags' => $formatTags,
+            'platform_tags' => $platformTags,
             'observed_at' => (string) ($signal['observed_at'] ?? Carbon::now()->toDateTimeString()),
+            'expires_at' => (string) ($signal['expires_at'] ?? Carbon::now()->addHours((int) config('social_manager.trend_brief.default_expiry_hours', 96))->toDateTimeString()),
             'meta' => array_merge($meta, [
                 'scoring' => [
                     'industry_match' => round($industryScore, 4),
@@ -188,7 +262,15 @@ class TrendIntelligenceService
                     'goal_match' => round($goalScore, 4),
                     'platform_match' => round($platformScore, 4),
                     'format_match' => round($formatScore, 4),
+                    'learning_bias' => $learningBias,
                 ],
+            ]),
+            'evidence_payload' => array_merge($evidencePayload, [
+                'title' => $title,
+                'summary' => $summary,
+                'niche_tags' => $nicheTags,
+                'format_tags' => $formatTags,
+                'platform_tags' => $platformTags,
             ]),
         ];
     }
@@ -204,10 +286,79 @@ class TrendIntelligenceService
             'signals_count' => $signals->count(),
             'platform_breakdown' => $signals->countBy(fn (array $signal) => (string) ($signal['platform'] ?? 'unknown'))->all(),
             'avg_freshness_score' => round((float) $signals->avg('freshness_score'), 4),
+            'avg_confidence_score' => round((float) $signals->avg('confidence_score'), 4),
             'avg_brand_fit_score' => round((float) $signals->avg('brand_fit_score'), 4),
             'avg_relevance_score' => round((float) $signals->avg('estimated_relevance_score'), 4),
             'generated_at' => Carbon::now()->toDateTimeString(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function normalizeIngestionContext(array $context): array
+    {
+        return [
+            'platforms' => array_values(array_filter(array_map('strval', (array) ($context['platforms'] ?? [])))),
+            'formats' => array_values(array_filter(array_map('strval', (array) ($context['formats'] ?? [])))),
+            'goal' => trim((string) data_get($context, 'strategy.analysis_framework.primary_goal', '')),
+            'learning_preferences' => is_array($context['learning_preferences'] ?? null)
+                ? (array) $context['learning_preferences']
+                : [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $learning
+     * @return array<string, float>
+     */
+    private function learningBias(string $topic, string $formatType, array $learning): array
+    {
+        $topic = Str::lower(trim($topic));
+        $formatType = Str::lower(trim($formatType));
+        $latestTopics = array_map(
+            fn ($value) => Str::lower(trim((string) $value)),
+            (array) data_get($learning, 'trend_outcomes.latest_topics', [])
+        );
+        $underperformingFormats = collect((array) data_get($learning, 'formats_that_underperform', []))
+            ->map(fn ($row) => Str::lower(trim((string) data_get($row, 'format', ''))))
+            ->filter()
+            ->values()
+            ->all();
+
+        $relevanceDelta = 0.0;
+        $brandFitDelta = 0.0;
+        $executionDelta = 0.0;
+        $viralDelta = 0.0;
+
+        if ($topic !== '' && in_array($topic, $latestTopics, true)) {
+            $relevanceDelta += 0.05;
+            $brandFitDelta += 0.03;
+        }
+
+        if ($formatType !== '' && in_array($formatType, $underperformingFormats, true)) {
+            $relevanceDelta -= 0.06;
+            $executionDelta -= 0.08;
+            $viralDelta -= 0.04;
+        }
+
+        return [
+            'relevance_delta' => round($relevanceDelta, 4),
+            'brand_fit_delta' => round($brandFitDelta, 4),
+            'execution_delta' => round($executionDelta, 4),
+            'viral_delta' => round($viralDelta, 4),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $signals
+     */
+    private function collectionAverage(Collection $signals, string $key): ?float
+    {
+        $avg = $signals->avg($key);
+
+        return is_numeric($avg) ? round((float) $avg, 4) : null;
     }
 
     /**

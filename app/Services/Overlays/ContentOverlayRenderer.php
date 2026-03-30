@@ -323,8 +323,25 @@ final class ContentOverlayRenderer
         $secondaryText = $this->prepareText((string) ($template['secondary_text'] ?? ''), $template, true);
         $fontSize = $this->fontSizeForMode((string) ($template['font_size_mode'] ?? 'large'), $width, $height, false);
         $secondaryFontSize = $this->fontSizeForMode((string) ($template['font_size_mode'] ?? 'large'), $width, $height, true);
-        [$x, $y] = $this->coordinates((string) ($template['position'] ?? 'upper_left'), (string) ($template['alignment'] ?? 'left'), $width, $height, $fontSize, false);
-        [$sx, $sy] = $this->coordinates((string) ($template['position'] ?? 'upper_left'), (string) ($template['alignment'] ?? 'left'), $width, $height, $secondaryFontSize, true);
+        $safeArea = (string) ($template['safe_area'] ?? 'upper_third');
+        [$x, $y] = $this->coordinates(
+            (string) ($template['position'] ?? 'upper_left'),
+            (string) ($template['alignment'] ?? 'left'),
+            $safeArea,
+            $width,
+            $height,
+            $fontSize,
+            false
+        );
+        [$sx, $sy] = $this->coordinates(
+            (string) ($template['position'] ?? 'upper_left'),
+            (string) ($template['alignment'] ?? 'left'),
+            $safeArea,
+            $width,
+            $height,
+            $secondaryFontSize,
+            true
+        );
 
         $primary = $this->drawtextFilter($primaryText, $fontPath, [
             'fontcolor' => (string) ($template['color'] ?? '#FFFFFF'),
@@ -427,10 +444,19 @@ final class ContentOverlayRenderer
     /**
      * @return array{0:string,1:string}
      */
-    private function coordinates(string $position, string $alignment, int $width, int $height, int $fontSize, bool $secondary): array
+    private function coordinates(string $position, string $alignment, string $safeArea, int $width, int $height, int $fontSize, bool $secondary): array
     {
         $marginX = max(28, (int) round($width * 0.06));
-        $marginY = max(30, (int) round($height * 0.08));
+        $upperGuard = match (Str::lower(trim($safeArea))) {
+            'center_safe' => max(42, (int) round($height * 0.18)),
+            'lower_third' => max(42, (int) round($height * 0.11)),
+            default => max(42, (int) round($height * 0.11)),
+        };
+        $lowerGuard = match (Str::lower(trim($safeArea))) {
+            'center_safe' => max(78, (int) round($height * 0.18)),
+            'upper_third' => max(84, (int) round($height * 0.15)),
+            default => max(84, (int) round($height * 0.15)),
+        };
         $lineOffset = $secondary ? (int) round($fontSize * 1.35) : 0;
 
         $x = match ($alignment) {
@@ -440,10 +466,10 @@ final class ContentOverlayRenderer
         };
 
         $y = match ($position) {
-            'upper_center', 'upper_left' => (string) ($marginY + $fontSize + $lineOffset),
+            'upper_center', 'upper_left' => (string) ($upperGuard + (int) round($fontSize * 1.18) + $lineOffset),
             'center', 'center_left' => '(h/2)-' . (int) round($fontSize * (0.25 - ($secondary ? 0.9 : 0))),
-            'lower_center', 'lower_left' => 'h-' . ($marginY + ($secondary ? 0 : $fontSize * 2.4) - $lineOffset),
-            default => (string) ($marginY + $fontSize + $lineOffset),
+            'lower_center', 'lower_left' => 'h-' . ($lowerGuard + ($secondary ? 0 : $fontSize * 2.15) - $lineOffset),
+            default => (string) ($upperGuard + (int) round($fontSize * 1.18) + $lineOffset),
         };
 
         return [$x, $y];

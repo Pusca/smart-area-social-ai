@@ -4,8 +4,11 @@ namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
 use App\Models\ContentItem;
+use App\Services\Editorial\CreativeBriefCompiler;
+use App\Services\Editorial\TrendBriefService;
 use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\GenerationAuditService;
+use App\Services\Learning\TenantLearningLoopService;
 use App\Services\MemoryBuilderService;
 use Illuminate\Support\Str;
 
@@ -14,7 +17,10 @@ class BuildGenerationContextStep
     public function __construct(
         private readonly MemoryBuilderService $memoryBuilder,
         private readonly TenantContentIntelligenceService $tenantContentIntelligence,
-        private readonly GenerationAuditService $generationAudit
+        private readonly GenerationAuditService $generationAudit,
+        private readonly TrendBriefService $trendBriefService,
+        private readonly TenantLearningLoopService $tenantLearningLoopService,
+        private readonly CreativeBriefCompiler $creativeBriefCompiler
     ) {
     }
 
@@ -87,6 +93,36 @@ class BuildGenerationContextStep
             ->values()
             ->all();
 
+        $tenantLearning = (bool) config('social_manager.features.tenant_learning_v1', true)
+            ? $this->tenantLearningLoopService->refreshForTenant((int) $item->tenant_id)
+            : (array) data_get($meta, 'tenant_learning', data_get($strategy, 'tenant_learning', []));
+        $trendBrief = (bool) config('social_manager.features.trend_brief_v1', true)
+            ? $this->trendBriefService->getBriefForTenant(
+                (int) $item->tenant_id,
+                null,
+                $strategy,
+                [
+                    'strategy' => $strategy,
+                    'learning_preferences' => $tenantLearning,
+                    'platforms' => $item->platforms(),
+                    'formats' => [(string) $item->format],
+                    'asset_readiness' => (array) data_get($strategy, 'analysis_framework.asset_readiness', []),
+                ]
+            )
+            : (array) data_get($meta, 'trend_brief', data_get($strategy, 'trend_brief', []));
+        $creativeBrief = (bool) config('social_manager.features.creative_brief_v1', true)
+            ? $this->creativeBriefCompiler->compileForContentItem($item, [
+                'strategy' => $strategy,
+                'tenant_profile' => $tenantProfile,
+                'item_brain' => $itemBrain,
+                'asset_identity' => $assetIdentity,
+                'memory_summary' => $memorySummary,
+                'trend_brief' => $trendBrief,
+                'tenant_learning' => $tenantLearning,
+                'brief_seed' => $briefSeed,
+            ])->toArray()
+            : (array) data_get($meta, 'creative_brief', []);
+
         $planContext = ContentItem::query()
             ->where('tenant_id', $item->tenant_id)
             ->where('content_plan_id', $item->content_plan_id)
@@ -110,11 +146,20 @@ class BuildGenerationContextStep
             ->all();
 
         $state->run = $run;
+        $state->run = $this->generationAudit->syncRun($state->run, [
+            'creative_brief' => $creativeBrief,
+        ]);
         $state->meta = $meta;
+        $state->meta['tenant_learning'] = $tenantLearning;
+        $state->meta['trend_brief'] = $trendBrief;
+        $state->meta['creative_brief'] = $creativeBrief;
         $state->put('strategy', $strategy)
             ->put('item_brain', $itemBrain)
             ->put('tenant_profile', $tenantProfile)
             ->put('memory_summary', $memorySummary)
+            ->put('tenant_learning', $tenantLearning)
+            ->put('trend_brief', $trendBrief)
+            ->put('creative_brief', $creativeBrief)
             ->put('active_feedback_request', $activeFeedbackRequest)
             ->put('asset_variables', $assetVariables)
             ->put('asset_identity', $assetIdentity)

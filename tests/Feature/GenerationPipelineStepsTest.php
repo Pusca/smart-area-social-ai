@@ -64,6 +64,11 @@ class GenerationPipelineStepsTest extends TestCase
         $this->assertSame('runway', data_get($state->run?->version_meta, 'provider_adapter_versions.video.provider'));
         $this->assertSame('runway_video_adapter_v1', data_get($item->ai_meta, 'generation_audit.version_map.provider_adapter_versions.video.adapter_version'));
         $this->assertIsArray(data_get($state->meta, 'strategy_snapshot.creative_direction'));
+        $this->assertIsArray(data_get($state->meta, 'trend_brief.current_relevant_themes'));
+        $this->assertIsArray(data_get($state->meta, 'tenant_learning.preferred_hook_families'));
+        $this->assertSame((int) $item->id, (int) data_get($state->meta, 'creative_brief.content_item_id'));
+        $this->assertIsArray(data_get($state->meta, 'identity_guard.preflight.slots'));
+        $this->assertSame((int) $item->id, (int) data_get($state->run?->creative_brief, 'content_item_id'));
         $this->assertSame('Mostra il locale e la titolare', $state->get('brief_seed'));
         $this->assertIsArray($state->get('tenant_profile'));
         $this->assertIsArray($state->get('asset_variables'));
@@ -165,9 +170,13 @@ class GenerationPipelineStepsTest extends TestCase
             ->put('item_brain', (array) data_get($meta, 'item_brain', []))
             ->put('strategy', (array) data_get($meta, 'strategy', []))
             ->put('memory_summary', [])
+            ->put('tenant_learning', ['preferred_hook_families' => ['authoritative']])
+            ->put('trend_brief', ['current_relevant_themes' => [['topic' => 'premium local proof']]])
+            ->put('creative_brief', ['content_item_id' => (int) $item->id, 'objective' => 'Awareness'])
             ->put('active_feedback_request', [])
             ->put('asset_variables', [])
             ->put('asset_identity', [])
+            ->put('identity_preflight', ['status' => 'pass', 'slots' => []])
             ->put('brief_seed', 'Mostra il locale con un angolo umano e premium')
             ->put('recent_captions', [])
             ->put('plan_titles', [])
@@ -182,6 +191,10 @@ class GenerationPipelineStepsTest extends TestCase
         $this->assertNotSame('', (string) data_get($item->ai_meta, 'item_brain.content_strategy_type'));
         $this->assertNotSame('', (string) data_get($item->ai_meta, 'item_brain.content_structure_meta.video_segments.hook_0_3'));
         $this->assertNotSame('', (string) data_get($capturedContext, 'content_strategy_blueprint.hook_meta.main_hook'));
+        $this->assertSame((int) $item->id, (int) data_get($capturedContext, 'creative_brief.content_item_id'));
+        $this->assertIsArray(data_get($capturedContext, 'trend_brief.current_relevant_themes'));
+        $this->assertIsArray(data_get($capturedContext, 'tenant_learning.preferred_hook_families'));
+        $this->assertIsArray(data_get($capturedContext, 'identity_guard.preflight'));
         $this->assertNotSame('', (string) data_get($capturedContext, 'content_strategy_blueprint.content_structure_meta.video_segments.payoff_reveal'));
         $this->assertIsArray(data_get($item->ai_meta, 'reel_blueprint.shots'));
         $this->assertIsArray(data_get($item->ai_meta, 'storyboard_meta.scene_list'));
@@ -315,6 +328,10 @@ class GenerationPipelineStepsTest extends TestCase
                 'tenant_profile' => [
                     'cta' => 'Prenota ora.',
                 ],
+                'creative_brief' => [
+                    'content_item_id' => 0,
+                    'objective' => 'Awareness',
+                ],
                 'manual_brief' => 'Mostra il locale in modo realistico.',
                 'text_alignment_review' => [
                     'overall_score' => 0.81,
@@ -338,10 +355,18 @@ class GenerationPipelineStepsTest extends TestCase
                         'missing_indexes' => [],
                     ],
                 ],
+                'creative_brief' => [
+                    'content_item_id' => 0,
+                    'objective' => 'Awareness',
+                ],
             ],
         ]);
 
         $run = app(GenerationAuditService::class)->startRun($item, 'pipeline-success-run');
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        data_set($meta, 'creative_brief.content_item_id', (int) $item->id);
+        $item->ai_meta = $meta;
+        $item->save();
         GenerationAttempt::create([
             'generation_run_id' => $run->id,
             'tenant_id' => $tenant->id,
@@ -375,8 +400,12 @@ class GenerationPipelineStepsTest extends TestCase
         $this->assertEquals('0.0420', (string) $run?->estimated_cost_usd);
         $this->assertSame('openai', $run?->final_provider);
         $this->assertIsArray($run?->quality_scorecard);
+        $this->assertIsArray($run?->creative_brief);
+        $this->assertSame('pass', data_get($run?->identity_validation, 'status'));
+        $this->assertSame('pass_with_warnings', data_get($run?->publish_gate, 'decision'));
         $this->assertSame('pass_with_warnings', data_get($run?->quality_scorecard, 'publish_readiness_status'));
         $this->assertSame('pass_with_warnings', data_get($item->ai_meta, 'quality_scorecard.publish_readiness_status'));
+        $this->assertSame('pass_with_warnings', data_get($item->ai_meta, 'publish_gate.decision'));
         $this->assertSame('succeeded', data_get($item->ai_meta, 'generation_audit.latest_status'));
     }
 
@@ -389,9 +418,19 @@ class GenerationPipelineStepsTest extends TestCase
         $item = $this->createContentItem($tenant, $user, $plan, [
             'format' => 'reel',
             'ai_error' => 'Runway video generation failed',
+            'ai_meta' => [
+                'creative_brief' => [
+                    'content_item_id' => 0,
+                    'objective' => 'Awareness',
+                ],
+            ],
         ]);
 
         $run = app(GenerationAuditService::class)->startRun($item, 'pipeline-failure-run');
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        data_set($meta, 'creative_brief.content_item_id', (int) $item->id);
+        $item->ai_meta = $meta;
+        $item->save();
         $state = GenerationPipelineState::fromItem($item->fresh(['plan']), true);
         $state->run = $run;
 
@@ -403,8 +442,10 @@ class GenerationPipelineStepsTest extends TestCase
         $this->assertSame('error', $item->ai_status);
         $this->assertStringContainsString('STRICT_MODE_NO_VISUAL_OUTPUT', (string) $item->ai_error);
         $this->assertSame('failed', $run?->status);
+        $this->assertSame('blocked', data_get($run?->publish_gate, 'decision'));
         $this->assertSame('blocked', data_get($run?->quality_scorecard, 'publish_readiness_status'));
         $this->assertSame('blocked', data_get($item->ai_meta, 'quality_scorecard.publish_readiness_status'));
+        $this->assertSame('blocked', data_get($item->ai_meta, 'publish_gate.decision'));
         $this->assertSame('failed', data_get($item->ai_meta, 'generation_audit.latest_status'));
     }
 

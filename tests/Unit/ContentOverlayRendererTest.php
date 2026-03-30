@@ -32,4 +32,20 @@ class ContentOverlayRendererTest extends TestCase
             ['type' => 'ai_overlay_rendered', 'path' => 'ai/overlays/new.png'],
         ], $result);
     }
+
+    public function test_it_pushes_upper_safe_area_overlays_further_down_from_the_top_edge(): void
+    {
+        $renderer = new ContentOverlayRenderer(
+            new ContentOverlayFontRegistry(),
+            new ContentOverlayReadabilityService()
+        );
+
+        $method = new \ReflectionMethod($renderer, 'coordinates');
+        $method->setAccessible(true);
+
+        [, $y] = $method->invoke($renderer, 'upper_left', 'left', 'upper_third', 1080, 1920, 96, false);
+
+        $this->assertIsString($y);
+        $this->assertGreaterThanOrEqual(300, (int) $y);
+    }
 }

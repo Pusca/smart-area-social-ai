@@ -93,7 +93,12 @@ class CalendarController extends Controller
     {
         $this->authorizeTenant($request, $contentItem);
 
-        $result = $this->socialPublishingService->approve($contentItem);
+        try {
+            $result = $this->socialPublishingService->approve($contentItem);
+        } catch (\RuntimeException $e) {
+            return back()->with('status', $e->getMessage());
+        }
+
         $warnings = array_values(array_filter((array) ($result['warnings'] ?? [])));
         $scheduled = (int) ($result['scheduled'] ?? 0);
 

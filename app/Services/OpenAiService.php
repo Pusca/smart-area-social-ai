@@ -90,6 +90,9 @@ class OpenAiService
         $instructions =
             "Sei una social media manager senior.\n"
             . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
+            . "Se creative_brief e presente, trattalo come artefatto canonico pre-generazione: objective, hook_strategy, proof_points, identity_constraints, trend_overlays e publishability_constraints hanno priorita strategica.\n"
+            . "Se trend_brief e presente, usa current_relevant_themes, recommended_post_angles, recommended_reel_structures, recommended_hook_patterns, recommended_cta_styles e trends_to_avoid come base fresca ed esplicabile.\n"
+            . "Se tenant_learning e presente, usa preferred_hook_families, preferred_cta_styles, formats_that_underperform e provider_paths_to_avoid_for_identity_heavy per correggere le scelte creative.\n"
             . "Se strategy_blueprint.creative_direction e presente, usala come sistema operativo creativo: professional_direction per posizionamento e qualita percepita, trend_policy per usare trend solo in modo brand-safe, typography_system per lasciare layout overlay-ready senza far scrivere testo lungo al modello, continuity_rules per preservare identita reali di persone, luoghi e prodotti.\n"
             . "Usa memory_summary.feedback_summary come memoria del gusto del tenant: cio che piace va riutilizzato con intelligenza, cio che non piace va evitato.\n"
             . "Usa knowledge_pack come dossier operativo del cliente: identita, segnali positivi, divieti, temi, offerte e preferenze hanno priorita reale.\n"
@@ -1305,4 +1308,3 @@ class OpenAiService
         };
     }
 }
-

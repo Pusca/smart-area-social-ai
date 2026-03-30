@@ -44,6 +44,13 @@ class SocialPublishingTest extends TestCase
             'ai_hashtags' => ['#hostup', '#social'],
             'ai_image_path' => 'ai/test-image.png',
             'ai_status' => 'done',
+            'ai_meta' => [
+                'quality_scorecard' => [
+                    'publish_readiness_status' => 'pass_with_warnings',
+                    'warnings' => ['Review finale consigliata.'],
+                    'blocking_reasons' => [],
+                ],
+            ],
         ]);
 
         $this->actingAs($user)
@@ -66,6 +73,61 @@ class SocialPublishingTest extends TestCase
             'platform' => 'instagram',
             'status' => 'scheduled',
         ]);
+    }
+
+    public function test_calendar_approval_is_blocked_when_publish_gate_fails_identity_checks(): void
+    {
+        config()->set('meta.allow_local_public_urls', true);
+        Storage::fake('public');
+        Storage::disk('public')->put('ai/test-image.png', 'fake-image');
+
+        [$tenant, $user] = $this->createTenantUserPair('tenant-social-blocked');
+        $plan = $this->createPlan($tenant->id, $user->id);
+        $this->createMetaAccount($tenant->id, $user->id, 'instagram', 'ig-business-2');
+
+        $item = ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'scheduled_at' => now()->addHour(),
+            'status' => 'review',
+            'title' => 'Post identity heavy',
+            'caption' => 'Caption di fallback',
+            'ai_caption' => 'Caption AI finale',
+            'ai_cta' => 'Scrivici in DM.',
+            'ai_image_path' => 'ai/test-image.png',
+            'ai_status' => 'done',
+            'ai_meta' => [
+                'quality_scorecard' => [
+                    'publish_readiness_status' => 'pass_with_warnings',
+                    'warnings' => [],
+                    'blocking_reasons' => [],
+                ],
+                'asset_identity' => [
+                    'slots' => [
+                        'presenter' => [
+                            'kind' => 'person',
+                            'name' => 'Founder',
+                        ],
+                    ],
+                ],
+                'asset_scoring' => [
+                    'identity_confidence' => 0.22,
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('calendar.content.approve', $item))
+            ->assertRedirect()
+            ->assertSessionHas('status');
+
+        $item->refresh();
+
+        $this->assertSame('review', $item->status);
+        $this->assertDatabaseCount('social_publications', 0);
     }
 
     public function test_social_publish_due_command_dispatches_due_publications(): void

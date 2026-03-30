@@ -906,7 +906,11 @@ SVG;
                 'mode' => 'person_identity_reference_board',
                 'reference_count' => count($imageReferenceAbsPool),
             ];
-        } elseif ($mustEnforceExplicitReferences && count($imageReferenceAbsPool) >= 2) {
+        } elseif (
+            $mustEnforceExplicitReferences
+            && count($imageReferenceAbsPool) >= 2
+            && $this->shouldAttemptLockedVideoSceneReference($videoProvider, $dualSubjectLock)
+        ) {
             $compositionReference = $this->buildLockedVideoSceneReference(
                 openAi: $openAi,
                 nanoBanana: $nanoBanana,
@@ -916,10 +920,18 @@ SVG;
                 assetVariables: $assetVariables
             );
 
-            if (is_array($compositionReference) && !empty($compositionReference['abs'])) {
+            if ($this->shouldUseLockedVideoSceneReference($compositionReference, $videoProvider, $dualSubjectLock)) {
                 $generationReferenceAbsPool = [(string) $compositionReference['abs']];
                 $compositionMeta = [
                     'used' => true,
+                    'attempts' => (int) ($compositionReference['attempts'] ?? 1),
+                    'all_present' => (bool) ($compositionReference['all_present'] ?? false),
+                    'validation' => $compositionReference['validation'] ?? null,
+                ];
+            } elseif (is_array($compositionReference) && !empty($compositionReference['abs'])) {
+                $compositionMeta = [
+                    'used' => false,
+                    'mode' => 'locked_scene_reference_rejected',
                     'attempts' => (int) ($compositionReference['attempts'] ?? 1),
                     'all_present' => (bool) ($compositionReference['all_present'] ?? false),
                     'validation' => $compositionReference['validation'] ?? null,
@@ -4802,6 +4814,27 @@ SVG;
             && $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $referencePaths);
     }
 
+    public function shouldAttemptLockedVideoSceneReference(string $videoProvider, bool $dualSubjectLock): bool
+    {
+        return !($dualSubjectLock && $videoProvider === 'kling');
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $compositionReference
+     */
+    public function shouldUseLockedVideoSceneReference(?array $compositionReference, string $videoProvider, bool $dualSubjectLock): bool
+    {
+        if (!$this->shouldAttemptLockedVideoSceneReference($videoProvider, $dualSubjectLock)) {
+            return false;
+        }
+
+        if (!is_array($compositionReference) || empty($compositionReference['abs'])) {
+            return false;
+        }
+
+        return (bool) ($compositionReference['all_present'] ?? false);
+    }
+
     /**
      * Valida anche le identita persistenti del brand, non solo le reference esplicite dell utente.
      *
@@ -4945,7 +4978,17 @@ SVG;
             'strval',
             (array) data_get($assetScoring, 'fallback_paths', [])
         )));
+        $selectionArea = Str::lower(trim((string) data_get($assetScoring, 'selection_area', '')));
+        $selectionProvider = Str::lower(trim((string) data_get($assetScoring, 'provider', '')));
+        $protectedSlotPaths = $this->identityProtectedReferencePaths($assetVariables, $assetIdentity);
+        $protectedSlotPaths = array_values(array_filter(
+            $protectedSlotPaths,
+            fn ($path) => in_array($path, $paths, true) || in_array($path, $rankedPaths, true) || in_array($path, $fallbackPaths, true)
+        ));
         if (!empty($rankedPaths)) {
+            if ($selectionArea === 'video' && $selectionProvider !== 'openai' && !empty($protectedSlotPaths)) {
+                $rankedPaths = array_values(array_unique(array_merge($protectedSlotPaths, $rankedPaths)));
+            }
             $ordered = array_values(array_unique(array_merge($rankedPaths, $strictAssetMode ? [] : $fallbackPaths, $paths)));
 
             return $strictAssetMode ? array_values(array_unique($rankedPaths)) : $ordered;
@@ -5023,6 +5066,96 @@ SVG;
         $remaining = array_values(array_filter($paths, fn ($path) => !in_array($path, $selectedCanonical, true)));
 
         return array_values(array_unique(array_merge($selectedPrimary, $selectedSecondary, $remaining)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<string, mixed>  $assetIdentity
+     * @return array<int, string>
+     */
+    private function identityProtectedReferencePaths(array $assetVariables, array $assetIdentity): array
+    {
+        $protected = [];
+        $resolved = $this->normalizeAssetVariableRows((array) data_get($assetVariables, 'resolved', []));
+
+        foreach (['presenter', 'product', 'place'] as $slot) {
+            $slotRow = data_get($assetIdentity, 'slots.' . $slot);
+            if (is_array($slotRow)) {
+                $protected = array_merge($protected, $this->rowCanonicalReferencePaths($slotRow));
+                continue;
+            }
+
+            foreach ($resolved as $row) {
+                if ($this->referenceProtectionSlotForRow($row) !== $slot) {
+                    continue;
+                }
+
+                $protected = array_merge($protected, $this->rowCanonicalReferencePaths($row));
+                break;
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            fn ($path) => trim((string) $path),
+            $protected
+        ))));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<int, string>
+     */
+    private function rowCanonicalReferencePaths(array $row): array
+    {
+        $paths = [];
+
+        foreach ((array) data_get($row, 'identity_pack.canonical_assets', data_get($row, 'canonical_assets', [])) as $asset) {
+            if (!is_array($asset)) {
+                continue;
+            }
+
+            $path = trim((string) ($asset['path'] ?? ''));
+            if ($path !== '') {
+                $paths[] = $path;
+            }
+        }
+
+        $canonicalAssetPath = trim((string) ($row['canonical_asset_path'] ?? ''));
+        if ($canonicalAssetPath !== '') {
+            array_unshift($paths, $canonicalAssetPath);
+        }
+
+        foreach ((array) ($row['asset_paths'] ?? []) as $path) {
+            $path = trim((string) $path);
+            if ($path !== '') {
+                $paths[] = $path;
+            }
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function referenceProtectionSlotForRow(array $row): string
+    {
+        $kind = Str::lower(trim((string) ($row['kind'] ?? 'custom')));
+        $role = Str::lower(trim((string) ($row['asset_role'] ?? '')));
+
+        if ($kind === 'person' || in_array($role, ['presenter', 'host', 'speaker'], true)) {
+            return 'presenter';
+        }
+
+        if ($kind === 'location' || in_array($role, ['place', 'office', 'location', 'store', 'showroom'], true)) {
+            return 'place';
+        }
+
+        if ($kind === 'product' || in_array($role, ['hero_product', 'product', 'sku'], true) || $this->rowLooksProductLike($row)) {
+            return 'product';
+        }
+
+        return '';
     }
 
     public function targetVideoSecondsForFormat(ContentItem $item): string

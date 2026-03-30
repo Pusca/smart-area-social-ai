@@ -3,8 +3,10 @@
 namespace App\Services\Social;
 
 use App\Models\ContentItem;
+use App\Models\GenerationRun;
 use App\Models\SocialAccount;
 use App\Models\SocialPublication;
+use App\Services\AI\PublishReadinessGate;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -12,7 +14,8 @@ use Illuminate\Support\Str;
 class SocialPublishingService
 {
     public function __construct(
-        private readonly SocialAssetUrlService $assetUrlService
+        private readonly SocialAssetUrlService $assetUrlService,
+        private readonly PublishReadinessGate $publishReadinessGate
     ) {
     }
 
@@ -21,7 +24,27 @@ class SocialPublishingService
      */
     public function approve(ContentItem $item): array
     {
+        $run = GenerationRun::query()
+            ->where('content_item_id', (int) $item->id)
+            ->latest('id')
+            ->first();
+        $gate = $this->publishReadinessGate->decideForContentItem($item, $run);
+        if (!(bool) ($gate['approvable'] ?? false)) {
+            $reasons = array_values(array_filter(array_merge(
+                (array) ($gate['blocking_reasons'] ?? []),
+                (array) ($gate['warnings'] ?? [])
+            )));
+
+            throw new \RuntimeException(
+                'Pubblicazione bloccata dal publish gate: '
+                . ($reasons !== [] ? implode(' ', $reasons) : 'contenuto non approvabile.')
+            );
+        }
+
         $item->status = 'approved';
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $meta['publish_gate'] = $gate;
+        $item->ai_meta = $meta;
         $item->save();
 
         return $this->syncForContentItem($item->fresh() ?? $item);

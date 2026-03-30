@@ -72,6 +72,11 @@
     $preferredHookIntensity = old('preferred_hook_intensity', $overlayPreferences['preferred_hook_intensity'] ?? 'medium');
     $trendAppetite = old('trend_appetite', $overlayPreferences['trend_appetite'] ?? 'medium');
     $professionalismGuardrailLevel = old('professionalism_guardrail_level', $overlayPreferences['professionalism_guardrail_level'] ?? 'high');
+    $trendBrief = is_array($trendBrief ?? null) ? $trendBrief : [];
+    $learningProfile = is_array($learningProfile ?? null) ? $learningProfile : [];
+    $trendRefreshRoute = \Illuminate\Support\Facades\Route::has('profile.brand.trends.refresh') ? route('profile.brand.trends.refresh') : null;
+    $trendThemes = array_values(array_filter((array) data_get($trendBrief, 'current_relevant_themes', []), fn ($row) => is_array($row)));
+    $trendFreshness = (array) data_get($trendBrief, 'signals_freshness', []);
     $hookIntensityOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
     $trendAppetiteOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
     $guardrailOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
@@ -373,6 +378,89 @@
             </ul>
         </div>
     @endif
+
+    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Trend Brief</div>
+                <p class="mt-1 text-sm text-gray-600">Brief trend corrente del tenant, con freshness, confidence e segnali disponibili.</p>
+            </div>
+            @if($trendRefreshRoute)
+                <form action="{{ $trendRefreshRoute }}" method="POST">
+                    @csrf
+                    <button type="submit" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        Aggiorna trend brief
+                    </button>
+                </form>
+            @endif
+        </div>
+
+        <div class="mt-4 grid gap-3 md:grid-cols-4">
+            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div class="text-xs text-gray-500">Freshness</div>
+                <div class="mt-1 text-lg font-semibold text-gray-900">
+                    {{ is_numeric(data_get($trendBrief, 'freshness_score')) ? number_format(((float) data_get($trendBrief, 'freshness_score')) * 100, 0) . '%' : '-' }}
+                </div>
+            </div>
+            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div class="text-xs text-gray-500">Confidence</div>
+                <div class="mt-1 text-lg font-semibold text-gray-900">
+                    {{ is_numeric(data_get($trendBrief, 'confidence_score')) ? number_format(((float) data_get($trendBrief, 'confidence_score')) * 100, 0) . '%' : '-' }}
+                </div>
+            </div>
+            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div class="text-xs text-gray-500">Segnali freschi</div>
+                <div class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($trendFreshness['fresh'] ?? 0) }}</div>
+            </div>
+            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                <div class="text-xs text-gray-500">Segnali in scadenza</div>
+                <div class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($trendFreshness['expiring'] ?? 0) }}</div>
+            </div>
+        </div>
+
+        <div class="mt-4 grid gap-3 lg:grid-cols-2">
+            <div class="rounded-xl border border-gray-200 px-4 py-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Temi rilevanti</div>
+                @if(!empty($trendThemes))
+                    <div class="mt-3 space-y-2">
+                        @foreach(array_slice($trendThemes, 0, 4) as $theme)
+                            <div class="rounded-lg bg-gray-50 px-3 py-2">
+                                <div class="text-sm font-semibold text-gray-900">{{ $theme['title'] ?? $theme['topic'] ?? '-' }}</div>
+                                <div class="mt-1 text-xs text-gray-600">
+                                    {{ strtoupper((string) ($theme['platform'] ?? '')) }} · {{ $theme['format_type'] ?? '-' }}
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <p class="mt-3 text-sm text-gray-500">Nessun trend brief persistito ancora.</p>
+                @endif
+            </div>
+            <div class="rounded-xl border border-gray-200 px-4 py-3">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Learning Loop</div>
+                <div class="mt-3 space-y-2">
+                    <div class="rounded-lg bg-gray-50 px-3 py-2">
+                        <div class="text-xs text-gray-500">Hook preferiti</div>
+                        <div class="mt-1 text-sm font-semibold text-gray-900">
+                            {{ collect((array) data_get($learningProfile, 'preferred_hook_families', []))->take(3)->implode(', ') ?: '-' }}
+                        </div>
+                    </div>
+                    <div class="rounded-lg bg-gray-50 px-3 py-2">
+                        <div class="text-xs text-gray-500">CTA preferite</div>
+                        <div class="mt-1 text-sm font-semibold text-gray-900">
+                            {{ collect((array) data_get($learningProfile, 'preferred_cta_styles', []))->take(3)->implode(', ') ?: '-' }}
+                        </div>
+                    </div>
+                    <div class="rounded-lg bg-gray-50 px-3 py-2">
+                        <div class="text-xs text-gray-500">Formati deboli</div>
+                        <div class="mt-1 text-sm font-semibold text-gray-900">
+                            {{ collect((array) data_get($learningProfile, 'formats_that_underperform', []))->pluck('format')->take(3)->implode(', ') ?: '-' }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     @if($shouldShowQuickstart)
         @if(!$hasDemoPlan)

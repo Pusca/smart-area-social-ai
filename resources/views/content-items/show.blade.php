@@ -87,6 +87,10 @@
         ];
         $overlayMeta = is_array(data_get($item->ai_meta, 'overlay_meta')) ? (array) data_get($item->ai_meta, 'overlay_meta') : [];
         $hookMeta = is_array(data_get($item->ai_meta, 'hook_meta')) ? (array) data_get($item->ai_meta, 'hook_meta') : [];
+        $creativeBrief = is_array(data_get($item->ai_meta, 'creative_brief')) ? (array) data_get($item->ai_meta, 'creative_brief') : [];
+        $trendBrief = is_array(data_get($item->ai_meta, 'trend_brief')) ? (array) data_get($item->ai_meta, 'trend_brief') : [];
+        $publishGate = is_array(data_get($item->ai_meta, 'publish_gate')) ? (array) data_get($item->ai_meta, 'publish_gate') : [];
+        $identityValidation = is_array(data_get($item->ai_meta, 'identity_validation')) ? (array) data_get($item->ai_meta, 'identity_validation') : [];
         $trendBasis = is_array(data_get($item->ai_meta, 'item_brain.trend_basis')) ? (array) data_get($item->ai_meta, 'item_brain.trend_basis') : [];
         $trendOpportunity = is_array(data_get($item->ai_meta, 'item_brain.trend_opportunity')) ? (array) data_get($item->ai_meta, 'item_brain.trend_opportunity') : [];
         $selectedImageRefs = array_values(array_filter((array) data_get($item->ai_meta, 'image_references.selected', []), fn ($row) => is_array($row)));
@@ -102,6 +106,7 @@
         $trendSummary = array_filter([
             'Trend topic' => (string) data_get($trendBasis, 'topic', data_get($trendOpportunity, 'topic', '')),
             'Source' => (string) data_get($trendBasis, 'source', ''),
+            'Trend brief freshness' => is_numeric(data_get($trendBrief, 'freshness_score')) ? number_format(((float) data_get($trendBrief, 'freshness_score')) * 100, 0) . '%' : '',
             'Why now' => (string) data_get($item->ai_meta, 'item_brain.reason_why_now', data_get($trendBasis, 'reason_why_now', '')),
             'Brand fit' => (string) data_get($item->ai_meta, 'item_brain.reason_why_brand_fit', data_get($trendBasis, 'reason_why_brand_fit', '')),
             'Engagement goal' => (string) data_get($item->ai_meta, 'item_brain.expected_engagement_goal', data_get($trendBasis, 'expected_engagement_goal', '')),
@@ -165,6 +170,49 @@
                 </div>
 
                 <div class="ui-card p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="mb-2 text-sm text-muted">Publish gate</div>
+                        <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ (bool) ($publishGate['approvable'] ?? false) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700' }}">
+                            {{ data_get($publishGate, 'decision', 'n/a') }}
+                        </span>
+                    </div>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <div class="rounded-lg bg-surface-2 px-3 py-2">
+                            <div class="text-xs text-muted">Identity validation</div>
+                            <div class="mt-1 text-sm font-semibold text-text">{{ data_get($identityValidation, 'status', '-') }}</div>
+                        </div>
+                        <div class="rounded-lg bg-surface-2 px-3 py-2">
+                            <div class="text-xs text-muted">Trend brief confidence</div>
+                            <div class="mt-1 text-sm font-semibold text-text">
+                                {{ is_numeric(data_get($trendBrief, 'confidence_score')) ? number_format(((float) data_get($trendBrief, 'confidence_score')) * 100, 0) . '%' : '-' }}
+                            </div>
+                        </div>
+                    </div>
+
+                    @if(!empty($publishGate['blocking_reasons']))
+                        <div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-900">
+                            <div class="font-semibold">Blocking reasons</div>
+                            <ul class="mt-2 list-disc space-y-1 pl-5">
+                                @foreach((array) $publishGate['blocking_reasons'] as $reason)
+                                    <li>{{ $reason }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
+                    @if(!empty($publishGate['warnings']))
+                        <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                            <div class="font-semibold">Warnings</div>
+                            <ul class="mt-2 list-disc space-y-1 pl-5">
+                                @foreach((array) $publishGate['warnings'] as $warning)
+                                    <li>{{ $warning }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+                </div>
+
+                <div class="ui-card p-5">
                     <div class="mb-2 text-sm text-muted">Quality highlights</div>
                     <div class="grid gap-2 sm:grid-cols-3">
                         @foreach($scoreHighlights as $label => $score)
@@ -175,6 +223,28 @@
                                 </div>
                             </div>
                         @endforeach
+                    </div>
+                </div>
+
+                <div class="ui-card p-5">
+                    <div class="mb-2 text-sm text-muted">Creative brief</div>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <div class="rounded-lg bg-surface-2 px-3 py-2">
+                            <div class="text-xs text-muted">Objective</div>
+                            <div class="mt-1 text-sm font-semibold text-text">{{ data_get($creativeBrief, 'objective', '-') }}</div>
+                        </div>
+                        <div class="rounded-lg bg-surface-2 px-3 py-2">
+                            <div class="text-xs text-muted">Content pillar</div>
+                            <div class="mt-1 text-sm font-semibold text-text">{{ data_get($creativeBrief, 'content_pillar', '-') }}</div>
+                        </div>
+                        <div class="rounded-lg bg-surface-2 px-3 py-2">
+                            <div class="text-xs text-muted">Hook family</div>
+                            <div class="mt-1 text-sm font-semibold text-text">{{ data_get($creativeBrief, 'hook_strategy.preferred_family', '-') }}</div>
+                        </div>
+                        <div class="rounded-lg bg-surface-2 px-3 py-2">
+                            <div class="text-xs text-muted">CTA style</div>
+                            <div class="mt-1 text-sm font-semibold text-text">{{ data_get($creativeBrief, 'cta_style.preferred_mode', '-') }}</div>
+                        </div>
                     </div>
                 </div>
 

@@ -716,6 +716,89 @@ class GenerateAiForContentItemTest extends TestCase
         ));
     }
 
+    public function test_it_skips_locked_scene_reference_for_kling_dual_subject_videos(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $this->assertFalse($job->shouldAttemptLockedVideoSceneReference('kling', true));
+        $this->assertFalse($job->shouldUseLockedVideoSceneReference([
+            'abs' => '/tmp/scene.png',
+            'all_present' => true,
+        ], 'kling', true));
+        $this->assertFalse($job->shouldUseLockedVideoSceneReference([
+            'abs' => '/tmp/scene.png',
+            'all_present' => false,
+        ], 'runway', true));
+        $this->assertTrue($job->shouldUseLockedVideoSceneReference([
+            'abs' => '/tmp/scene.png',
+            'all_present' => true,
+        ], 'runway', true));
+    }
+
+    public function test_it_preserves_presenter_and_product_canonicals_in_video_reference_selection_for_non_openai_providers(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $selected = $job->applyIdentityPackReferenceSelection(
+            ['presenter-front.jpg', 'product-front.jpg', 'generic.jpg'],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Brand Presenter',
+                        'kind' => 'person',
+                        'asset_role' => 'presenter',
+                        'canonical_asset_path' => 'presenter-front.jpg',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'presenter-front.jpg', 'is_primary' => true],
+                            ],
+                        ],
+                    ],
+                    [
+                        'name' => 'Hero Product',
+                        'kind' => 'product',
+                        'asset_role' => 'hero_product',
+                        'canonical_asset_path' => 'product-front.jpg',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'product-front.jpg', 'is_primary' => true],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'slots' => [
+                    'presenter' => [
+                        'canonical_asset_path' => 'presenter-front.jpg',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'presenter-front.jpg', 'is_primary' => true],
+                            ],
+                        ],
+                    ],
+                    'product' => [
+                        'canonical_asset_path' => 'product-front.jpg',
+                        'identity_pack' => [
+                            'canonical_assets' => [
+                                ['path' => 'product-front.jpg', 'is_primary' => true],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            true,
+            [
+                'selection_area' => 'video',
+                'provider' => 'kling',
+                'reference_paths' => ['presenter-front.jpg'],
+                'fallback_paths' => ['product-front.jpg'],
+            ]
+        );
+
+        $this->assertSame(['presenter-front.jpg', 'product-front.jpg'], $selected);
+    }
+
     public function test_it_enforces_video_reference_validation_for_identity_locked_assets_even_without_manual_refs(): void
     {
         $job = new GenerateAiForContentItem(1);
