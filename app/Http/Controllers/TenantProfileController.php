@@ -121,6 +121,7 @@ class TenantProfileController extends Controller
                 'learning_preferences' => $learningProfile,
                 'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
                 'formats' => (array) ($profile?->default_formats ?? ['post']),
+                'force_refresh' => true,
             ]
         );
 

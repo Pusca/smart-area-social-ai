@@ -7,6 +7,7 @@ use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\Tenant;
 use App\Models\TenantProfile;
+use App\Models\TrendBrief;
 use App\Models\User;
 use App\Services\GenerationMetricsService;
 use App\Services\TenantQuotaService;
@@ -76,6 +77,10 @@ class AdminWorkspaceController extends Controller
             ->get()
             ->keyBy('tenant_id');
 
+        $trendBriefAgg = TrendBrief::query()
+            ->get(['tenant_id', 'freshness_score', 'confidence_score', 'summary', 'fetched_at', 'expires_at'])
+            ->keyBy('tenant_id');
+
         $lastActivityRaw = ContentItem::query()
             ->selectRaw('tenant_id, MAX(COALESCE(ai_generated_at, updated_at, created_at)) as last_activity_at')
             ->groupBy('tenant_id')
@@ -87,6 +92,7 @@ class AdminWorkspaceController extends Controller
             $planAgg,
             $assetAgg,
             $profileAgg,
+            $trendBriefAgg,
             $lastActivityRaw,
             $usersByTenant
         ) {
@@ -95,6 +101,7 @@ class AdminWorkspaceController extends Controller
             $plan = $planAgg->get($tenantId);
             $asset = $assetAgg->get($tenantId);
             $profile = $profileAgg->get($tenantId);
+            $trendBrief = $trendBriefAgg->get($tenantId);
             $lastAct = $lastActivityRaw->get($tenantId);
             $tenantUsers = $usersByTenant->get($tenantId, collect())->values();
             $entryUser = $this->resolveWorkspaceUser($tenantUsers);
@@ -126,6 +133,14 @@ class AdminWorkspaceController extends Controller
                     'role' => (string) ($entryUser->role ?: 'editor'),
                 ] : null,
                 'brand_completed_at' => !empty($profile->completed_at) ? Carbon::parse((string) $profile->completed_at) : null,
+                'trend_brief' => $trendBrief ? [
+                    'freshness_score' => $trendBrief->freshness_score !== null ? (float) $trendBrief->freshness_score : null,
+                    'confidence_score' => $trendBrief->confidence_score !== null ? (float) $trendBrief->confidence_score : null,
+                    'signals_count' => (int) data_get($trendBrief->summary, 'signals_count', 0),
+                    'fresh_signals' => (int) data_get($trendBrief->summary, 'fresh_signals', 0),
+                    'fetched_at' => optional($trendBrief->fetched_at)->toDateTimeString(),
+                    'expires_at' => optional($trendBrief->expires_at)->toDateTimeString(),
+                ] : null,
                 'last_activity_at' => $lastActivityAt,
                 'is_active_recently' => $lastActivityAt ? $lastActivityAt->gte(now()->subDays(7)) : false,
                 'quota' => $quota,
@@ -139,6 +154,7 @@ class AdminWorkspaceController extends Controller
         $globalPlans = $tenantStats->sum('plans_total');
         $activeTenants = $tenantStats->where('is_active_recently', true)->count();
         $brandReadyTenants = $tenantStats->filter(fn ($row) => $row['brand_completed_at'] instanceof Carbon)->count();
+        $trendBriefsFresh = $tenantStats->filter(fn ($row) => (float) data_get($row, 'trend_brief.freshness_score', 0) >= 0.60)->count();
         $tenantsUsersOverLimit = $tenantStats->filter(fn ($row) => (bool) data_get($row, 'quota.users_over_limit', false))->count();
         $tenantsContentOverLimit = $tenantStats->filter(fn ($row) => (bool) data_get($row, 'quota.content_items_over_limit', false))->count();
 
@@ -155,6 +171,7 @@ class AdminWorkspaceController extends Controller
                 'tenants_total' => $tenants->count(),
                 'tenants_active_recently' => $activeTenants,
                 'tenants_brand_ready' => $brandReadyTenants,
+                'tenants_with_fresh_trend_brief' => $trendBriefsFresh,
                 'tenants_users_over_limit' => $tenantsUsersOverLimit,
                 'tenants_content_over_limit' => $tenantsContentOverLimit,
                 'plans_total' => $globalPlans,

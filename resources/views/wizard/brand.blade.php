@@ -76,7 +76,9 @@
     $learningProfile = is_array($learningProfile ?? null) ? $learningProfile : [];
     $trendRefreshRoute = \Illuminate\Support\Facades\Route::has('profile.brand.trends.refresh') ? route('profile.brand.trends.refresh') : null;
     $trendThemes = array_values(array_filter((array) data_get($trendBrief, 'current_relevant_themes', []), fn ($row) => is_array($row)));
+    $trendActiveSignals = array_values(array_filter((array) data_get($trendBrief, 'active_signals', []), fn ($row) => is_array($row)));
     $trendFreshness = (array) data_get($trendBrief, 'signals_freshness', []);
+    $trendSourceBreakdown = (array) data_get($trendBrief, 'summary.source_breakdown', []);
     $hookIntensityOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
     $trendAppetiteOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
     $guardrailOptions = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'High'];
@@ -437,25 +439,66 @@
                 @endif
             </div>
             <div class="rounded-xl border border-gray-200 px-4 py-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Learning Loop</div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Segnali attivi</div>
                 <div class="mt-3 space-y-2">
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <div class="text-xs text-gray-500">Hook preferiti</div>
-                        <div class="mt-1 text-sm font-semibold text-gray-900">
-                            {{ collect((array) data_get($learningProfile, 'preferred_hook_families', []))->take(3)->implode(', ') ?: '-' }}
+                    @forelse(array_slice($trendActiveSignals, 0, 4) as $signal)
+                        <div class="rounded-lg bg-gray-50 px-3 py-2">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <div class="text-sm font-semibold text-gray-900">{{ $signal['title'] ?? $signal['topic'] ?? '-' }}</div>
+                                    <div class="mt-1 text-xs text-gray-600">
+                                        {{ strtoupper((string) ($signal['platform'] ?? '')) }} · {{ $signal['format_type'] ?? '-' }} · {{ $signal['source_type'] ?? '-' }}
+                                    </div>
+                                </div>
+                                <span class="rounded-full border {{ ($signal['freshness_bucket'] ?? '') === 'fresh' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' }} px-2 py-0.5 text-[11px] font-semibold">
+                                    {{ $signal['freshness_bucket'] ?? 'expiring' }}
+                                </span>
+                            </div>
+                            @if(!empty($signal['evidence']['matched_hashtags'] ?? []))
+                                <div class="mt-2 text-xs text-gray-500">
+                                    Match hashtag: {{ collect((array) ($signal['evidence']['matched_hashtags'] ?? []))->take(3)->implode(', ') }}
+                                </div>
+                            @elseif(!empty($signal['evidence']['sample_item_ids'] ?? []))
+                                <div class="mt-2 text-xs text-gray-500">
+                                    Evidenza interna: item {{ collect((array) ($signal['evidence']['sample_item_ids'] ?? []))->take(3)->implode(', ') }}
+                                </div>
+                            @endif
                         </div>
+                    @empty
+                        <p class="text-sm text-gray-500">Nessun segnale attivo disponibile.</p>
+                    @endforelse
+                </div>
+                @if(!empty($trendSourceBreakdown))
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        @foreach($trendSourceBreakdown as $source => $count)
+                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700">
+                                {{ $source }}: {{ (int) $count }}
+                            </span>
+                        @endforeach
                     </div>
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <div class="text-xs text-gray-500">CTA preferite</div>
-                        <div class="mt-1 text-sm font-semibold text-gray-900">
-                            {{ collect((array) data_get($learningProfile, 'preferred_cta_styles', []))->take(3)->implode(', ') ?: '-' }}
-                        </div>
+                @endif
+            </div>
+        </div>
+
+        <div class="mt-4 rounded-xl border border-gray-200 px-4 py-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Learning Loop</div>
+            <div class="mt-3 grid gap-2 md:grid-cols-3">
+                <div class="rounded-lg bg-gray-50 px-3 py-2">
+                    <div class="text-xs text-gray-500">Hook preferiti</div>
+                    <div class="mt-1 text-sm font-semibold text-gray-900">
+                        {{ collect((array) data_get($learningProfile, 'preferred_hook_families', []))->take(3)->implode(', ') ?: '-' }}
                     </div>
-                    <div class="rounded-lg bg-gray-50 px-3 py-2">
-                        <div class="text-xs text-gray-500">Formati deboli</div>
-                        <div class="mt-1 text-sm font-semibold text-gray-900">
-                            {{ collect((array) data_get($learningProfile, 'formats_that_underperform', []))->pluck('format')->take(3)->implode(', ') ?: '-' }}
-                        </div>
+                </div>
+                <div class="rounded-lg bg-gray-50 px-3 py-2">
+                    <div class="text-xs text-gray-500">CTA preferite</div>
+                    <div class="mt-1 text-sm font-semibold text-gray-900">
+                        {{ collect((array) data_get($learningProfile, 'preferred_cta_styles', []))->take(3)->implode(', ') ?: '-' }}
+                    </div>
+                </div>
+                <div class="rounded-lg bg-gray-50 px-3 py-2">
+                    <div class="text-xs text-gray-500">Formati deboli</div>
+                    <div class="mt-1 text-sm font-semibold text-gray-900">
+                        {{ collect((array) data_get($learningProfile, 'formats_that_underperform', []))->pluck('format')->take(3)->implode(', ') ?: '-' }}
                     </div>
                 </div>
             </div>

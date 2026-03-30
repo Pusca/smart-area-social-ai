@@ -30,7 +30,12 @@ class TrendOpportunitySynthesisService
             ];
         }
 
-        $snapshot = $this->trendIntelligence->refreshForTenant($tenantId, $profile, $context);
+        $snapshot = $this->trendIntelligence->refreshForTenant(
+            $tenantId,
+            $profile,
+            $context,
+            (bool) ($context['force_refresh'] ?? false)
+        );
         $snapshot->loadMissing('signals');
 
         $signals = $snapshot->signals instanceof Collection
@@ -44,7 +49,7 @@ class TrendOpportunitySynthesisService
 
         if ($eligibleSignals->isEmpty()) {
             $eligibleSignals = $signals
-                ->reject(fn (TrendSignal $signal) => $this->hasBlockedRiskFlag($signal))
+                ->reject(fn (TrendSignal $signal) => $this->hasBlockedRiskFlag($signal) || $this->isExpired($signal))
                 ->sortByDesc(fn (TrendSignal $signal) => (float) ($signal->estimated_relevance_score ?? 0.0))
                 ->values();
         }
@@ -133,7 +138,7 @@ class TrendOpportunitySynthesisService
         $brandFit = (float) ($signal->brand_fit_score ?? 0.0);
         $relevance = (float) ($signal->estimated_relevance_score ?? 0.0);
 
-        if ($this->hasBlockedRiskFlag($signal)) {
+        if ($this->hasBlockedRiskFlag($signal) || $this->isExpired($signal)) {
             return false;
         }
 
@@ -153,6 +158,15 @@ class TrendOpportunitySynthesisService
         );
 
         return !empty(array_intersect($riskFlags, $blockedFlags));
+    }
+
+    private function isExpired(TrendSignal $signal): bool
+    {
+        $expiresAt = $signal->expires_at instanceof Carbon
+            ? $signal->expires_at
+            : (filled($signal->expires_at) ? Carbon::parse((string) $signal->expires_at) : null);
+
+        return $expiresAt instanceof Carbon && $expiresAt->lte(now());
     }
 
     /**
@@ -205,6 +219,7 @@ class TrendOpportunitySynthesisService
             'source_type' => (string) ($signal->source_type ?? 'config_seed'),
             'source_ref' => (string) ($signal->source_ref ?? ''),
             'observed_at' => optional($signal->observed_at)->toDateTimeString(),
+            'expires_at' => optional($signal->expires_at)->toDateTimeString(),
             'meta' => is_array($signal->meta) ? $signal->meta : [],
         ];
     }

@@ -81,6 +81,11 @@
             <p class="mt-1 text-xs text-gray-600">Profilo completato</p>
         </article>
         <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Trend brief freschi</div>
+            <div class="mt-2 text-2xl font-semibold text-gray-900">{{ (int) ($stats['tenants_with_fresh_trend_brief'] ?? 0) }}</div>
+            <p class="mt-1 text-xs text-gray-600">Tenant con brief trend aggiornato</p>
+        </article>
+        <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Utenti senza tenant</div>
             <div class="mt-2 text-2xl font-semibold {{ ((int) ($stats['users_without_tenant'] ?? 0)) > 0 ? 'text-amber-700' : 'text-gray-900' }}">{{ (int) ($stats['users_without_tenant'] ?? 0) }}</div>
             <p class="mt-1 text-xs text-gray-600">Bloccati fuori dal workspace</p>
@@ -200,6 +205,7 @@
                             $tenant = $row['tenant'];
                             $quota = is_array($row['quota'] ?? null) ? $row['quota'] : [];
                             $entryUser = $row['entry_user'] ?? null;
+                            $trendBrief = is_array($row['trend_brief'] ?? null) ? $row['trend_brief'] : [];
                         @endphp
                         <article class="rounded-2xl border border-gray-200 bg-gray-50 p-4">
                             <div class="flex flex-wrap items-start justify-between gap-3">
@@ -216,6 +222,14 @@
                                         @endif
                                     </div>
                                     <p class="mt-1 text-xs text-gray-600">#{{ $tenant->id }} - {{ $tenant->slug }} - piano: {{ $tenant->plan }}</p>
+                                    <div class="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
+                                        <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-700">
+                                            trend freshness: {{ is_numeric($trendBrief['freshness_score'] ?? null) ? number_format(((float) $trendBrief['freshness_score']) * 100, 0) . '%' : '-' }}
+                                        </span>
+                                        <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-700">
+                                            signals: {{ (int) ($trendBrief['signals_count'] ?? 0) }}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div class="flex flex-wrap gap-2">

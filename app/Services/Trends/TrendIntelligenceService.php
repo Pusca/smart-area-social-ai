@@ -7,6 +7,11 @@ use App\Models\TrendIngestionRun;
 use App\Models\TrendSignal;
 use App\Models\TrendSnapshot;
 use App\Services\Trends\Adapters\ConfigTrendSourceAdapter;
+use App\Services\Trends\Adapters\CreatorBestPracticeTrendSourceAdapter;
+use App\Services\Trends\Adapters\CuratedTrendSourceAdapter;
+use App\Services\Trends\Adapters\EditorialMemoryTrendSourceAdapter;
+use App\Services\Trends\Adapters\HashtagPatternTrendSourceAdapter;
+use App\Services\Trends\Adapters\InternalPerformanceTrendSourceAdapter;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -16,11 +21,16 @@ use Illuminate\Support\Str;
 class TrendIntelligenceService
 {
     public function __construct(
-        private readonly ConfigTrendSourceAdapter $configTrendSourceAdapter
+        private readonly ConfigTrendSourceAdapter $configTrendSourceAdapter,
+        private readonly InternalPerformanceTrendSourceAdapter $internalPerformanceTrendSourceAdapter,
+        private readonly HashtagPatternTrendSourceAdapter $hashtagPatternTrendSourceAdapter,
+        private readonly EditorialMemoryTrendSourceAdapter $editorialMemoryTrendSourceAdapter,
+        private readonly CuratedTrendSourceAdapter $curatedTrendSourceAdapter,
+        private readonly CreatorBestPracticeTrendSourceAdapter $creatorBestPracticeTrendSourceAdapter
     ) {
     }
 
-    public function refreshForTenant(int $tenantId, ?TenantProfile $profile = null, array $context = []): TrendSnapshot
+    public function refreshForTenant(int $tenantId, ?TenantProfile $profile = null, array $context = [], bool $force = false): TrendSnapshot
     {
         $profile ??= TenantProfile::query()->where('tenant_id', $tenantId)->first();
 
@@ -31,7 +41,7 @@ class TrendIntelligenceService
             ->first();
 
         $ttlMinutes = max(10, (int) config('trends.ttl_minutes', 240));
-        if ($latest && $latest->observed_at && $latest->observed_at->gt(now()->subMinutes($ttlMinutes))) {
+        if (!$force && $latest && $latest->observed_at && $latest->observed_at->gt(now()->subMinutes($ttlMinutes))) {
             return $latest->loadMissing('signals');
         }
 
@@ -45,9 +55,13 @@ class TrendIntelligenceService
         ]);
 
         try {
+            $adapterContext = array_merge($context, [
+                'tenant_id' => $tenantId,
+                'tenant_profile' => $profile?->toArray() ?? [],
+            ]);
             $signals = collect();
             foreach ($this->adapters() as $adapter) {
-                $signals = $signals->merge($adapter->collect($context));
+                $signals = $signals->merge($adapter->collect($adapterContext));
             }
 
             $scored = $signals
@@ -116,6 +130,7 @@ class TrendIntelligenceService
                     'snapshot_id' => (int) $snapshot->id,
                     'signals_count' => $scored->count(),
                     'platform_breakdown' => $scored->countBy(fn (array $signal) => (string) ($signal['platform'] ?? 'unknown'))->all(),
+                    'source_breakdown' => $scored->countBy(fn (array $signal) => (string) ($signal['source_type'] ?? 'unknown'))->all(),
                 ],
                 'meta' => [
                     'cached' => false,
@@ -145,12 +160,41 @@ class TrendIntelligenceService
         $adapters = [];
         foreach ((array) config('trends.adapters', []) as $adapterConfig) {
             $driver = strtolower(trim((string) Arr::get($adapterConfig, 'driver', 'config_seed')));
+            if ($driver === 'internal_performance') {
+                $adapters[] = $this->internalPerformanceTrendSourceAdapter;
+                continue;
+            }
+            if ($driver === 'hashtag_patterns') {
+                $adapters[] = $this->hashtagPatternTrendSourceAdapter;
+                continue;
+            }
+            if ($driver === 'editorial_memory') {
+                $adapters[] = $this->editorialMemoryTrendSourceAdapter;
+                continue;
+            }
+            if ($driver === 'curated_manual') {
+                $adapters[] = $this->curatedTrendSourceAdapter;
+                continue;
+            }
+            if ($driver === 'creator_best_practice') {
+                $adapters[] = $this->creatorBestPracticeTrendSourceAdapter;
+                continue;
+            }
             if ($driver === 'config_seed') {
                 $adapters[] = $this->configTrendSourceAdapter;
             }
         }
 
-        return !empty($adapters) ? $adapters : [$this->configTrendSourceAdapter];
+        return !empty($adapters)
+            ? $adapters
+            : [
+                $this->internalPerformanceTrendSourceAdapter,
+                $this->hashtagPatternTrendSourceAdapter,
+                $this->editorialMemoryTrendSourceAdapter,
+                $this->curatedTrendSourceAdapter,
+                $this->creatorBestPracticeTrendSourceAdapter,
+                $this->configTrendSourceAdapter,
+            ];
     }
 
     /**
@@ -169,6 +213,7 @@ class TrendIntelligenceService
         $confidence = $this->clamp((float) ($signal['confidence_score'] ?? 0.72));
         $saturation = $this->clamp((float) ($signal['saturation_score'] ?? 0.5));
         $riskFlags = array_values(array_unique(array_filter(array_map('strval', (array) ($signal['risk_flags'] ?? [])))));
+        $sourceType = trim((string) ($signal['source_type'] ?? 'config_seed'));
         $meta = is_array($signal['meta'] ?? null) ? (array) $signal['meta'] : [];
         $learning = is_array($context['learning_preferences'] ?? null)
             ? (array) $context['learning_preferences']
@@ -209,12 +254,18 @@ class TrendIntelligenceService
 
         $novelty = $this->clamp(($freshness * 0.68) + ((1 - $saturation) * 0.32));
         $riskPenalty = min(0.32, count($riskFlags) * 0.08);
+        $sourceBias = $this->sourceSignalBias($sourceType, $meta, $evidencePayload);
         $brandFit = $this->clamp(0.34 + ($industryScore * 0.18) + ($audienceScore * 0.12) + ($goalScore * 0.10) + ($platformScore * 0.08) + ($formatScore * 0.08) - $tonePenalty - $riskPenalty);
         $execution = $this->buildExecutionFeasibilityScore($formatType, (array) ($meta['requires'] ?? []), $assetReadiness);
         $viral = $this->clamp(0.30 + ($freshness * 0.24) + ((1 - $saturation) * 0.10) + ((count((array) ($signal['hook_patterns'] ?? [])) > 1) ? 0.10 : 0.05) + ($platformScore * 0.12) + ($formatScore * 0.08) - ($riskPenalty * 0.35));
         $relevance = $this->clamp(($novelty * 0.22) + ($brandFit * 0.36) + ($execution * 0.18) + ($viral * 0.24));
         $learningBias = $this->learningBias($topic, $formatType, $learning);
 
+        $confidence = $this->clamp($confidence + ($sourceBias['confidence_delta'] ?? 0.0));
+        $brandFit = $this->clamp($brandFit + ($sourceBias['brand_fit_delta'] ?? 0.0));
+        $execution = $this->clamp($execution + ($sourceBias['execution_delta'] ?? 0.0));
+        $viral = $this->clamp($viral + ($sourceBias['viral_delta'] ?? 0.0));
+        $relevance = $this->clamp($relevance + ($sourceBias['relevance_delta'] ?? 0.0));
         $brandFit = $this->clamp($brandFit + ($learningBias['brand_fit_delta'] ?? 0.0));
         $execution = $this->clamp($execution + ($learningBias['execution_delta'] ?? 0.0));
         $viral = $this->clamp($viral + ($learningBias['viral_delta'] ?? 0.0));
@@ -248,7 +299,7 @@ class TrendIntelligenceService
             'execution_feasibility_score' => round($execution, 4),
             'viral_potential_score' => round($viral, 4),
             'risk_flags' => array_values(array_unique($riskFlags)),
-            'source_type' => trim((string) ($signal['source_type'] ?? 'config_seed')),
+            'source_type' => $sourceType,
             'source_ref' => $sourceRef,
             'niche_tags' => $nicheTags,
             'format_tags' => $formatTags,
@@ -285,6 +336,7 @@ class TrendIntelligenceService
             'version' => 'trend_snapshot_v1',
             'signals_count' => $signals->count(),
             'platform_breakdown' => $signals->countBy(fn (array $signal) => (string) ($signal['platform'] ?? 'unknown'))->all(),
+            'source_breakdown' => $signals->countBy(fn (array $signal) => (string) ($signal['source_type'] ?? 'unknown'))->all(),
             'avg_freshness_score' => round((float) $signals->avg('freshness_score'), 4),
             'avg_confidence_score' => round((float) $signals->avg('confidence_score'), 4),
             'avg_brand_fit_score' => round((float) $signals->avg('brand_fit_score'), 4),
@@ -303,6 +355,7 @@ class TrendIntelligenceService
             'platforms' => array_values(array_filter(array_map('strval', (array) ($context['platforms'] ?? [])))),
             'formats' => array_values(array_filter(array_map('strval', (array) ($context['formats'] ?? [])))),
             'goal' => trim((string) data_get($context, 'strategy.analysis_framework.primary_goal', '')),
+            'force_refresh' => (bool) ($context['force_refresh'] ?? false),
             'learning_preferences' => is_array($context['learning_preferences'] ?? null)
                 ? (array) $context['learning_preferences']
                 : [],
@@ -352,6 +405,73 @@ class TrendIntelligenceService
     }
 
     /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $evidencePayload
+     * @return array<string, float>
+     */
+    private function sourceSignalBias(string $sourceType, array $meta, array $evidencePayload): array
+    {
+        $sourceType = strtolower(trim($sourceType));
+        $sampleSize = max(
+            0,
+            (int) ($meta['sample_size'] ?? 0),
+            (int) ($evidencePayload['sample_size'] ?? 0)
+        );
+        $avgPerformance = max(
+            0.0,
+            min(1.0, max(
+                (float) ($meta['avg_performance_score'] ?? 0.0),
+                (float) ($evidencePayload['avg_performance_score'] ?? 0.0)
+            ))
+        );
+
+        return match ($sourceType) {
+            'internal_performance_signal' => [
+                'confidence_delta' => round(min(0.12, 0.03 + ($sampleSize * 0.02) + ($avgPerformance * 0.05)), 4),
+                'brand_fit_delta' => round(min(0.08, 0.03 + ($avgPerformance * 0.04)), 4),
+                'execution_delta' => round(min(0.05, 0.02 + ($sampleSize * 0.01)), 4),
+                'viral_delta' => round(min(0.07, 0.02 + ($avgPerformance * 0.05)), 4),
+                'relevance_delta' => round(min(0.12, 0.04 + ($sampleSize * 0.02) + ($avgPerformance * 0.06)), 4),
+            ],
+            'editorial_pattern_signal' => [
+                'confidence_delta' => 0.04,
+                'brand_fit_delta' => 0.06,
+                'execution_delta' => 0.04,
+                'viral_delta' => 0.01,
+                'relevance_delta' => 0.05,
+            ],
+            'hashtag_pattern_signal' => [
+                'confidence_delta' => 0.03,
+                'brand_fit_delta' => 0.02,
+                'execution_delta' => 0.02,
+                'viral_delta' => 0.05,
+                'relevance_delta' => 0.05,
+            ],
+            'creator_best_practice_signal' => [
+                'confidence_delta' => 0.04,
+                'brand_fit_delta' => 0.0,
+                'execution_delta' => 0.05,
+                'viral_delta' => 0.05,
+                'relevance_delta' => 0.03,
+            ],
+            'curated_manual_signal' => [
+                'confidence_delta' => 0.03,
+                'brand_fit_delta' => 0.02,
+                'execution_delta' => 0.02,
+                'viral_delta' => 0.02,
+                'relevance_delta' => 0.02,
+            ],
+            default => [
+                'confidence_delta' => 0.0,
+                'brand_fit_delta' => 0.0,
+                'execution_delta' => 0.0,
+                'viral_delta' => 0.0,
+                'relevance_delta' => 0.0,
+            ],
+        };
+    }
+
+    /**
      * @param  Collection<int, array<string, mixed>>  $signals
      */
     private function collectionAverage(Collection $signals, string $key): ?float
@@ -366,9 +486,14 @@ class TrendIntelligenceService
      */
     private function resolveSourceType(Collection $signals): string
     {
-        $source = (string) $signals->pluck('source_type')->filter()->first();
+        $sourceTypes = $signals->pluck('source_type')->filter()->unique()->values();
+        if ($sourceTypes->count() > 1) {
+            return 'mixed';
+        }
 
-        return $source !== '' ? $source : 'config_seed';
+        $source = (string) $sourceTypes->first();
+
+        return $source !== '' ? $source : 'mixed';
     }
 
     /**

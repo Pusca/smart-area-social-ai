@@ -47,6 +47,7 @@ class TrendBriefService
             'recommended_hook_patterns' => $this->recommendedHookPatterns($snapshot),
             'recommended_cta_styles' => $this->recommendedCtaStyles($snapshot, $profile),
             'trends_to_avoid' => $this->trendsToAvoid($snapshot),
+            'active_signals' => $this->activeSignals($signals),
             'signals_freshness' => $this->signalsFreshness($signals),
             'freshness_score' => $this->resolveFreshnessScore($snapshot, $signals),
             'confidence_score' => $this->resolveConfidenceScore($snapshot, $signals),
@@ -57,6 +58,7 @@ class TrendBriefService
                 'fresh_signals' => $signals->filter(fn ($signal) => $this->signalFreshnessBucket($signal) === 'fresh')->count(),
                 'expiring_signals' => $signals->filter(fn ($signal) => $this->signalFreshnessBucket($signal) === 'expiring')->count(),
                 'stale_signals' => $signals->filter(fn ($signal) => $this->signalFreshnessBucket($signal) === 'stale')->count(),
+                'source_breakdown' => $signals->countBy(fn ($signal) => (string) data_get($signal, 'source_type', 'unknown'))->all(),
             ],
         ];
 
@@ -207,6 +209,38 @@ class TrendBriefService
             ->filter(fn ($item) => is_array($item))
             ->flatMap(fn (array $item): array => array_values(array_filter(array_map('strval', (array) ($item['risk_flags'] ?? [])))))
             ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, mixed>  $signals
+     * @return array<int, array<string, mixed>>
+     */
+    private function activeSignals(Collection $signals): array
+    {
+        return $signals
+            ->sortByDesc(fn ($signal) => (float) data_get($signal, 'estimated_relevance_score', 0.0))
+            ->filter(fn ($signal) => $this->signalFreshnessBucket($signal) !== 'stale')
+            ->take(6)
+            ->map(fn ($signal): array => [
+                'title' => (string) data_get($signal, 'title', data_get($signal, 'topic', 'Trend signal')),
+                'topic' => (string) data_get($signal, 'topic', ''),
+                'platform' => (string) data_get($signal, 'platform', 'instagram'),
+                'format_type' => (string) data_get($signal, 'format_type', 'post'),
+                'source_type' => (string) data_get($signal, 'source_type', ''),
+                'freshness_score' => data_get($signal, 'freshness_score'),
+                'confidence_score' => data_get($signal, 'confidence_score'),
+                'freshness_bucket' => $this->signalFreshnessBucket($signal),
+                'expires_at' => ($expiresAt = data_get($signal, 'expires_at'))
+                    ? (($expiresAt instanceof Carbon) ? $expiresAt->toDateTimeString() : Carbon::parse((string) $expiresAt)->toDateTimeString())
+                    : null,
+                'evidence' => [
+                    'source_ref' => (string) data_get($signal, 'source_ref', ''),
+                    'matched_hashtags' => (array) data_get($signal, 'evidence_payload.matched_hashtags', []),
+                    'sample_item_ids' => (array) data_get($signal, 'evidence_payload.sample_item_ids', []),
+                ],
+            ])
             ->values()
             ->all();
     }

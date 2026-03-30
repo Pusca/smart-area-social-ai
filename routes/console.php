@@ -215,3 +215,54 @@ Artisan::command('social:publish-due {--tenant=} {--limit=25} {--sync}', functio
 
     $this->info("Queued={$queued} skipped={$skipped} sync=" . ($sync ? '1' : '0'));
 })->purpose('Dispatch due social publications for Meta-connected accounts');
+
+Artisan::command('trends:refresh {--tenant=} {--force}', function () {
+    $tenantOption = (int) ($this->option('tenant') ?: 0);
+    $force = (bool) $this->option('force');
+
+    /** @var \App\Services\Trends\TrendIntelligenceService $trendIntelligence */
+    $trendIntelligence = app(\App\Services\Trends\TrendIntelligenceService::class);
+    /** @var \App\Services\Editorial\TrendBriefService $trendBriefs */
+    $trendBriefs = app(\App\Services\Editorial\TrendBriefService::class);
+
+    $tenantIds = $tenantOption > 0
+        ? collect([$tenantOption])
+        : \App\Models\TenantProfile::query()
+            ->orderBy('tenant_id')
+            ->pluck('tenant_id');
+
+    if ($tenantIds->isEmpty()) {
+        $this->warn('Nessun tenant profile disponibile per il refresh trend.');
+
+        return self::SUCCESS;
+    }
+
+    $refreshed = 0;
+    foreach ($tenantIds as $tenantId) {
+        $tenantId = (int) $tenantId;
+        $profile = \App\Models\TenantProfile::query()->where('tenant_id', $tenantId)->first();
+        $snapshot = $trendIntelligence->refreshForTenant($tenantId, $profile, [
+            'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+            'formats' => (array) ($profile?->default_formats ?? ['post']),
+            'force_refresh' => $force,
+        ], $force);
+        $brief = $trendBriefs->getBriefForTenant($tenantId, $profile, [], [
+            'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+            'formats' => (array) ($profile?->default_formats ?? ['post']),
+        ]);
+
+        $this->line(sprintf(
+            'tenant=%d snapshot=%d signals=%d freshness=%s confidence=%s',
+            $tenantId,
+            (int) $snapshot->id,
+            (int) data_get($brief, 'summary.signals_count', 0),
+            is_numeric(data_get($brief, 'freshness_score')) ? number_format(((float) data_get($brief, 'freshness_score')) * 100, 0) . '%' : '-',
+            is_numeric(data_get($brief, 'confidence_score')) ? number_format(((float) data_get($brief, 'confidence_score')) * 100, 0) . '%' : '-'
+        ));
+        $refreshed++;
+    }
+
+    $this->info("Trend refresh completato per {$refreshed} tenant.");
+
+    return self::SUCCESS;
+})->purpose('Refresh trend signals and trend briefs for one tenant or all tenant profiles');

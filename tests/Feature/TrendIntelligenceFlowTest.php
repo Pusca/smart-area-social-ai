@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\ContentPlan;
+use App\Models\ContentFeedbackEntry;
+use App\Models\SocialPublication;
 use App\Models\Tenant;
 use App\Models\TenantProfile;
 use App\Models\TrendBrief;
@@ -14,6 +16,7 @@ use App\Services\Editorial\ContentGenerator;
 use App\Services\Editorial\EditorialPlanBuilder;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\Editorial\TrendBriefService;
+use App\Services\Trends\TrendOpportunitySynthesisService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -163,6 +166,185 @@ class TrendIntelligenceFlowTest extends TestCase
         $this->assertNotNull(TrendBrief::query()->where('tenant_id', $tenant->id)->value('source_snapshot_id'));
     }
 
+    public function test_internal_performance_signals_rank_above_weaker_curated_entries(): void
+    {
+        config()->set('trends.adapters', [
+            ['driver' => 'internal_performance'],
+            ['driver' => 'curated_manual'],
+        ]);
+        config()->set('trends.curated_manual_signals', [[
+            'platform' => 'instagram',
+            'topic' => 'weak curated angle',
+            'title' => 'Weak curated angle',
+            'summary' => 'Curated but less relevant.',
+            'format_type' => 'post',
+            'hook_patterns' => ['Hook generico.'],
+            'style_notes' => ['Nota generica.'],
+            'freshness_score' => 0.42,
+            'confidence_score' => 0.44,
+            'saturation_score' => 0.70,
+            'industries' => ['generic'],
+            'audiences' => ['broad'],
+            'goals' => ['awareness'],
+            'tags' => ['generic'],
+        ]]);
+
+        [$tenant, $user, $profile] = $this->bootstrapTenant('tenant-trend-ranking');
+        $plan = $this->createPlan($tenant, $user, 'Trend Ranking');
+
+        $item = \App\Models\ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'reel',
+            'status' => 'published',
+            'title' => 'Lead generation founder proof',
+            'ai_status' => 'done',
+            'published_at' => now()->subDay(),
+            'ai_meta' => [
+                'item_brain' => [
+                    'trend_opportunity' => ['topic' => 'lead generation founder proof'],
+                    'trend_basis' => ['topic' => 'lead generation founder proof'],
+                ],
+                'hook_meta' => [
+                    'main_hook' => 'Mostra subito il dettaglio reale che ha cambiato la pipeline.',
+                    'alternative_hook' => 'Founder POV: quello che conta davvero nelle lead.',
+                ],
+            ],
+        ]);
+
+        ContentFeedbackEntry::create([
+            'tenant_id' => $tenant->id,
+            'content_item_id' => $item->id,
+            'user_id' => $user->id,
+            'sentiment' => ContentFeedbackEntry::SENTIMENT_LIKE,
+            'action' => ContentFeedbackEntry::ACTION_RECORD_ONLY,
+            'scope' => ContentFeedbackEntry::SCOPE_FULL,
+            'normalized_category' => 'other',
+            'severity' => ContentFeedbackEntry::SEVERITY_LOW,
+            'reason' => 'Pattern molto forte.',
+            'scores' => ['overall' => 0.92],
+        ]);
+
+        SocialPublication::create([
+            'tenant_id' => $tenant->id,
+            'content_item_id' => $item->id,
+            'provider' => 'meta',
+            'platform' => 'instagram',
+            'status' => 'published',
+            'media_type' => 'video',
+            'caption' => 'Founder proof.',
+            'media_url' => 'https://example.test/reel.mp4',
+            'scheduled_for' => now()->subDay(),
+            'published_at' => now()->subDay(),
+            'response_meta' => [
+                'impressions' => 4200,
+                'likes' => 180,
+                'comments' => 24,
+                'saves' => 33,
+                'shares' => 15,
+            ],
+        ]);
+
+        $trend = app(TrendOpportunitySynthesisService::class)->buildForTenant((int) $tenant->id, $profile, [
+            'platforms' => ['instagram'],
+            'formats' => ['reel'],
+            'strategy' => ['analysis_framework' => ['primary_goal' => 'engagement']],
+        ]);
+
+        $this->assertNotEmpty((array) ($trend['opportunities'] ?? []));
+        $this->assertSame('internal_performance_signal', (string) data_get($trend, 'opportunities.0.source_type'));
+    }
+
+    public function test_expired_signals_do_not_survive_opportunity_ranking(): void
+    {
+        config()->set('trends.adapters', [
+            ['driver' => 'curated_manual'],
+        ]);
+        config()->set('trends.curated_manual_signals', [
+            [
+                'platform' => 'instagram',
+                'topic' => 'expired but attractive trend',
+                'title' => 'Expired trend',
+                'summary' => 'Should not appear.',
+                'format_type' => 'reel',
+                'hook_patterns' => ['Hook scaduto.'],
+                'style_notes' => ['Old trend.'],
+                'freshness_score' => 0.95,
+                'confidence_score' => 0.90,
+                'saturation_score' => 0.10,
+                'expires_at' => now()->subHour()->toDateTimeString(),
+                'industries' => ['saas'],
+                'audiences' => ['b2b'],
+                'goals' => ['engagement'],
+                'tags' => ['expired'],
+            ],
+            [
+                'platform' => 'instagram',
+                'topic' => 'fresh explainable trend',
+                'title' => 'Fresh trend',
+                'summary' => 'Should appear.',
+                'format_type' => 'reel',
+                'hook_patterns' => ['Hook fresco.'],
+                'style_notes' => ['Fresh trend.'],
+                'freshness_score' => 0.71,
+                'confidence_score' => 0.73,
+                'saturation_score' => 0.36,
+                'expires_at' => now()->addDay()->toDateTimeString(),
+                'industries' => ['saas'],
+                'audiences' => ['b2b'],
+                'goals' => ['engagement'],
+                'tags' => ['fresh'],
+            ],
+        ]);
+
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-trend-expiry');
+
+        $trend = app(TrendOpportunitySynthesisService::class)->buildForTenant((int) $tenant->id, $profile, [
+            'platforms' => ['instagram'],
+            'formats' => ['reel'],
+            'strategy' => ['analysis_framework' => ['primary_goal' => 'engagement']],
+        ]);
+
+        $topics = collect((array) ($trend['opportunities'] ?? []))->pluck('topic')->all();
+
+        $this->assertContains('fresh explainable trend', $topics);
+        $this->assertNotContains('expired but attractive trend', $topics);
+    }
+
+    public function test_trend_brief_compilation_includes_active_signals_and_source_breakdown(): void
+    {
+        config()->set('trends.adapters', [
+            ['driver' => 'curated_manual'],
+            ['driver' => 'creator_best_practice'],
+        ]);
+
+        [$tenant, , $profile] = $this->bootstrapTenant('tenant-trend-brief-sources');
+
+        $brief = app(TrendBriefService::class)->getBriefForTenant(
+            (int) $tenant->id,
+            $profile,
+            [],
+            [
+                'platforms' => ['instagram'],
+                'formats' => ['reel', 'carousel'],
+                'force_refresh' => true,
+            ]
+        );
+
+        $this->assertNotEmpty((array) ($brief['active_signals'] ?? []));
+        $this->assertNotEmpty((array) data_get($brief, 'summary.source_breakdown', []));
+        $this->assertContains(
+            'creator_best_practice_signal',
+            array_keys((array) data_get($brief, 'summary.source_breakdown', []))
+        );
+        $this->assertContains(
+            'curated_manual_signal',
+            array_keys((array) data_get($brief, 'summary.source_breakdown', []))
+        );
+    }
+
     private function bootstrapTenant(string $slug): array
     {
         $tenant = Tenant::create([
@@ -185,5 +367,19 @@ class TrendIntelligenceFlowTest extends TestCase
         ]);
 
         return [$tenant, $user, $profile];
+    }
+
+    private function createPlan(Tenant $tenant, User $user, string $name = 'Trend Plan'): ContentPlan
+    {
+        return ContentPlan::create([
+            'tenant_id' => $tenant->id,
+            'created_by' => $user->id,
+            'name' => $name,
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->addDays(14)->toDateString(),
+            'status' => 'draft',
+            'settings' => [],
+            'strategy' => [],
+        ]);
     }
 }

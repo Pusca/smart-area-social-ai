@@ -8,9 +8,20 @@ class ConfigTrendSourceAdapter implements TrendSourceAdapter
 {
     public function collect(array $context = []): array
     {
-        $signals = (array) config('trends.seed_signals', []);
+        return $this->normalizeSignals(
+            (array) config('trends.seed_signals', []),
+            'config_seed',
+            'config'
+        );
+    }
 
-        return array_values(array_filter(array_map(function ($signal) {
+    /**
+     * @param  array<int, mixed>  $signals
+     * @return array<int, array<string, mixed>>
+     */
+    public function normalizeSignals(array $signals, string $fallbackSourceType = 'config_seed', string $sourcePrefix = 'config'): array
+    {
+        return array_values(array_filter(array_map(function ($signal) use ($fallbackSourceType, $sourcePrefix) {
             if (!is_array($signal)) {
                 return null;
             }
@@ -33,10 +44,10 @@ class ConfigTrendSourceAdapter implements TrendSourceAdapter
                 'confidence_score' => isset($signal['confidence_score']) ? (float) $signal['confidence_score'] : 0.72,
                 'saturation_score' => isset($signal['saturation_score']) ? (float) $signal['saturation_score'] : 0.5,
                 'risk_flags' => array_values(array_filter(array_map('strval', (array) ($signal['risk_flags'] ?? [])))),
-                'source_type' => trim((string) ($signal['source_type'] ?? 'config_seed')),
-                'source_ref' => trim((string) ($signal['source_ref'] ?? ('config:' . $platform . ':' . $topic))),
+                'source_type' => trim((string) ($signal['source_type'] ?? $fallbackSourceType)),
+                'source_ref' => trim((string) ($signal['source_ref'] ?? ($sourcePrefix . ':' . $platform . ':' . $topic))),
                 'observed_at' => now()->toDateTimeString(),
-                'expires_at' => now()->addHours((int) config('social_manager.trend_brief.default_expiry_hours', 96))->toDateTimeString(),
+                'expires_at' => (string) ($signal['expires_at'] ?? now()->addHours((int) config('social_manager.trend_brief.default_expiry_hours', 96))->toDateTimeString()),
                 'niche_tags' => array_values(array_filter(array_map('strval', (array) ($signal['industries'] ?? [])))),
                 'format_tags' => array_values(array_filter(array_map('strval', array_merge(
                     (array) ($signal['format_tags'] ?? []),
@@ -54,7 +65,7 @@ class ConfigTrendSourceAdapter implements TrendSourceAdapter
                     'requires' => array_values(array_filter(array_map('strval', (array) ($signal['requires'] ?? [])))),
                 ],
                 'evidence_payload' => [
-                    'adapter' => 'config_seed',
+                    'adapter' => $fallbackSourceType,
                     'seed_topic' => $topic,
                     'seed_platform' => $platform,
                     'seed_tags' => array_values(array_filter(array_map('strval', (array) ($signal['tags'] ?? [])))),
