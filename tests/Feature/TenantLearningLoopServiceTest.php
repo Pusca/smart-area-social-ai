@@ -128,6 +128,41 @@ class TenantLearningLoopServiceTest extends TestCase
         $this->assertSame($learning, (array) $profile->learning_preferences);
     }
 
+    public function test_it_does_not_try_to_create_an_incomplete_tenant_profile_when_missing(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Tenant Learning Missing Profile',
+            'slug' => 'tenant-learning-missing-profile',
+        ]);
+
+        $user = User::factory()->create([
+            'tenant_id' => $tenant->id,
+        ]);
+
+        $plan = $this->createPlan($tenant, $user);
+
+        ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'scheduled_at' => now()->subDay(),
+            'status' => 'draft',
+            'title' => 'Learning item',
+            'ai_status' => 'done',
+            'ai_caption' => 'Caption',
+            'ai_meta' => [],
+        ]);
+
+        $learning = app(TenantLearningLoopService::class)->refreshForTenant((int) $tenant->id);
+
+        $this->assertIsArray($learning);
+        $this->assertDatabaseMissing('tenant_profiles', [
+            'tenant_id' => $tenant->id,
+        ]);
+    }
+
     private function bootstrapTenant(string $slug): array
     {
         $tenant = Tenant::create([

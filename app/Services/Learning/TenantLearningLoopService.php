@@ -24,11 +24,14 @@ class TenantLearningLoopService
     public function refreshForTenant(int $tenantId): array
     {
         $learning = $this->buildForTenant($tenantId);
+        $profile = TenantProfile::query()
+            ->where('tenant_id', $tenantId)
+            ->first();
 
-        TenantProfile::query()->updateOrCreate(
-            ['tenant_id' => $tenantId],
-            ['learning_preferences' => $learning]
-        );
+        if ($profile) {
+            $profile->learning_preferences = $learning;
+            $profile->save();
+        }
 
         return $learning;
     }
