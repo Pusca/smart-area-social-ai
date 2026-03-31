@@ -7,6 +7,7 @@ return [
         'identity_guard_v1' => env('SOCIAL_MANAGER_IDENTITY_GUARD_V1', true),
         'publish_gate_v1' => env('SOCIAL_MANAGER_PUBLISH_GATE_V1', true),
         'tenant_learning_v1' => env('SOCIAL_MANAGER_TENANT_LEARNING_V1', true),
+        'canva_integration_v1' => env('SOCIAL_MANAGER_CANVA_INTEGRATION_V1', true),
     ],
 
     'trend_brief' => [

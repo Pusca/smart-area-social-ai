@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class TenantProfileController extends Controller
@@ -42,30 +43,61 @@ class TenantProfileController extends Controller
     {
         $user = $request->user();
         $tenantId = (int) $user->tenant_id;
+        $brandWarnings = [];
 
         $profile = TenantProfile::query()->where('tenant_id', $tenantId)->first();
-        $strategy = $this->editorialStrategyService->forTenant($tenantId);
-        if (!$strategy && $profile) {
-            $strategy = $this->editorialStrategyService->refreshForTenant($tenantId, $profile);
+        $strategy = null;
+
+        try {
+            $strategy = $this->editorialStrategyService->forTenant($tenantId);
+            if (!$strategy && $profile) {
+                $strategy = $this->editorialStrategyService->refreshForTenant($tenantId, $profile);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('brand_center.strategy_unavailable', [
+                'tenant_id' => $tenantId,
+                'message' => $e->getMessage(),
+            ]);
+            $brandWarnings[] = 'Strategia e trend non disponibili al momento: ' . $e->getMessage();
         }
-        $learningProfile = is_array($profile?->learning_preferences) && !empty($profile->learning_preferences)
-            ? (array) $profile->learning_preferences
-            : ((bool) config('social_manager.features.tenant_learning_v1', true)
-                ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
-                : []);
-        $trendBrief = (bool) config('social_manager.features.trend_brief_v1', true)
-            ? $this->trendBriefService->getBriefForTenant(
-                $tenantId,
-                $profile,
-                $strategy?->toArray() ?? [],
-                [
-                    'strategy' => $strategy?->toArray() ?? [],
-                    'learning_preferences' => $learningProfile,
-                    'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
-                    'formats' => (array) ($profile?->default_formats ?? ['post']),
-                ]
-            )
-            : [];
+
+        try {
+            $learningProfile = is_array($profile?->learning_preferences) && !empty($profile->learning_preferences)
+                ? (array) $profile->learning_preferences
+                : ((bool) config('social_manager.features.tenant_learning_v1', true)
+                    ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
+                    : []);
+        } catch (\Throwable $e) {
+            Log::warning('brand_center.learning_unavailable', [
+                'tenant_id' => $tenantId,
+                'message' => $e->getMessage(),
+            ]);
+            $learningProfile = is_array($profile?->learning_preferences) ? (array) $profile->learning_preferences : [];
+            $brandWarnings[] = 'Learning profile non aggiornato: ' . $e->getMessage();
+        }
+
+        try {
+            $trendBrief = (bool) config('social_manager.features.trend_brief_v1', true)
+                ? $this->trendBriefService->getBriefForTenant(
+                    $tenantId,
+                    $profile,
+                    $strategy?->toArray() ?? [],
+                    [
+                        'strategy' => $strategy?->toArray() ?? [],
+                        'learning_preferences' => $learningProfile,
+                        'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+                        'formats' => (array) ($profile?->default_formats ?? ['post']),
+                    ]
+                )
+                : [];
+        } catch (\Throwable $e) {
+            Log::warning('brand_center.trend_brief_unavailable', [
+                'tenant_id' => $tenantId,
+                'message' => $e->getMessage(),
+            ]);
+            $trendBrief = [];
+            $brandWarnings[] = 'Trend Brief non disponibile: ' . $e->getMessage();
+        }
 
         $assets = BrandAsset::query()
             ->where('tenant_id', $tenantId)
@@ -99,7 +131,8 @@ class TenantProfileController extends Controller
             'demoPlan',
             'isOnboardingPending',
             'quickstartDismissed',
-            'shouldShowQuickstart'
+            'shouldShowQuickstart',
+            'brandWarnings'
         ));
     }
 
@@ -107,23 +140,34 @@ class TenantProfileController extends Controller
     {
         $tenantId = (int) $request->user()->tenant_id;
         $profile = TenantProfile::query()->where('tenant_id', $tenantId)->first();
-        $strategy = $this->editorialStrategyService->forTenant($tenantId);
-        $learningProfile = (bool) config('social_manager.features.tenant_learning_v1', true)
-            ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
-            : [];
+        try {
+            $strategy = $this->editorialStrategyService->forTenant($tenantId);
+            $learningProfile = (bool) config('social_manager.features.tenant_learning_v1', true)
+                ? $this->tenantLearningLoopService->refreshForTenant($tenantId)
+                : [];
 
-        $this->trendBriefService->getBriefForTenant(
-            $tenantId,
-            $profile,
-            $strategy?->toArray() ?? [],
-            [
-                'strategy' => $strategy?->toArray() ?? [],
-                'learning_preferences' => $learningProfile,
-                'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
-                'formats' => (array) ($profile?->default_formats ?? ['post']),
-                'force_refresh' => true,
-            ]
-        );
+            $this->trendBriefService->getBriefForTenant(
+                $tenantId,
+                $profile,
+                $strategy?->toArray() ?? [],
+                [
+                    'strategy' => $strategy?->toArray() ?? [],
+                    'learning_preferences' => $learningProfile,
+                    'platforms' => (array) ($profile?->default_platforms ?? ['instagram']),
+                    'formats' => (array) ($profile?->default_formats ?? ['post']),
+                    'force_refresh' => true,
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('brand_center.trend_refresh_failed', [
+                'tenant_id' => $tenantId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->route('profile.brand')
+                ->with('status', 'Trend Brief non aggiornato: ' . $e->getMessage());
+        }
 
         return redirect()
             ->route('profile.brand')

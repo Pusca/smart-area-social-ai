@@ -16,6 +16,17 @@
         $fineTuningMinimum = (int) ($fineTuning['minimum_examples'] ?? 12);
         $fineTuningPlatforms = collect((array) ($fineTuning['platforms'] ?? []))->filter()->values();
         $fineTuningFormats = collect((array) ($fineTuning['formats'] ?? []))->filter()->values();
+        $canvaSummary = is_array($canvaSummary ?? null) ? $canvaSummary : [];
+        $canvaFeatureEnabled = (bool) ($canvaSummary['enabled'] ?? false);
+        $canvaConfigured = (bool) ($canvaSummary['configured'] ?? false);
+        $canvaConnected = (bool) ($canvaSummary['connected'] ?? false);
+        $canvaTemplatesAvailable = (bool) ($canvaSummary['templates_available'] ?? false);
+        $canvaAutofillAvailable = (bool) ($canvaSummary['autofill_available'] ?? false);
+        $canvaExportAvailable = (bool) ($canvaSummary['export_available'] ?? false);
+        $canvaConnection = $canvaSummary['connection'] ?? null;
+        $canvaCatalogPreview = collect((array) ($canvaSummary['catalog_preview'] ?? []))->filter(fn ($row) => is_array($row))->values();
+        $canvaWorkflowOptions = is_array($canvaWorkflowOptions ?? null) ? $canvaWorkflowOptions : [];
+        $canvaTemplateMappings = $canvaTemplateMappings ?? collect();
     @endphp
 
     <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
@@ -306,6 +317,144 @@ PWA + Push
                     @endforelse
                 </div>
             </div>
+
+            @if($canvaFeatureEnabled)
+                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Integrazione Canva</h2>
+                            <p class="mt-1 text-sm text-gray-600">Social AI resta il brain. Canva serve per layout, template, rifinitura editabile ed export finale.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            @if($canvaConnected)
+                                <form method="POST" action="{{ route('settings.integrations.canva.templates.refresh') }}">
+                                    @csrf
+                                    <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                        Aggiorna template
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('settings.integrations.canva.disconnect') }}">
+                                    @csrf
+                                    <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+                                        Disconnetti Canva
+                                    </button>
+                                </form>
+                            @elseif($canvaConfigured)
+                                <a href="{{ route('settings.integrations.canva.redirect') }}" class="ui-btn-primary justify-center">
+                                    Collega Canva
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+
+                    @if(!$canvaConfigured)
+                        <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                            Configura `CANVA_CLIENT_ID`, `CANVA_CLIENT_SECRET` e `CANVA_REDIRECT_URI` per attivare l OAuth Canva.
+                        </div>
+                    @endif
+
+                    <div class="mt-4 grid gap-3 md:grid-cols-4">
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Connected</p>
+                            <p class="mt-2 text-sm font-semibold {{ $canvaConnected ? 'text-emerald-700' : 'text-gray-700' }}">{{ $canvaConnected ? 'Si' : 'No' }}</p>
+                        </div>
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Autofill</p>
+                            <p class="mt-2 text-sm font-semibold {{ $canvaAutofillAvailable ? 'text-emerald-700' : 'text-amber-700' }}">{{ $canvaAutofillAvailable ? 'Disponibile' : 'Manual finishing' }}</p>
+                        </div>
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Template APIs</p>
+                            <p class="mt-2 text-sm font-semibold {{ $canvaTemplatesAvailable ? 'text-emerald-700' : 'text-amber-700' }}">{{ $canvaTemplatesAvailable ? 'Disponibili' : 'Limitati' }}</p>
+                        </div>
+                        <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Export</p>
+                            <p class="mt-2 text-sm font-semibold {{ $canvaExportAvailable ? 'text-emerald-700' : 'text-amber-700' }}">{{ $canvaExportAvailable ? 'Disponibile' : 'Non pronto' }}</p>
+                        </div>
+                    </div>
+
+                    @if($canvaConnected)
+                        <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                            <p class="text-sm font-semibold text-gray-900">{{ $canvaConnection?->canva_display_name ?: 'Utente Canva connesso' }}</p>
+                            <p class="mt-1 text-xs text-gray-600">
+                                User ID {{ $canvaConnection?->canva_user_id ?: 'n/d' }} · Team {{ $canvaConnection?->canva_team_id ?: 'n/d' }}
+                            </p>
+                            <p class="mt-2 text-xs text-gray-500">
+                                Scope: {{ collect((array) ($canvaSummary['scopes'] ?? []))->implode(', ') ?: 'n/d' }}
+                            </p>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Capability: {{ collect((array) ($canvaSummary['capabilities'] ?? []))->implode(', ') ?: 'n/d' }}
+                            </p>
+                        </div>
+
+                        <div class="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                            <div class="rounded-2xl border border-gray-200 bg-white p-4">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-900">Template preview</p>
+                                        <p class="mt-1 text-xs text-gray-500">Ultimo refresh: {{ $canvaSummary['catalog_refreshed_at'] ?: 'mai' }}</p>
+                                    </div>
+                                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700">
+                                        {{ $canvaCatalogPreview->count() }} template
+                                    </span>
+                                </div>
+
+                                <div class="mt-3 space-y-2">
+                                    @forelse($canvaCatalogPreview->take(6) as $template)
+                                        <div class="rounded-xl border border-gray-200 px-3 py-3">
+                                            <p class="text-sm font-semibold text-gray-900">{{ $template['title'] ?? 'Template' }}</p>
+                                            <p class="mt-1 text-xs text-gray-500">{{ $template['id'] ?? '' }}</p>
+                                            @if(!empty($template['create_url']))
+                                                <a href="{{ $template['create_url'] }}" target="_blank" rel="noreferrer" class="mt-2 inline-flex text-xs font-semibold text-cyan-700 hover:text-cyan-800">
+                                                    Apri template in Canva
+                                                </a>
+                                            @endif
+                                        </div>
+                                    @empty
+                                        <div class="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-sm text-gray-600">
+                                            Nessun template in preview. Esegui un refresh dopo aver collegato un account con Brand Templates.
+                                        </div>
+                                    @endforelse
+                                </div>
+                            </div>
+
+                            <div class="rounded-2xl border border-gray-200 bg-white p-4">
+                                <p class="text-sm font-semibold text-gray-900">Workflow mapping</p>
+                                <p class="mt-1 text-xs text-gray-500">Per il vertical slice il flusso attivo e `instagram_post`, ma i mapping sono pronti anche per gli altri formati.</p>
+
+                                <div class="mt-4 grid gap-3 md:grid-cols-2">
+                                    @foreach($canvaWorkflowOptions as $workflowKey => $workflow)
+                                        @php
+                                            $mapping = $canvaTemplateMappings->get($workflowKey);
+                                        @endphp
+                                        <form method="POST" action="{{ route('settings.integrations.canva.templates.map') }}" class="rounded-xl border border-gray-200 px-4 py-4">
+                                            @csrf
+                                            <input type="hidden" name="channel_format" value="{{ $workflowKey }}">
+                                            <p class="text-sm font-semibold text-gray-900">{{ $workflow['label'] ?? $workflowKey }}</p>
+                                            <p class="mt-1 text-xs text-gray-500">
+                                                {{ $mapping?->status === 'active' ? 'Template associato' : 'Nessun template attivo' }}
+                                            </p>
+                                            <select name="canva_template_id" class="mt-3 w-full rounded-xl border-gray-300 text-sm focus:border-cyan-500 focus:ring-cyan-500">
+                                                <option value="">Manual Canva finishing</option>
+                                                @foreach($canvaCatalogPreview as $template)
+                                                    <option value="{{ $template['id'] }}" @selected((string) $template['id'] === (string) ($mapping?->canva_template_id ?? ''))>
+                                                        {{ $template['title'] }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            <div class="mt-3 flex items-center justify-between gap-3">
+                                                <span class="text-xs text-gray-500">{{ $mapping?->canva_template_name ?: 'Nessun template' }}</span>
+                                                <button type="submit" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                                    Salva
+                                                </button>
+                                            </div>
+                                        </form>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            @endif
 
             <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div class="flex items-center justify-between">

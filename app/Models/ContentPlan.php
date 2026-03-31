@@ -29,4 +29,9 @@ class ContentPlan extends Model
     {
         return $this->hasMany(ContentItem::class, 'content_plan_id');
     }
+
+    public function canvaDesigns(): HasMany
+    {
+        return $this->hasMany(CanvaDesign::class);
+    }
 }

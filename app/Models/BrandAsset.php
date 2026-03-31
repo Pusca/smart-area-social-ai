@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BrandAsset extends Model
 {
@@ -20,4 +21,9 @@ class BrandAsset extends Model
     protected $casts = [
         'meta' => 'array',
     ];
+
+    public function canvaMappings(): HasMany
+    {
+        return $this->hasMany(CanvaAssetMapping::class);
+    }
 }

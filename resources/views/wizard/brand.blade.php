@@ -74,6 +74,7 @@
     $professionalismGuardrailLevel = old('professionalism_guardrail_level', $overlayPreferences['professionalism_guardrail_level'] ?? 'high');
     $trendBrief = is_array($trendBrief ?? null) ? $trendBrief : [];
     $learningProfile = is_array($learningProfile ?? null) ? $learningProfile : [];
+    $brandWarnings = collect($brandWarnings ?? [])->filter(fn ($row) => is_string($row) && trim($row) !== '')->values();
     $trendRefreshRoute = \Illuminate\Support\Facades\Route::has('profile.brand.trends.refresh') ? route('profile.brand.trends.refresh') : null;
     $trendThemes = array_values(array_filter((array) data_get($trendBrief, 'current_relevant_themes', []), fn ($row) => is_array($row)));
     $trendActiveSignals = array_values(array_filter((array) data_get($trendBrief, 'active_signals', []), fn ($row) => is_array($row)));
@@ -367,6 +368,17 @@
     @if(session('status'))
         <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             {{ session('status') }}
+        </div>
+    @endif
+
+    @if($brandWarnings->isNotEmpty())
+        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <p class="font-semibold">Alcuni moduli dinamici non sono disponibili, ma il Brand Center resta utilizzabile.</p>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+                @foreach($brandWarnings as $warning)
+                    <li>{{ $warning }}</li>
+                @endforeach
+            </ul>
         </div>
     @endif
 

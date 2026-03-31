@@ -98,6 +98,19 @@
         $resolvedVariables = array_values(array_filter((array) data_get($item->ai_meta, 'asset_variables.resolved', []), fn ($row) => is_array($row)));
         $assetRanking = array_values(array_filter((array) data_get($item->ai_meta, 'asset_scoring.asset_ranking', []), fn ($row) => is_array($row)));
         $assetIdentityConfidence = data_get($item->ai_meta, 'asset_scoring.identity_confidence');
+        $canvaEnabled = (bool) ($canvaEnabled ?? false);
+        $canvaConnected = (bool) ($canvaConnected ?? false);
+        $canvaDesigns = collect($canvaDesigns ?? []);
+        $canvaLatestDesign = $canvaLatestDesign ?? $canvaDesigns->first();
+        $canvaLatestExportJob = $canvaLatestDesign?->exportJobs?->sortByDesc('id')->first();
+        $canvaDownloadUrl = $canvaLatestExportJob && !empty($canvaLatestExportJob->stored_path)
+            ? asset('storage/' . ltrim((string) $canvaLatestExportJob->stored_path, '/'))
+            : null;
+        $canvaChannelFormat = match (true) {
+            str_contains(strtolower((string) $item->format), 'carousel') => 'carousel',
+            str_contains(strtolower((string) $item->format), 'story') => 'story',
+            default => 'instagram_post',
+        };
         $scoreHighlights = [
             'Professionalism' => data_get($qualityScorecard, 'professionalism_score'),
             'Trend' => data_get($qualityScorecard, 'trend_relevance_score'),
@@ -168,6 +181,103 @@
                     <div class="mb-2 text-sm text-muted">Image prompt</div>
                     <div class="text-text">{{ $item->ai_image_prompt ?? '-' }}</div>
                 </div>
+
+                @if($canvaEnabled)
+                    <div class="ui-card p-5">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <div class="mb-2 text-sm text-muted">Canva workflow</div>
+                                <div class="text-sm text-text">Invia questo contenuto in Canva per layout/editing ed export finale.</div>
+                            </div>
+                            @if($canvaConnected)
+                                <form method="POST" action="{{ route('content-items.canva.send', $item) }}" class="flex flex-wrap gap-2">
+                                    @csrf
+                                    <input type="hidden" name="channel_format" value="{{ $canvaChannelFormat }}">
+                                    <input type="hidden" name="include_generated_visual" value="1">
+                                    <input type="hidden" name="include_logo" value="1">
+                                    <button type="submit" class="ui-btn-primary">
+                                        Send to Canva
+                                    </button>
+                                </form>
+                            @else
+                                <a href="{{ route('settings') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                    Collega Canva
+                                </a>
+                            @endif
+                        </div>
+
+                        @if($canvaLatestDesign)
+                            <div class="mt-4 grid gap-2 sm:grid-cols-2">
+                                <div class="rounded-lg bg-surface-2 px-3 py-2">
+                                    <div class="text-xs text-muted">Status</div>
+                                    <div class="mt-1 text-sm font-semibold text-text">{{ $canvaLatestDesign->status }}</div>
+                                </div>
+                                <div class="rounded-lg bg-surface-2 px-3 py-2">
+                                    <div class="text-xs text-muted">Source mode</div>
+                                    <div class="mt-1 text-sm font-semibold text-text">{{ $canvaLatestDesign->source_mode }}</div>
+                                </div>
+                            </div>
+
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                @if(!empty($canvaLatestDesign->canva_edit_url))
+                                    <a href="{{ $canvaLatestDesign->canva_edit_url }}" target="_blank" rel="noreferrer" class="inline-flex items-center rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 hover:bg-cyan-100">
+                                        Open in Canva
+                                    </a>
+                                @endif
+                                @if($canvaLatestDesign->status === 'manual_handoff_ready')
+                                    <a href="{{ route('canva.designs.handoff', $canvaLatestDesign) }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                        Manual handoff
+                                    </a>
+                                @endif
+                                @if($canvaDownloadUrl)
+                                    <a href="{{ $canvaDownloadUrl }}" class="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100">
+                                        Download export
+                                    </a>
+                                @endif
+                            </div>
+
+                            @if(empty($canvaLatestDesign->canva_design_id) && $canvaLatestDesign->status === 'manual_handoff_ready')
+                                <form method="POST" action="{{ route('canva.designs.link', $canvaLatestDesign) }}" class="mt-4 rounded-lg border border-gray-200 px-3 py-3">
+                                    @csrf
+                                    <label class="text-xs font-semibold uppercase tracking-wide text-gray-500">Link manual Canva design</label>
+                                    <div class="mt-2 flex flex-wrap gap-2">
+                                        <input type="text" name="design_url_or_id" placeholder="https://www.canva.com/design/... oppure design ID" class="min-w-[260px] flex-1 rounded-xl border-gray-300 text-sm focus:border-cyan-500 focus:ring-cyan-500">
+                                        <button type="submit" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                            Salva design
+                                        </button>
+                                    </div>
+                                </form>
+                            @endif
+
+                            @if(!empty($canvaLatestDesign->canva_design_id))
+                                <form method="POST" action="{{ route('canva.designs.export', $canvaLatestDesign) }}" class="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 px-3 py-3">
+                                    @csrf
+                                    <select name="export_type" class="rounded-xl border-gray-300 text-sm focus:border-cyan-500 focus:ring-cyan-500">
+                                        <option value="png">PNG</option>
+                                        <option value="pdf">PDF</option>
+                                        <option value="pptx">PPTX</option>
+                                        <option value="mp4">MP4</option>
+                                    </select>
+                                    <button type="submit" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                        Export from Canva
+                                    </button>
+                                    @if($canvaLatestExportJob)
+                                        <button type="submit" form="canva-refresh-export-{{ $canvaLatestExportJob->id }}" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                            Refresh export
+                                        </button>
+                                    @endif
+                                </form>
+                                @if($canvaLatestExportJob)
+                                    <form id="canva-refresh-export-{{ $canvaLatestExportJob->id }}" method="POST" action="{{ route('canva.exports.refresh', $canvaLatestExportJob) }}" class="hidden">
+                                        @csrf
+                                    </form>
+                                @endif
+                            @endif
+                        @else
+                            <div class="mt-3 text-sm text-muted">Nessun design Canva collegato a questo contenuto.</div>
+                        @endif
+                    </div>
+                @endif
 
                 <div class="ui-card p-5">
                     <div class="flex items-center justify-between gap-3">

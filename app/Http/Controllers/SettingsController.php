@@ -6,6 +6,8 @@ use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\SocialAccount;
 use App\Models\TenantProfile;
+use App\Services\Canva\CanvaBridgeService;
+use App\Services\Canva\CanvaTemplateMappingService;
 use App\Services\AI\TenantFineTuningService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,7 +16,12 @@ use Throwable;
 
 class SettingsController extends Controller
 {
-    public function index(Request $request, TenantFineTuningService $tenantFineTuningService): View
+    public function index(
+        Request $request,
+        TenantFineTuningService $tenantFineTuningService,
+        CanvaBridgeService $canvaBridgeService,
+        CanvaTemplateMappingService $canvaTemplateMappingService
+    ): View
     {
         $tenantId = (int) $request->user()->tenant_id;
 
@@ -45,6 +52,9 @@ class SettingsController extends Controller
         $activeSocialAccounts = $socialAccounts->where('status', 'active');
         $connectedPlatforms = $activeSocialAccounts->pluck('platform')->filter()->unique()->values();
         $fineTuning = $tenantFineTuningService->previewStats($tenantId);
+        $canvaSummary = $canvaBridgeService->connectionSummary($tenantId);
+        $canvaTemplateMappings = $canvaTemplateMappingService->mappingsForTenant($tenantId)->keyBy('channel_format');
+        $canvaWorkflowOptions = $canvaTemplateMappingService->workflowOptions();
 
         $setupChecks = collect([
             [
@@ -108,6 +118,9 @@ class SettingsController extends Controller
             'fineTuning' => $fineTuning,
             'metaReady' => !empty(config('meta.app_id')) && !empty(config('meta.app_secret')),
             'metaScopes' => (array) config('meta.scopes', []),
+            'canvaSummary' => $canvaSummary,
+            'canvaTemplateMappings' => $canvaTemplateMappings,
+            'canvaWorkflowOptions' => $canvaWorkflowOptions,
         ]);
     }
 

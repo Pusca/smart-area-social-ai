@@ -42,6 +42,11 @@ class ContentItem extends Model
         return $this->hasMany(GenerationRun::class);
     }
 
+    public function canvaDesigns(): HasMany
+    {
+        return $this->hasMany(CanvaDesign::class);
+    }
+
     public function feedbackEntries(): HasMany
     {
         return $this->hasMany(ContentFeedbackEntry::class);

@@ -11,6 +11,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PlanWizardController;
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AiGenerateController;
+use App\Http\Controllers\CanvaIntegrationController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\TenantProfileController;
@@ -84,6 +85,11 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/settings/social/meta/redirect', [SocialAccountController::class, 'redirectToMeta'])->name('settings.social.meta.redirect');
     Route::get('/settings/social/meta/callback', [SocialAccountController::class, 'handleMetaCallback'])->name('settings.social.meta.callback');
     Route::post('/settings/social/accounts/{socialAccount}/disconnect', [SocialAccountController::class, 'disconnect'])->name('settings.social.accounts.disconnect');
+    Route::get('/settings/integrations/canva/redirect', [CanvaIntegrationController::class, 'redirect'])->name('settings.integrations.canva.redirect');
+    Route::get('/settings/integrations/canva/callback', [CanvaIntegrationController::class, 'callback'])->name('settings.integrations.canva.callback');
+    Route::post('/settings/integrations/canva/disconnect', [CanvaIntegrationController::class, 'disconnect'])->name('settings.integrations.canva.disconnect');
+    Route::post('/settings/integrations/canva/templates/refresh', [CanvaIntegrationController::class, 'refreshTemplates'])->name('settings.integrations.canva.templates.refresh');
+    Route::post('/settings/integrations/canva/templates/map', [CanvaIntegrationController::class, 'updateTemplateMapping'])->name('settings.integrations.canva.templates.map');
 
     Route::prefix('posts')->name('posts.')->group(function () {
         Route::get('/', [ContentItemController::class, 'index'])->name('index');
@@ -103,6 +109,14 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::prefix('content-items')->name('content-items.')->group(function () {
         Route::get('/', [ContentItemController::class, 'gallery'])->name('index');
         Route::get('/{contentItem}', [ContentItemController::class, 'show'])->name('show');
+        Route::post('/{contentItem}/canva/send', [CanvaIntegrationController::class, 'sendContentItem'])->name('canva.send');
+    });
+
+    Route::prefix('canva')->name('canva.')->group(function () {
+        Route::get('/designs/{canvaDesign}/handoff', [CanvaIntegrationController::class, 'showHandoff'])->name('designs.handoff');
+        Route::post('/designs/{canvaDesign}/link', [CanvaIntegrationController::class, 'linkManualDesign'])->name('designs.link');
+        Route::post('/designs/{canvaDesign}/export', [CanvaIntegrationController::class, 'export'])->name('designs.export');
+        Route::post('/exports/{canvaExportJob}/refresh', [CanvaIntegrationController::class, 'refreshExportStatus'])->name('exports.refresh');
     });
 
     Route::get('/push/public-key', [PushController::class, 'publicKey'])->name('push.publicKey');

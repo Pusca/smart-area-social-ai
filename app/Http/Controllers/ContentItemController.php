@@ -9,6 +9,7 @@ use App\Models\ContentPlan;
 use App\Models\TenantProfile;
 use App\Services\AI\AiProviderMatrixService;
 use App\Services\AI\TenantContentIntelligenceService;
+use App\Services\Canva\CanvaBridgeService;
 use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\ContentMediaPreviewService;
@@ -33,6 +34,7 @@ class ContentItemController extends Controller
         private readonly MemoryBuilderService $memoryBuilder,
         private readonly TenantContentIntelligenceService $tenantContentIntelligence,
         private readonly AiProviderMatrixService $aiProviderMatrixService,
+        private readonly CanvaBridgeService $canvaBridgeService,
         private readonly AssetIdentityService $assetIdentityService,
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentOverlayEngine $contentOverlayEngine,
@@ -140,8 +142,16 @@ class ContentItemController extends Controller
     {
         $this->authorizeTenant($request, $contentItem);
 
+        $contentItem->load([
+            'canvaDesigns' => fn ($query) => $query->with('exportJobs')->latest('id'),
+        ]);
+
         return view('content-items.show', [
             'item' => $contentItem,
+            'canvaDesigns' => $contentItem->canvaDesigns,
+            'canvaLatestDesign' => $contentItem->canvaDesigns->first(),
+            'canvaEnabled' => (bool) config('social_manager.features.canva_integration_v1', true),
+            'canvaConnected' => (bool) data_get($this->canvaBridgeService->connectionSummary((int) $contentItem->tenant_id), 'connected', false),
         ]);
     }
 
