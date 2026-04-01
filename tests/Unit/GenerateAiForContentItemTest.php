@@ -778,8 +778,8 @@ class GenerateAiForContentItemTest extends TestCase
     {
         $job = new GenerateAiForContentItem(1);
 
-        $this->assertFalse($job->shouldAttemptLockedVideoSceneReference('kling', true));
-        $this->assertFalse($job->shouldUseLockedVideoSceneReference([
+        $this->assertTrue($job->shouldAttemptLockedVideoSceneReference('kling', true));
+        $this->assertTrue($job->shouldUseLockedVideoSceneReference([
             'abs' => '/tmp/scene.png',
             'all_present' => true,
         ], 'kling', true));
@@ -791,6 +791,32 @@ class GenerateAiForContentItemTest extends TestCase
             'abs' => '/tmp/scene.png',
             'all_present' => true,
         ], 'runway', true));
+    }
+
+    public function test_it_prefers_single_reference_mode_for_latest_kling_models_when_a_composed_reference_exists(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $this->assertTrue($job->shouldPreferSingleReferenceModeForKling(
+            'kling-v3-omni',
+            '/tmp/composed.png',
+            'brand_multi_image_collage_reference',
+            ['used' => false]
+        ));
+
+        $this->assertTrue($job->shouldPreferSingleReferenceModeForKling(
+            'kling-v3',
+            '/tmp/scene-lock.png',
+            'brand_locked_scene_reference',
+            ['used' => true]
+        ));
+
+        $this->assertFalse($job->shouldPreferSingleReferenceModeForKling(
+            'kling-v2',
+            '',
+            'brand_multi_image_collage_reference',
+            ['used' => false]
+        ));
     }
 
     public function test_it_preserves_presenter_and_product_canonicals_in_video_reference_selection_for_non_openai_providers(): void

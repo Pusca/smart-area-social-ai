@@ -900,7 +900,7 @@ SVG;
                 'mode' => 'openai_primary_person_reference',
                 'reference_count' => count($imageReferenceAbsPool),
             ];
-        } elseif ($this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool)) {
+        } elseif (!$dualSubjectLock && $this->shouldUsePersonIdentityReferenceBoard($assetVariables, $imageReferencePathPool)) {
             $compositionMeta = [
                 'used' => false,
                 'mode' => 'person_identity_reference_board',
@@ -1127,6 +1127,8 @@ SVG;
                     briefRaw: $briefRaw,
                     fallbackPrompt: $prompt,
                     videoPrompt: $klingExecutionPrompt,
+                    referenceAbs: is_string($referenceAbs) ? $referenceAbs : null,
+                    referencePath: is_string($referencePath) ? $referencePath : null,
                     referenceAbsPool: $generationReferenceAbsPool,
                     referencePaths: $imageReferencePathPool,
                     referenceReason: $referenceReason,
@@ -2033,6 +2035,8 @@ SVG;
                     briefRaw: $briefRaw,
                     fallbackPrompt: $fallbackPrompt,
                     videoPrompt: $segmentPrompt,
+                    referenceAbs: is_string($referenceAbs) ? $referenceAbs : null,
+                    referencePath: is_string($referencePath) ? $referencePath : null,
                     referenceAbsPool: $generationReferenceAbsPool,
                     referencePaths: $imageReferencePathPool,
                     referenceReason: $segmentReferenceReason,
@@ -3381,6 +3385,8 @@ SVG;
         string $briefRaw,
         string $fallbackPrompt,
         string $videoPrompt,
+        ?string $referenceAbs,
+        ?string $referencePath,
         array $referenceAbsPool,
         array $referencePaths,
         string $referenceReason,
@@ -3391,7 +3397,21 @@ SVG;
         array $activeFeedbackRequest,
         bool $locationSequenceMode
     ): array {
-        $referenceBundle = $this->buildKlingReferenceInputs($referenceAbsPool, $referencePaths);
+        $videoOptions = $this->normalizeVideoOptionsForProvider('kling', $videoOptions);
+        $preferredReferenceAbs = trim((string) $referenceAbs);
+        $preferredReferencePath = trim((string) $referencePath);
+        $preferredReferencePaths = $preferredReferencePath !== ''
+            ? [$preferredReferencePath]
+            : array_values(array_slice($referencePaths, 0, 1));
+
+        $referenceBundle = $this->shouldPreferSingleReferenceModeForKling(
+            (string) ($videoOptions['model'] ?? ''),
+            $preferredReferenceAbs,
+            $referenceReason,
+            $compositionMeta
+        )
+            ? $this->buildKlingReferenceInputs([$preferredReferenceAbs], $preferredReferencePaths)
+            : $this->buildKlingReferenceInputs($referenceAbsPool, $referencePaths);
         $referenceInputs = (array) ($referenceBundle['inputs'] ?? []);
         $requestMode = $kling->resolveRequestMode($referenceInputs);
 
@@ -3412,7 +3432,6 @@ SVG;
         $requestSummary['reference_count'] = count($referenceInputs);
         $requestSummary['reference_paths'] = array_values(array_slice($referencePaths, 0, 4));
 
-        $videoOptions = $this->normalizeVideoOptionsForProvider('kling', $videoOptions);
         $klingOptions = [
             'request_mode' => $requestMode,
             'model' => (string) ($videoOptions['model'] ?? ''),
@@ -4849,7 +4868,7 @@ SVG;
 
     public function shouldAttemptLockedVideoSceneReference(string $videoProvider, bool $dualSubjectLock): bool
     {
-        return !($dualSubjectLock && $videoProvider === 'kling');
+        return true;
     }
 
     /**
@@ -4866,6 +4885,38 @@ SVG;
         }
 
         return (bool) ($compositionReference['all_present'] ?? false);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $compositionMeta
+     */
+    public function shouldPreferSingleReferenceModeForKling(
+        string $model,
+        string $referenceAbs,
+        string $referenceReason = '',
+        ?array $compositionMeta = null
+    ): bool {
+        $model = strtolower(trim($model));
+        $referenceAbs = trim($referenceAbs);
+        $referenceReason = strtolower(trim($referenceReason));
+        $compositionMode = strtolower(trim((string) data_get($compositionMeta, 'mode', '')));
+
+        if ($referenceAbs === '') {
+            return false;
+        }
+
+        if (
+            str_starts_with($model, 'kling-v3')
+            || $model === 'kling-video-o1'
+        ) {
+            return true;
+        }
+
+        return str_contains($referenceReason, 'collage_reference')
+            || str_contains($referenceReason, 'locked_scene_reference')
+            || str_contains($referenceReason, 'identity_reference_board')
+            || in_array($compositionMode, ['locked_scene_reference_rejected', 'person_identity_reference_board'], true)
+            || (bool) data_get($compositionMeta, 'used', false);
     }
 
     /**
