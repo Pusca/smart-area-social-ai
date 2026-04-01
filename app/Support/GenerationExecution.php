@@ -13,10 +13,7 @@ class GenerationExecution
 
     public static function shouldDispatchAfterResponse(): bool
     {
-        return !self::shouldRunSync()
-            && !app()->runningInConsole()
-            && !app()->runningUnitTests()
-            && (bool) config('generation.force_sync', false);
+        return false;
     }
 
     public static function shouldShowProgressPage(): bool

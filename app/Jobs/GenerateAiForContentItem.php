@@ -48,8 +48,9 @@ class GenerateAiForContentItem implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 180;
+    public int $timeout = 1200;
     public int $tries = 1;
+    public bool $failOnTimeout = true;
     public string $runKey;
 
     public function __construct(public int $contentItemId, ?string $runKey = null)
