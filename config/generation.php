@@ -13,7 +13,7 @@ return [
     'speech_providers' => ['openai', 'elevenlabs'],
     'voice_clone_provider_default' => env('VOICE_CLONE_PROVIDER_DEFAULT', 'elevenlabs'),
 
-    'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'runway'),
+    'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'kling'),
     'video_providers' => ['openai', 'runway', 'kling'],
 
     'image_provider_default' => env('IMAGE_PROVIDER_DEFAULT', 'nanobanana'),

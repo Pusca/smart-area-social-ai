@@ -244,7 +244,10 @@ class KlingService
         $payload = [
             'model_name' => $modelName,
             'prompt' => $this->normalizePrompt($prompt),
-            'duration' => $this->normalizeDuration((int) ($options['seconds'] ?? config('kling.video_seconds') ?: 5)),
+            'duration' => $this->normalizeDuration(
+                (int) ($options['seconds'] ?? config('kling.video_seconds') ?: 5),
+                $modelName
+            ),
             'aspect_ratio' => $this->normalizeAspectRatio(
                 (string) ($options['ratio'] ?? config('kling.video_ratio') ?: ''),
                 (string) ($options['size'] ?? '')
@@ -322,6 +325,7 @@ class KlingService
     {
         $attempts = [];
         $configuredModel = (string) ($options['model'] ?? config('kling.model') ?: '');
+        $strictModel = $this->shouldUseStrictModel($options, $configuredModel);
 
         $this->appendCreateAttempts(
             $attempts,
@@ -329,10 +333,10 @@ class KlingService
             $referenceInputs,
             $options,
             $requestMode,
-            $this->modelCandidatesForRequestMode($requestMode, $configuredModel)
+            $this->modelCandidatesForRequestMode($requestMode, $configuredModel, $strictModel)
         );
 
-        if ($requestMode === 'multi-image' && count($referenceInputs) > 1) {
+        if (!$strictModel && $requestMode === 'multi-image' && count($referenceInputs) > 1) {
             $fallbackOptions = $options;
             $fallbackOptions['request_mode'] = 'image';
 
@@ -389,9 +393,18 @@ class KlingService
     /**
      * @return array<int, string>
      */
-    private function modelCandidatesForRequestMode(string $requestMode, string $configuredModel): array
+    private function modelCandidatesForRequestMode(string $requestMode, string $configuredModel, bool $strictModel = false): array
     {
         $configuredModel = strtolower(trim(str_replace(['_', '.'], '-', $configuredModel)));
+
+        if ($strictModel && $configuredModel !== '') {
+            if ($this->isOfficialKlingEndpoint() && !$this->supportsModelForRequestMode($configuredModel, $requestMode)) {
+                return [];
+            }
+
+            return [$configuredModel];
+        }
+
         $candidates = [];
 
         if ($configuredModel !== '') {
@@ -399,9 +412,9 @@ class KlingService
         }
 
         $fallbacks = match ($requestMode) {
-            'multi-image' => ['kling-v2'],
-            'image' => ['kling-v2-1', 'kling-v2', 'kling-v1-6'],
-            default => ['kling-v2-1-master', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
+            'multi-image' => ['kling-v3-omni', 'kling-v3', 'kling-v2'],
+            'image' => ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
+            default => ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2-1-master', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
         };
 
         foreach ($fallbacks as $fallback) {
@@ -424,12 +437,24 @@ class KlingService
         return array_values(array_unique($candidates));
     }
 
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function shouldUseStrictModel(array $options, string $configuredModel): bool
+    {
+        if (array_key_exists('strict_model', $options)) {
+            return (bool) $options['strict_model'];
+        }
+
+        return trim($configuredModel) !== '' && (bool) config('kling.strict_model', false);
+    }
+
     private function defaultModelForRequestMode(string $requestMode): string
     {
         return match ($requestMode) {
-            'multi-image' => 'kling-v2',
-            'image' => 'kling-v2-1',
-            default => 'kling-v2-1-master',
+            'multi-image' => 'kling-v3-omni',
+            'image' => 'kling-v3-omni',
+            default => 'kling-v3-omni',
         };
     }
 
@@ -443,9 +468,9 @@ class KlingService
         }
 
         return match ($requestMode) {
-            'multi-image' => in_array($model, ['kling-v2'], true),
-            'image' => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
-            default => in_array($model, ['kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
+            'multi-image' => in_array($model, ['kling-v3-omni', 'kling-v3', 'kling-v2'], true),
+            'image' => in_array($model, ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
+            default => in_array($model, ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
         };
     }
 
@@ -566,8 +591,14 @@ class KlingService
         return in_array($mode, ['std', 'pro'], true) ? $mode : 'pro';
     }
 
-    private function normalizeDuration(int $seconds): int
+    private function normalizeDuration(int $seconds, string $modelName = ''): int
     {
+        $modelName = strtolower(trim($modelName));
+
+        if (in_array($modelName, ['kling-v3-omni', 'kling-v3'], true)) {
+            return max(3, min(15, $seconds));
+        }
+
         return $seconds >= 8 ? 10 : 5;
     }
 

@@ -149,15 +149,27 @@ return [
                     'fallbacks' => ['runway', 'openai'],
                     'model_config' => 'kling.model',
                     'context_models' => [
-                        'text' => 'kling-v2-1-master',
-                        'image' => 'kling-v2-1',
-                        'multi_image' => 'kling-v2',
-                        'fallback' => 'kling-v1-6',
+                        'text' => 'kling-v3-omni',
+                        'image' => 'kling-v3-omni',
+                        'multi_image' => 'kling-v3-omni',
+                        'fallback' => 'kling-v3',
                     ],
                     'model_prefixes' => ['kling-'],
-                    'duration_rule' => [
-                        'mode' => 'enum',
-                        'values' => [5, 10],
+                    'duration_rules' => [
+                        'kling-v3-omni' => [
+                            'mode' => 'range',
+                            'min' => 3,
+                            'max' => 15,
+                        ],
+                        'kling-v3' => [
+                            'mode' => 'range',
+                            'min' => 3,
+                            'max' => 15,
+                        ],
+                        'default' => [
+                            'mode' => 'enum',
+                            'values' => [5, 10],
+                        ],
                     ],
                     'aspect_ratios' => ['9:16', '16:9', '1:1'],
                     'timeouts' => [

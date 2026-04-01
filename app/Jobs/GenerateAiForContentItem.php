@@ -2666,7 +2666,13 @@ SVG;
 
     public function shouldAllowCrossProviderVideoFallback(array $meta): bool
     {
-        return !(bool) data_get($meta, 'video_provider_lock', false);
+        if ((bool) data_get($meta, 'video_provider_lock', false)) {
+            return false;
+        }
+
+        $provider = $this->resolveVideoProvider($meta);
+
+        return !$this->isStrictVideoModelSelection($provider, $meta);
     }
 
     /**
@@ -2682,6 +2688,9 @@ SVG;
         }
 
         $configured = $this->normalizeRunwayVideoModel($this->capabilityRegistry()->defaultModel('runway', 'video'));
+        if ($this->isStrictVideoModelSelection('runway', $meta)) {
+            return $configured;
+        }
 
         $format = strtolower(trim((string) ($item->format ?? 'post')));
         $hasReferences = !empty(array_filter($referencePaths, fn ($path) => is_string($path) && trim($path) !== ''));
@@ -3407,6 +3416,7 @@ SVG;
         $klingOptions = [
             'request_mode' => $requestMode,
             'model' => (string) ($videoOptions['model'] ?? ''),
+            'strict_model' => $this->isStrictVideoModelSelection('kling', is_array($item->ai_meta) ? $item->ai_meta : []),
             'mode' => (string) (config('kling.mode') ?: 'pro'),
             'cfg_scale' => $this->resolveKlingCfgScale($item, $assetVariables),
             'seconds' => (int) ($videoOptions['seconds'] ?? (int) (config('kling.video_seconds') ?: 5)),
@@ -3709,6 +3719,7 @@ SVG;
             'model' => (string) ($videoOptions['model'] ?? config('runway.model') ?: 'gen4.5'),
             'seconds' => (string) ($videoOptions['seconds'] ?? (string) (config('runway.video_seconds') ?: 8)),
             'size' => (string) ($videoOptions['size'] ?? config('openai.video_size') ?: '720x1280'),
+            'strict_model' => $this->isStrictVideoModelSelection('runway', is_array($item->ai_meta) ? $item->ai_meta : []),
         ];
 
         $maxAttempts = $mustEnforceExplicitReferences ? 2 : 1;
@@ -4163,6 +4174,10 @@ SVG;
 
         $pushPlan($baseModel, $basePrompt, 'primary');
 
+        if ((bool) ($runwayOptions['strict_model'] ?? false)) {
+            return array_values($plans);
+        }
+
         if ($baseModel !== 'gen4.5') {
             $pushPlan('gen4.5', $basePrompt, 'gen45_model_retry');
         }
@@ -4172,6 +4187,24 @@ SVG;
         }
 
         return array_values($plans);
+    }
+
+    public function isStrictVideoModelSelection(string $provider, array $meta = []): bool
+    {
+        $provider = strtolower(trim($provider));
+        if ($provider === '') {
+            return false;
+        }
+
+        if (array_key_exists('video_model_strict', $meta)) {
+            return (bool) data_get($meta, 'video_model_strict', false);
+        }
+
+        return match ($provider) {
+            'runway' => (bool) config('runway.strict_model', false),
+            'kling' => (bool) config('kling.strict_model', false),
+            default => false,
+        };
     }
 
     public function buildRunwayStabilityRetryPrompt(string $videoPrompt, string $briefRaw): string

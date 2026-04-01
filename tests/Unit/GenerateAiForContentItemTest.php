@@ -263,6 +263,33 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertSame('gen4.5', $model);
     }
 
+    public function test_it_keeps_runway_veo31_when_strict_model_is_enabled(): void
+    {
+        config()->set('runway.model', 'veo3.1');
+        config()->set('runway.strict_model', true);
+
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'resolveRunwayVideoModel');
+        $method->setAccessible(true);
+
+        $model = $method->invoke(
+            $job,
+            new \App\Models\ContentItem(['format' => 'reel']),
+            [],
+            [
+                'resolved' => [
+                    [
+                        'name' => 'Giorgia',
+                        'kind' => 'person',
+                    ],
+                ],
+            ],
+            ['brand-assets/11/persona/front.jpg']
+        );
+
+        $this->assertSame('veo3.1', $model);
+    }
+
     public function test_it_builds_a_fallback_reel_blueprint_when_none_is_present(): void
     {
         $job = new GenerateAiForContentItem(1);
@@ -468,6 +495,37 @@ class GenerateAiForContentItemTest extends TestCase
         ]);
 
         $this->assertSame(8, $normalized['seconds']);
+    }
+
+    public function test_it_builds_only_primary_runway_recovery_plan_when_strict_model_is_enabled(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'buildRunwayRecoveryPlans');
+        $method->setAccessible(true);
+
+        $plans = $method->invoke($job, [
+            'model' => 'veo3.1',
+            'seconds' => 8,
+            'size' => '720x1280',
+            'strict_model' => true,
+        ], 'Create a premium branded reel with the provided references.', 'Mostra la persona reale del brand nel locale.');
+
+        $this->assertCount(1, $plans);
+        $this->assertSame('veo3.1', $plans[0]['model']);
+        $this->assertSame('primary', $plans[0]['reason']);
+    }
+
+    public function test_it_disables_cross_provider_fallback_when_runway_strict_model_is_enabled(): void
+    {
+        config()->set('runway.strict_model', true);
+
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldAllowCrossProviderVideoFallback');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($job, [
+            'video_provider' => 'runway',
+        ]));
     }
 
     public function test_it_marks_video_result_as_single_clip_fallback_when_extended_generation_is_downgraded(): void

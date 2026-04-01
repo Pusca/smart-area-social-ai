@@ -485,6 +485,19 @@ class ProviderCapabilityRegistry
             return (array) ($rules['default'] ?? []);
         }
 
+        if ($provider === 'kling') {
+            $rules = (array) data_get($areaConfig, 'duration_rules', []);
+            foreach ($rules as $prefix => $rule) {
+                if ($prefix !== 'default' && str_starts_with($normalizedModel, strtolower(trim((string) $prefix)))) {
+                    return (array) $rule;
+                }
+            }
+
+            if ($rules !== []) {
+                return (array) ($rules['default'] ?? []);
+            }
+        }
+
         return (array) data_get($areaConfig, 'duration_rule', []);
     }
 }

@@ -6,6 +6,7 @@ return [
     'api_version' => env('RUNWAY_API_VERSION', '2024-11-06'),
 
     'model' => env('RUNWAY_VIDEO_MODEL', 'gen4.5'),
+    'strict_model' => (bool) env('RUNWAY_STRICT_MODEL', false),
     'video_seconds' => (int) env('RUNWAY_VIDEO_SECONDS', 8),
     'video_ratio' => env('RUNWAY_VIDEO_RATIO', ''),
     'max_prompt_chars' => (int) env('RUNWAY_MAX_PROMPT_CHARS', 1400),

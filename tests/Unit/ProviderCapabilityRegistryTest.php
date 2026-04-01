@@ -28,6 +28,8 @@ class ProviderCapabilityRegistryTest extends TestCase
         $this->assertSame(12, $registry->normalizeVideoDuration('openai', 10, 'sora-2'));
         $this->assertSame(8, $registry->normalizeVideoDuration('runway', 10, 'veo3.1_fast'));
         $this->assertSame(10, $registry->normalizeVideoDuration('runway', 12, 'gen4.5'));
+        $this->assertSame(12, $registry->normalizeVideoDuration('kling', 12, 'kling-v3-omni'));
+        $this->assertSame(3, $registry->normalizeVideoDuration('kling', 1, 'kling-v3'));
         $this->assertSame(5, $registry->normalizeVideoDuration('kling', 7, 'kling-v2-1'));
         $this->assertSame(10, $registry->normalizeVideoDuration('kling', 9, 'kling-v2-1'));
     }
