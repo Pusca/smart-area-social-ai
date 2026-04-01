@@ -20,7 +20,7 @@ class KlingServiceTest extends TestCase
                 $payload = $request->data();
 
                 $this->assertSame('Bearer', strtok((string) $request->header('Authorization')[0], ' '));
-                $this->assertSame('kling-v3-omni', $payload['model_name']);
+                $this->assertSame('kling-v3', $payload['model_name']);
                 $this->assertSame('pro', $payload['mode']);
                 $this->assertSame(9, $payload['duration']);
                 $this->assertSame('9:16', $payload['aspect_ratio']);
@@ -75,7 +75,7 @@ class KlingServiceTest extends TestCase
                     ], 400);
                 }
 
-                $this->assertSame('kling-v3-omni', $payload['model_name']);
+                $this->assertSame('kling-v3', $payload['model_name']);
                 $this->assertSame('pro', $payload['mode']);
 
                 return Http::response([
@@ -155,7 +155,7 @@ class KlingServiceTest extends TestCase
                 }
 
                 if ($attempt === 2) {
-                    $this->assertSame('kling-v3-omni', $payload['model_name']);
+                    $this->assertSame('kling-v3', $payload['model_name']);
                     $this->assertSame('pro', $payload['mode']);
 
                     return Http::response([
@@ -182,7 +182,7 @@ class KlingServiceTest extends TestCase
 
         $this->assertSame('kling-task-legacy-image', $result['id']);
         $this->assertSame('image', $result['request_mode']);
-        $this->assertSame('kling-v3-omni', $result['request_summary']['model']);
+        $this->assertSame('kling-v3', $result['request_summary']['model']);
         $this->assertTrue($result['request_summary']['fallback_applied']);
         $this->assertSame(2, $attempt);
     }
@@ -201,7 +201,7 @@ class KlingServiceTest extends TestCase
                 $payload = $request->data();
 
                 if ($multiImageAttempt === 1) {
-                    $this->assertSame('kling-v3-omni', $payload['model_name']);
+                    $this->assertSame('kling-v3', $payload['model_name']);
                     $this->assertSame('pro', $payload['mode']);
                 } else {
                     $this->assertContains($payload['model_name'], ['kling-v3', 'kling-v2']);
@@ -222,7 +222,7 @@ class KlingServiceTest extends TestCase
                 $imageAttempt++;
                 $payload = $request->data();
 
-                $this->assertContains($payload['model_name'], ['kling-v3-omni', 'kling-v2-1']);
+                $this->assertContains($payload['model_name'], ['kling-v3', 'kling-v2-1']);
                 $this->assertSame('https://cdn.example.com/front.jpg', $payload['image']);
 
                 return Http::response([
@@ -246,7 +246,7 @@ class KlingServiceTest extends TestCase
 
         $this->assertSame('kling-task-single-image', $result['id']);
         $this->assertSame('image', $result['request_mode']);
-        $this->assertContains($result['request_summary']['model'], ['kling-v3-omni', 'kling-v2-1']);
+        $this->assertContains($result['request_summary']['model'], ['kling-v3', 'kling-v2-1']);
         $this->assertSame(1, $result['request_summary']['reference_count']);
         $this->assertTrue($result['request_summary']['fallback_applied']);
         $this->assertContains($multiImageAttempt, [2, 3]);
@@ -310,7 +310,7 @@ class KlingServiceTest extends TestCase
                 $multiImageAttempt++;
                 $payload = $request->data();
 
-                $this->assertSame('kling-v3-omni', $payload['model_name']);
+                $this->assertSame('kling-v3', $payload['model_name']);
                 $this->assertSame('pro', $payload['mode']);
 
                 return Http::response([
@@ -343,5 +343,48 @@ class KlingServiceTest extends TestCase
 
         $this->assertSame(1, $multiImageAttempt);
         $this->assertSame(0, $imageAttempt);
+    }
+
+    public function test_it_remaps_kling_v3_omni_to_kling_v3_for_strict_image_jobs_on_the_classic_api(): void
+    {
+        config()->set('kling.access_key', 'kling-ak');
+        config()->set('kling.secret_key', 'kling-sk');
+        config()->set('kling.base_url', 'https://api-singapore.klingai.com');
+        config()->set('kling.strict_model', true);
+
+        $attempt = 0;
+
+        Http::fake([
+            'https://api-singapore.klingai.com/v1/videos/image2video' => function (Request $request) use (&$attempt) {
+                $attempt++;
+                $payload = $request->data();
+
+                $this->assertSame('kling-v3', $payload['model_name']);
+                $this->assertSame('pro', $payload['mode']);
+                $this->assertSame('https://cdn.example.com/front.jpg', $payload['image']);
+
+                return Http::response([
+                    'data' => [
+                        'task_id' => 'kling-task-image-v3',
+                    ],
+                ], 200);
+            },
+        ]);
+
+        $service = app(KlingService::class);
+        $result = $service->createVideoJob(
+            'Create a premium social reel with the same real subject.',
+            ['https://cdn.example.com/front.jpg'],
+            [
+                'request_mode' => 'image',
+                'model' => 'kling-v3-omni',
+            ]
+        );
+
+        $this->assertSame('kling-task-image-v3', $result['id']);
+        $this->assertSame('image', $result['request_mode']);
+        $this->assertSame('kling-v3', $result['request_summary']['model']);
+        $this->assertFalse($result['request_summary']['fallback_applied']);
+        $this->assertSame(1, $attempt);
     }
 }

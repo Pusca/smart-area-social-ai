@@ -34,6 +34,15 @@ class ProviderCapabilityRegistryTest extends TestCase
         $this->assertSame(10, $registry->normalizeVideoDuration('kling', 9, 'kling-v2-1'));
     }
 
+    public function test_it_uses_context_specific_kling_models_for_text_and_reference_video_paths(): void
+    {
+        $registry = app(ProviderCapabilityRegistry::class);
+
+        $this->assertSame('kling-v3-omni', $registry->defaultModel('kling', 'video', ['mode' => 'text']));
+        $this->assertSame('kling-v3', $registry->defaultModel('kling', 'video', ['mode' => 'image']));
+        $this->assertSame('kling-v3', $registry->defaultModel('kling', 'video', ['mode' => 'multi_image']));
+    }
+
     public function test_it_respects_provider_lock_when_building_fallbacks(): void
     {
         config()->set('runway.api_key', 'runway-key');

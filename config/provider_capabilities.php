@@ -150,8 +150,8 @@ return [
                     'model_config' => 'kling.model',
                     'context_models' => [
                         'text' => 'kling-v3-omni',
-                        'image' => 'kling-v3-omni',
-                        'multi_image' => 'kling-v3-omni',
+                        'image' => 'kling-v3',
+                        'multi_image' => 'kling-v3',
                         'fallback' => 'kling-v3',
                     ],
                     'model_prefixes' => ['kling-'],

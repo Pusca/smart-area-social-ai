@@ -299,7 +299,7 @@ class KlingService
 
     private function resolveModelName(string $configuredModel, string $requestMode): string
     {
-        $model = strtolower(trim($configuredModel));
+        $model = $this->normalizeConfiguredModelForRequestMode($configuredModel, $requestMode);
         if ($model === '') {
             return $this->defaultModelForRequestMode($requestMode);
         }
@@ -395,7 +395,7 @@ class KlingService
      */
     private function modelCandidatesForRequestMode(string $requestMode, string $configuredModel, bool $strictModel = false): array
     {
-        $configuredModel = strtolower(trim(str_replace(['_', '.'], '-', $configuredModel)));
+        $configuredModel = $this->normalizeConfiguredModelForRequestMode($configuredModel, $requestMode);
 
         if ($strictModel && $configuredModel !== '') {
             if ($this->isOfficialKlingEndpoint() && !$this->supportsModelForRequestMode($configuredModel, $requestMode)) {
@@ -412,8 +412,8 @@ class KlingService
         }
 
         $fallbacks = match ($requestMode) {
-            'multi-image' => ['kling-v3-omni', 'kling-v3', 'kling-v2'],
-            'image' => ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
+            'multi-image' => ['kling-v3', 'kling-v2'],
+            'image' => ['kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
             default => ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2-1-master', 'kling-v2-1', 'kling-v2', 'kling-v1-6'],
         };
 
@@ -452,8 +452,8 @@ class KlingService
     private function defaultModelForRequestMode(string $requestMode): string
     {
         return match ($requestMode) {
-            'multi-image' => 'kling-v3-omni',
-            'image' => 'kling-v3-omni',
+            'multi-image' => 'kling-v3',
+            'image' => 'kling-v3',
             default => 'kling-v3-omni',
         };
     }
@@ -468,10 +468,26 @@ class KlingService
         }
 
         return match ($requestMode) {
-            'multi-image' => in_array($model, ['kling-v3-omni', 'kling-v3', 'kling-v2'], true),
-            'image' => in_array($model, ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
+            'multi-image' => in_array($model, ['kling-v3', 'kling-v2'], true),
+            'image' => in_array($model, ['kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
             default => in_array($model, ['kling-v3-omni', 'kling-v3', 'kling-video-o1', 'kling-v2-6', 'kling-v2', 'kling-v2-1', 'kling-v2-1-master', 'kling-v1-6'], true),
         };
+    }
+
+    private function normalizeConfiguredModelForRequestMode(string $configuredModel, string $requestMode): string
+    {
+        $model = strtolower(trim(str_replace(['_', '.'], '-', $configuredModel)));
+        $requestMode = strtolower(trim($requestMode));
+
+        if (
+            $this->isOfficialKlingEndpoint()
+            && $model === 'kling-v3-omni'
+            && in_array($requestMode, ['image', 'multi-image'], true)
+        ) {
+            return 'kling-v3';
+        }
+
+        return $model;
     }
 
     private function shouldSendModeForModel(string $modelName): bool
