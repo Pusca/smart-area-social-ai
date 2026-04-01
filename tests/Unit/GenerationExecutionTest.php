@@ -8,7 +8,7 @@ use Tests\TestCase;
 
 class GenerationExecutionTest extends TestCase
 {
-    public function test_it_never_uses_after_response_dispatch_for_ai_generation(): void
+    public function test_it_does_not_use_after_response_dispatch_inside_unit_tests(): void
     {
         config()->set('generation.force_sync', true);
 
