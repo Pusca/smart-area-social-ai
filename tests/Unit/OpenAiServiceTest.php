@@ -9,6 +9,60 @@ use Tests\TestCase;
 
 class OpenAiServiceTest extends TestCase
 {
+    public function test_it_requests_structured_json_for_generate_content_and_parses_balanced_payload(): void
+    {
+        config()->set('openai.api_key', 'openai-test-key');
+        config()->set('openai.base_url', 'https://api.openai.com');
+        config()->set('openai.text_model', 'gpt-4.1-mini');
+        config()->set('openai.text_max_output_tokens', 1400);
+
+        Http::fake([
+            'https://api.openai.com/v1/responses' => function (Request $request) {
+                $payload = $request->data();
+
+                $this->assertSame('gpt-4.1-mini', $payload['model']);
+                $this->assertSame('json_schema', data_get($payload, 'text.format.type'));
+                $this->assertSame('social_content_generation', data_get($payload, 'text.format.name'));
+                $this->assertTrue((bool) data_get($payload, 'text.format.strict'));
+                $this->assertSame(1400, (int) ($payload['max_output_tokens'] ?? 0));
+
+                return Http::response([
+                    'id' => 'resp_text_123',
+                    'output' => [[
+                        'content' => [[
+                            'type' => 'output_text',
+                            'text' => "JSON richiesto:\n{\n  \"caption\": \"Caption finale coerente.\",\n  \"hashtags\": [\"#porsche911\", \"#motorsportworkspace\"],\n  \"cta\": \"Scrivici per dettagli.\",\n  \"image_prompt\": \"Foto editoriale realistica della Porsche 911 bianca.\",\n  \"video_prompt\": \"Reel verticale realistico con presenter e auto.\",\n  \"voiceover\": \"Un dettaglio fa davvero la differenza.\",\n  \"reel_blueprint\": null\n}\nNote finali da ignorare.",
+                        ]],
+                    ]],
+                    'usage' => [
+                        'input_tokens' => 120,
+                        'output_tokens' => 80,
+                        'total_tokens' => 200,
+                    ],
+                ], 200);
+            },
+        ]);
+
+        $service = app(OpenAiService::class);
+        $result = $service->generateContent([
+            'item' => [
+                'platform' => 'instagram',
+                'format' => 'reel',
+                'title' => 'Test reel',
+            ],
+        ]);
+
+        $this->assertSame('Caption finale coerente.', $result['caption']);
+        $this->assertSame(['#porsche911', '#motorsportworkspace'], $result['hashtags']);
+        $this->assertSame('Scrivici per dettagli.', $result['cta']);
+        $this->assertSame('Foto editoriale realistica della Porsche 911 bianca.', $result['image_prompt']);
+        $this->assertSame('Reel verticale realistico con presenter e auto.', $result['video_prompt']);
+        $this->assertSame('Un dettaglio fa davvero la differenza.', $result['voiceover']);
+        $this->assertNull($result['reel_blueprint']);
+        $this->assertSame('resp_text_123', $result['response_id']);
+        $this->assertSame(['input_tokens' => 120, 'output_tokens' => 80, 'total_tokens' => 200], $result['usage']);
+    }
+
     public function test_it_sends_video_input_reference_as_json_object(): void
     {
         config()->set('openai.api_key', 'openai-test-key');

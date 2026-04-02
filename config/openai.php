@@ -15,6 +15,7 @@ return [
     'speech_model' => env('OPENAI_SPEECH_MODEL', 'gpt-4o-mini-tts'),
     'speech_voice' => env('OPENAI_SPEECH_VOICE', 'alloy'),
     'speech_max_chars' => (int) env('OPENAI_SPEECH_MAX_CHARS', 1000),
+    'text_max_output_tokens' => (int) env('OPENAI_TEXT_MAX_OUTPUT_TOKENS', 1400),
 
     'timeout' => env('OPENAI_TIMEOUT', 60),
     'fine_tuning_timeout' => env('OPENAI_FINE_TUNING_TIMEOUT', env('OPENAI_TIMEOUT', 60)),

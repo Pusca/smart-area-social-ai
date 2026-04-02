@@ -86,6 +86,7 @@ class OpenAiService
             $model = (string) (config('openai.text_model') ?: env('OPENAI_TEXT_MODEL') ?: 'gpt-4.1-mini');
         }
         $timeout = (int) (config('openai.timeout') ?: 60);
+        $maxOutputTokens = max(600, (int) (config('openai.text_max_output_tokens') ?: 1400));
 
         $instructions =
             "Sei una social media manager senior.\n"
@@ -175,6 +176,15 @@ class OpenAiService
                 ->post($url, [
                     'model' => $model,
                     'input' => $input,
+                    'text' => [
+                        'format' => [
+                            'type' => 'json_schema',
+                            'name' => 'social_content_generation',
+                            'strict' => true,
+                            'schema' => $this->textGenerationSchema(),
+                        ],
+                    ],
+                    'max_output_tokens' => $maxOutputTokens,
                 ]);
 
             if (!$res->successful()) {
@@ -1208,6 +1218,7 @@ class OpenAiService
     protected function safeJsonParse(string $text): mixed
     {
         $t = trim($text);
+        $t = preg_replace('/^\xEF\xBB\xBF/', '', $t) ?? $t;
 
         if (str_starts_with($t, '```')) {
             $t = preg_replace('/^```[a-zA-Z]*\s*/', '', $t) ?? $t;
@@ -1218,15 +1229,119 @@ class OpenAiService
         $decoded = json_decode($t, true);
         if (json_last_error() === JSON_ERROR_NONE) return $decoded;
 
-        $start = strpos($t, '{');
-        $end = strrpos($t, '}');
-        if ($start !== false && $end !== false && $end > $start) {
-            $slice = substr($t, $start, $end - $start + 1);
-            $decoded2 = json_decode($slice, true);
+        $balancedObject = $this->extractBalancedJsonObject($t);
+        if ($balancedObject !== null) {
+            $decoded2 = json_decode($balancedObject, true);
             if (json_last_error() === JSON_ERROR_NONE) return $decoded2;
         }
 
         throw new RuntimeException('Risposta non JSON: ' . mb_substr($text, 0, 500));
+    }
+
+    protected function textGenerationSchema(): array
+    {
+        return [
+            'type' => 'object',
+            'properties' => [
+                'caption' => ['type' => 'string'],
+                'hashtags' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+                'cta' => ['type' => 'string'],
+                'image_prompt' => ['type' => 'string'],
+                'video_prompt' => ['type' => 'string'],
+                'voiceover' => ['type' => 'string'],
+                'reel_blueprint' => [
+                    'anyOf' => [
+                        ['type' => 'null'],
+                        [
+                            'type' => 'object',
+                            'properties' => [
+                                'hook' => ['type' => 'string'],
+                                'anchor_frame' => ['type' => 'string'],
+                                'continuity_lock' => ['type' => 'string'],
+                                'visual_payoff' => ['type' => 'string'],
+                                'shots' => [
+                                    'type' => 'array',
+                                    'items' => [
+                                        'type' => 'object',
+                                        'properties' => [
+                                            'order' => ['type' => 'integer'],
+                                            'purpose' => ['type' => 'string'],
+                                            'subject' => ['type' => 'string'],
+                                            'camera' => ['type' => 'string'],
+                                            'motion' => ['type' => 'string'],
+                                        ],
+                                        'required' => ['order', 'purpose', 'subject', 'camera', 'motion'],
+                                        'additionalProperties' => false,
+                                    ],
+                                ],
+                            ],
+                            'required' => ['hook', 'anchor_frame', 'continuity_lock', 'visual_payoff', 'shots'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
+                ],
+            ],
+            'required' => ['caption', 'hashtags', 'cta', 'image_prompt', 'video_prompt', 'voiceover', 'reel_blueprint'],
+            'additionalProperties' => false,
+        ];
+    }
+
+    protected function extractBalancedJsonObject(string $text): ?string
+    {
+        $start = strpos($text, '{');
+        if ($start === false) {
+            return null;
+        }
+
+        $depth = 0;
+        $inString = false;
+        $escaped = false;
+        $length = strlen($text);
+
+        for ($i = $start; $i < $length; $i++) {
+            $char = $text[$i];
+
+            if ($inString) {
+                if ($escaped) {
+                    $escaped = false;
+                    continue;
+                }
+
+                if ($char === '\\') {
+                    $escaped = true;
+                    continue;
+                }
+
+                if ($char === '"') {
+                    $inString = false;
+                }
+
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = true;
+                continue;
+            }
+
+            if ($char === '{') {
+                $depth++;
+                continue;
+            }
+
+            if ($char === '}') {
+                $depth--;
+
+                if ($depth === 0) {
+                    return substr($text, $start, $i - $start + 1);
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
