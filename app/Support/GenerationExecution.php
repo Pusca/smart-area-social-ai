@@ -98,13 +98,15 @@ class GenerationExecution
                 connection: $connection
             );
 
-            $process = Process::fromShellCommandline($command, base_path());
-            $process->disableOutput();
-            $process->start();
+            $spawnMethod = self::spawnDetachedCommand($command);
+            if ($spawnMethod === null) {
+                throw new \RuntimeException('No detached execution function is available on this PHP installation.');
+            }
 
             Log::info('GenerationExecution kicked background queue worker', [
                 'queue_connection' => $connection,
                 'command' => $command,
+                'spawn_method' => $spawnMethod,
             ]);
         } catch (Throwable $e) {
             Cache::forget($lockKey);
@@ -112,8 +114,74 @@ class GenerationExecution
             Log::warning('GenerationExecution failed to kick background queue worker', [
                 'queue_connection' => $connection,
                 'error' => $e->getMessage(),
+                'available_spawn_methods' => self::availableSpawnMethods(),
             ]);
         }
+    }
+
+    private static function spawnDetachedCommand(string $command): ?string
+    {
+        if (self::isFunctionEnabled('proc_open')) {
+            $process = Process::fromShellCommandline($command, base_path());
+            $process->disableOutput();
+            $process->start();
+
+            return 'proc_open';
+        }
+
+        if (self::isFunctionEnabled('exec')) {
+            @exec($command);
+
+            return 'exec';
+        }
+
+        if (self::isFunctionEnabled('shell_exec')) {
+            @shell_exec($command);
+
+            return 'shell_exec';
+        }
+
+        if (self::isFunctionEnabled('popen')) {
+            $handle = @popen($command, 'r');
+            if (is_resource($handle)) {
+                @pclose($handle);
+            }
+
+            return 'popen';
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function availableSpawnMethods(): array
+    {
+        $methods = [];
+
+        foreach (['proc_open', 'exec', 'shell_exec', 'popen'] as $function) {
+            if (self::isFunctionEnabled($function)) {
+                $methods[] = $function;
+            }
+        }
+
+        return $methods;
+    }
+
+    private static function isFunctionEnabled(string $function): bool
+    {
+        $function = trim($function);
+        if ($function === '' || !function_exists($function)) {
+            return false;
+        }
+
+        $disabled = array_values(array_filter(array_map(
+            fn ($value) => trim((string) $value),
+            explode(',', (string) ini_get('disable_functions'))
+        )));
+
+        return !in_array($function, $disabled, true);
     }
 
     private static function resolvePhpBinary(): string
