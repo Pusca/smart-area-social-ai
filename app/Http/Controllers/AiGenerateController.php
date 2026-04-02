@@ -18,8 +18,7 @@ class AiGenerateController extends Controller
         $this->applyVideoProviderPreference($contentItem, (string) $request->input('video_provider', ''));
         $this->applyImageProviderPreference($contentItem, (string) $request->input('image_provider', ''));
 
-        $contentItem->ai_status = 'queued';
-        $contentItem->ai_error = null;
+        GenerationExecution::primeQueuedState($contentItem);
         $contentItem->save();
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
@@ -44,8 +43,7 @@ class AiGenerateController extends Controller
         foreach ($items as $item) {
             $this->applyVideoProviderPreference($item, $videoProviderInput);
             $this->applyImageProviderPreference($item, '');
-            $item->ai_status = 'queued';
-            $item->ai_error = null;
+            GenerationExecution::primeQueuedState($item);
             $item->save();
 
             GenerationExecution::dispatchContentItem((int) $item->id);
@@ -72,8 +70,7 @@ class AiGenerateController extends Controller
         $this->applyVideoProviderPreference($contentItem, (string) $request->input('video_provider', ''));
         $this->applyImageProviderPreference($contentItem, (string) $request->input('image_provider', ''));
 
-        $contentItem->ai_status = 'queued';
-        $contentItem->ai_error = null;
+        GenerationExecution::primeQueuedState($contentItem);
         $contentItem->save();
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);

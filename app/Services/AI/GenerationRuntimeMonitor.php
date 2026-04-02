@@ -10,6 +10,8 @@ use App\Services\GenerationAuditService;
 use App\Support\GenerationExecution;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 
 class GenerationRuntimeMonitor
 {
@@ -53,7 +55,7 @@ class GenerationRuntimeMonitor
             return false;
         }
 
-        if (!GenerationExecution::shouldKickBackgroundQueueWorker()) {
+        if (!$this->hasAsyncQueueConnection()) {
             return false;
         }
 
@@ -64,7 +66,16 @@ class GenerationRuntimeMonitor
             return $lastRecoveryAttemptAt->diffInSeconds(now()) < $this->queuedRecoveryGraceSeconds();
         }
 
-        GenerationExecution::ensureBackgroundQueueWorker();
+        $recoveryTriggered = false;
+        if (GenerationExecution::shouldKickBackgroundQueueWorker()) {
+            $recoveryTriggered = GenerationExecution::ensureBackgroundQueueWorker() || $recoveryTriggered;
+        }
+        if ($this->shouldUseHttpDrainFallback()) {
+            $recoveryTriggered = $this->drainQueueOnceViaHttp($item) || $recoveryTriggered;
+        }
+        if (!$recoveryTriggered) {
+            return false;
+        }
 
         $monitorMeta['queue_reference_at'] = $referenceAt->toDateTimeString();
         $monitorMeta['last_recovery_attempt_at'] = now()->toDateTimeString();
@@ -199,5 +210,46 @@ class GenerationRuntimeMonitor
         $jobTimeout = (int) (new GenerateAiForContentItem(0))->timeout;
 
         return max($configured, $retryAfter + 120, $jobTimeout + 180);
+    }
+
+    private function hasAsyncQueueConnection(): bool
+    {
+        $queueConnection = trim((string) config('queue.default', 'database'));
+
+        return $queueConnection !== '' && $queueConnection !== 'sync';
+    }
+
+    private function shouldUseHttpDrainFallback(): bool
+    {
+        return !$this->isConsoleContext()
+            && $this->hasAsyncQueueConnection()
+            && (bool) config('generation.queue_http_drain_fallback', true);
+    }
+
+    private function isConsoleContext(): bool
+    {
+        return app()->runningInConsole() || app()->runningUnitTests();
+    }
+
+    private function drainQueueOnceViaHttp(ContentItem $item): bool
+    {
+        $queueConnection = trim((string) config('queue.default', 'database'));
+        $lockKey = 'generation-runtime-monitor:http-drain:' . $queueConnection . ':' . (int) $item->id;
+        if (!Cache::add($lockKey, now()->timestamp, 120)) {
+            return true;
+        }
+
+        try {
+            Artisan::call('ai:drain-generation-queue', [
+                '--queue' => 'default',
+                '--once' => true,
+            ]);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        } finally {
+            Cache::forget($lockKey);
+        }
     }
 }

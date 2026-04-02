@@ -115,8 +115,7 @@ class ContentFeedbackController extends Controller
                     'requested_at' => now()->toDateTimeString(),
                 ]
             );
-            $contentItem->ai_status = 'queued';
-            $contentItem->ai_error = null;
+            GenerationExecution::primeQueuedState($contentItem);
         }
 
         $meta['feedback_loop'] = $feedbackLoop;

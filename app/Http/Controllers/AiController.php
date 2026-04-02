@@ -118,8 +118,7 @@ class AiController extends Controller
         }
 
         foreach ($items as $item) {
-            $item->ai_status = 'queued';
-            $item->ai_error = null;
+            GenerationExecution::primeQueuedState($item);
             $item->save();
 
             GenerationExecution::dispatchContentItem((int) $item->id);

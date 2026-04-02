@@ -415,8 +415,6 @@ class ContentItemController extends Controller
             $this->buildSourceRefsFromAssetVariables($assetVariableRefs),
             $this->buildSourceRefsFromExplicitImageReferences($explicitImageReferences)
         );
-        $item->ai_status = 'queued';
-        $item->ai_error = null;
         $item->ai_meta = [
             'source' => 'manual_single_content',
             'video_provider' => $videoProvider,
@@ -480,6 +478,7 @@ class ContentItemController extends Controller
             is_array($item->ai_meta) ? $item->ai_meta : [],
             $this->contentOverlayEngine->toMetaFragment($overlayPack)
         );
+        GenerationExecution::primeQueuedState($item);
 
         $item->save();
 

@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Models\ContentItem;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\PhpExecutableFinder;
@@ -61,6 +62,31 @@ class GenerationExecution
         self::kickBackgroundQueueWorker();
 
         return true;
+    }
+
+    public static function primeQueuedState(ContentItem $item): void
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $generationMonitor = (array) data_get($meta, 'generation_monitor', []);
+        $generationMonitor['queue_reference_at'] = now()->toDateTimeString();
+        unset(
+            $generationMonitor['last_recovery_attempt_at'],
+            $generationMonitor['stale_status'],
+            $generationMonitor['stale_reference_at'],
+            $generationMonitor['marked_error_at']
+        );
+        $meta['generation_monitor'] = $generationMonitor;
+
+        $generationAudit = (array) data_get($meta, 'generation_audit', []);
+        $generationAudit['latest_status'] = 'queued';
+        $generationAudit['tracked_at'] = now()->toDateTimeString();
+        $generationAudit['latest_run_id'] = null;
+        $meta['generation_audit'] = $generationAudit;
+
+        $item->ai_status = 'queued';
+        $item->ai_error = null;
+        $item->ai_generated_at = null;
+        $item->ai_meta = $meta;
     }
 
     public static function buildBackgroundQueueWorkerCommand(

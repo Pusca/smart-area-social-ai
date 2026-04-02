@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Models\ContentItem;
 use App\Support\GenerationExecution;
 use Tests\TestCase;
 
@@ -53,5 +54,38 @@ class GenerationExecutionTest extends TestCase
             $job->timeout,
             (int) config('queue.connections.database.retry_after')
         );
+    }
+
+    public function test_prime_queued_state_resets_stale_generation_markers(): void
+    {
+        $item = new ContentItem([
+            'ai_status' => 'error',
+            'ai_error' => 'QUEUE_STALE_TIMEOUT',
+            'ai_generated_at' => now(),
+            'ai_meta' => [
+                'generation_monitor' => [
+                    'queue_reference_at' => now()->subHour()->toDateTimeString(),
+                    'last_recovery_attempt_at' => now()->subMinutes(30)->toDateTimeString(),
+                    'stale_status' => 'queued',
+                    'marked_error_at' => now()->subMinutes(25)->toDateTimeString(),
+                ],
+                'generation_audit' => [
+                    'latest_run_id' => 99,
+                    'latest_status' => 'failed',
+                ],
+            ],
+        ]);
+
+        GenerationExecution::primeQueuedState($item);
+
+        $this->assertSame('queued', $item->ai_status);
+        $this->assertNull($item->ai_error);
+        $this->assertNull($item->ai_generated_at);
+        $this->assertSame('queued', data_get($item->ai_meta, 'generation_audit.latest_status'));
+        $this->assertNull(data_get($item->ai_meta, 'generation_audit.latest_run_id'));
+        $this->assertNotEmpty((string) data_get($item->ai_meta, 'generation_monitor.queue_reference_at'));
+        $this->assertNull(data_get($item->ai_meta, 'generation_monitor.last_recovery_attempt_at'));
+        $this->assertNull(data_get($item->ai_meta, 'generation_monitor.stale_status'));
+        $this->assertNull(data_get($item->ai_meta, 'generation_monitor.marked_error_at'));
     }
 }
