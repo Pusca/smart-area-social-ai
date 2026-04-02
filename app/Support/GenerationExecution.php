@@ -23,10 +23,14 @@ class GenerationExecution
 
     public static function shouldKickBackgroundQueueWorker(): bool
     {
+        $connection = trim((string) config('queue.default', 'database'));
+
         return !self::shouldRunSync()
             && !app()->runningInConsole()
             && !app()->runningUnitTests()
-            && (bool) config('generation.force_sync', false);
+            && $connection !== ''
+            && $connection !== 'sync'
+            && (bool) config('generation.queue_auto_kick', true);
     }
 
     public static function shouldShowProgressPage(): bool
@@ -44,8 +48,19 @@ class GenerationExecution
         GenerateAiForContentItem::dispatch($contentItemId);
 
         if (self::shouldKickBackgroundQueueWorker()) {
-            self::kickBackgroundQueueWorker();
+            self::ensureBackgroundQueueWorker();
         }
+    }
+
+    public static function ensureBackgroundQueueWorker(): bool
+    {
+        if (!self::shouldKickBackgroundQueueWorker()) {
+            return false;
+        }
+
+        self::kickBackgroundQueueWorker();
+
+        return true;
     }
 
     public static function buildBackgroundQueueWorkerCommand(

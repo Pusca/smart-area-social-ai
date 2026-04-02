@@ -8,6 +8,7 @@ use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
 use App\Services\AI\AiProviderMatrixService;
+use App\Services\AI\GenerationRuntimeMonitor;
 use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\Canva\CanvaBridgeService;
 use App\Services\AssetIdentityService;
@@ -22,8 +23,6 @@ use App\Support\GenerationExecution;
 use App\Support\ImageProviderResolver;
 use App\Support\UiStatus;
 use App\Support\VideoProviderResolver;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -41,6 +40,7 @@ class ContentItemController extends Controller
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentOverlayEngine $contentOverlayEngine,
         private readonly ContentMediaPreviewService $mediaPreviewService,
+        private readonly GenerationRuntimeMonitor $generationRuntimeMonitor,
         private readonly AssetVariableService $assetVariableService,
         private readonly SocialPublishingService $socialPublishingService,
         private readonly TenantQuotaService $tenantQuotaService
@@ -192,7 +192,7 @@ class ContentItemController extends Controller
     public function generationStatus(Request $request, ContentItem $contentItem): JsonResponse
     {
         $this->authorizeTenant($request, $contentItem);
-        $this->maybeDrainAiGenerationQueue($contentItem);
+        $this->generationRuntimeMonitor->reconcileContentItem($contentItem);
         $contentItem->refresh();
 
         $status = (string) ($contentItem->ai_status ?? '');
@@ -207,39 +207,6 @@ class ContentItemController extends Controller
             'redirect_url' => route('posts.edit', $contentItem),
             'updated_at' => optional($contentItem->updated_at)->toDateTimeString(),
         ]);
-    }
-
-    private function maybeDrainAiGenerationQueue(ContentItem $contentItem): void
-    {
-        if (!GenerationExecution::shouldKickBackgroundQueueWorker()) {
-            return;
-        }
-
-        $status = strtolower(trim((string) ($contentItem->ai_status ?? '')));
-        if ($status !== 'queued') {
-            return;
-        }
-
-        $queueConnection = trim((string) config('queue.default', 'database'));
-        if ($queueConnection === '' || $queueConnection === 'sync') {
-            return;
-        }
-
-        $lockKey = 'generation-status-drain:' . $queueConnection . ':' . (int) $contentItem->id;
-        if (!Cache::add($lockKey, now()->timestamp, 90)) {
-            return;
-        }
-
-        try {
-            Artisan::call('ai:drain-generation-queue', [
-                '--queue' => 'default',
-                '--once' => true,
-            ]);
-        } catch (\Throwable) {
-            // best effort only; the UI poll should not hard-fail because the queue could not be drained
-        } finally {
-            Cache::forget($lockKey);
-        }
     }
 
     public function store(Request $request)

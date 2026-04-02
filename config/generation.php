@@ -2,6 +2,10 @@
 
 return [
     'force_sync' => (bool) env('GENERATION_FORCE_SYNC', false),
+    'queue_auto_kick' => (bool) env('GENERATION_QUEUE_AUTO_KICK', true),
+    'queued_stale_after_seconds' => (int) env('GENERATION_QUEUED_STALE_AFTER_SECONDS', 480),
+    'queued_recovery_grace_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_GRACE_SECONDS', 150),
+    'pending_stale_after_seconds' => (int) env('GENERATION_PENDING_STALE_AFTER_SECONDS', 1800),
 
     'text_provider_default' => env('TEXT_PROVIDER_DEFAULT', 'openai'),
     'text_providers' => ['openai'],

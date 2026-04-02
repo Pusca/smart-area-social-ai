@@ -6,6 +6,7 @@ use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
+use App\Services\AI\GenerationRuntimeMonitor;
 use App\Services\AssetVariableService;
 use App\Services\Editorial\ContentGenerator;
 use App\Services\Editorial\ContentHistoryAnalyzer;
@@ -30,6 +31,7 @@ class PlanWizardController extends Controller
         private readonly ContentHistoryAnalyzer $historyAnalyzer,
         private readonly EditorialPlanBuilder $editorialPlanBuilder,
         private readonly ContentGenerator $contentGenerator,
+        private readonly GenerationRuntimeMonitor $generationRuntimeMonitor,
         private readonly TenantQuotaService $tenantQuotaService
     ) {
     }
@@ -175,6 +177,10 @@ class PlanWizardController extends Controller
         }
 
         $counts = $this->planCounts($plan);
+        if (($counts['queued'] + $counts['pending']) > 0) {
+            $this->generationRuntimeMonitor->reconcilePlan($plan);
+            $counts = $this->planCounts($plan);
+        }
 
         // In ambiente locale drena 1 job per poll, così non resta bloccato in queued se manca worker persistente.
         if (GenerationExecution::shouldRunSync() && (($counts['queued'] + $counts['pending']) > 0)) {
