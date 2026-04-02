@@ -147,8 +147,22 @@ class GenerateAiForContentItem implements ShouldQueue
     {
         $item = ContentItem::query()->find($this->contentItemId);
         if (!$item) {
+            Log::error('GenerateAiForContentItem failed but content item no longer exists', [
+                'content_item_id' => $this->contentItemId,
+                'run_key' => $this->runKey,
+                'error' => $e->getMessage(),
+            ]);
+
             return;
         }
+
+        Log::error('GenerateAiForContentItem failed', [
+            'content_item_id' => $item->id,
+            'tenant_id' => (int) $item->tenant_id,
+            'run_key' => $this->runKey,
+            'ai_status_before_failure' => (string) $item->ai_status,
+            'error' => $e->getMessage(),
+        ]);
 
         $item->ai_status = 'error';
         if (trim((string) $item->ai_error) === '') {

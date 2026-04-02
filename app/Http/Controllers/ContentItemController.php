@@ -22,6 +22,8 @@ use App\Support\GenerationExecution;
 use App\Support\ImageProviderResolver;
 use App\Support\UiStatus;
 use App\Support\VideoProviderResolver;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -190,6 +192,7 @@ class ContentItemController extends Controller
     public function generationStatus(Request $request, ContentItem $contentItem): JsonResponse
     {
         $this->authorizeTenant($request, $contentItem);
+        $this->maybeDrainAiGenerationQueue($contentItem);
         $contentItem->refresh();
 
         $status = (string) ($contentItem->ai_status ?? '');
@@ -204,6 +207,39 @@ class ContentItemController extends Controller
             'redirect_url' => route('posts.edit', $contentItem),
             'updated_at' => optional($contentItem->updated_at)->toDateTimeString(),
         ]);
+    }
+
+    private function maybeDrainAiGenerationQueue(ContentItem $contentItem): void
+    {
+        if (!GenerationExecution::shouldKickBackgroundQueueWorker()) {
+            return;
+        }
+
+        $status = strtolower(trim((string) ($contentItem->ai_status ?? '')));
+        if (!in_array($status, ['queued', 'pending'], true)) {
+            return;
+        }
+
+        $queueConnection = trim((string) config('queue.default', 'database'));
+        if ($queueConnection === '' || $queueConnection === 'sync') {
+            return;
+        }
+
+        $lockKey = 'generation-status-drain:' . $queueConnection;
+        if (!Cache::add($lockKey, now()->timestamp, 20)) {
+            return;
+        }
+
+        try {
+            Artisan::call('ai:drain-generation-queue', [
+                '--queue' => 'default',
+                '--once' => true,
+            ]);
+        } catch (\Throwable) {
+            // best effort only; the UI poll should not hard-fail because the queue could not be drained
+        } finally {
+            Cache::forget($lockKey);
+        }
     }
 
     public function store(Request $request)

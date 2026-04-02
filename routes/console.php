@@ -267,9 +267,10 @@ Artisan::command('trends:refresh {--tenant=} {--force}', function () {
     return self::SUCCESS;
 })->purpose('Refresh trend signals and trend briefs for one tenant or all tenant profiles');
 
-Artisan::command('ai:drain-generation-queue {--queue=default}', function () {
+Artisan::command('ai:drain-generation-queue {--queue=default} {--once}', function () {
     $connection = trim((string) config('queue.default', 'database'));
     $queue = trim((string) ($this->option('queue') ?: 'default'));
+    $once = (bool) $this->option('once');
 
     if ($connection === '' || $connection === 'sync') {
         $this->warn('Queue connection sincrona o non configurata: nessun drain necessario.');
@@ -282,7 +283,8 @@ Artisan::command('ai:drain-generation-queue {--queue=default}', function () {
     $exitCode = Artisan::call('queue:work', [
         'connection' => $connection,
         '--queue' => $queue,
-        '--stop-when-empty' => true,
+        '--once' => $once,
+        '--stop-when-empty' => !$once,
         '--tries' => 1,
         '--timeout' => 1200,
         '--sleep' => 1,
