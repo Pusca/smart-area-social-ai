@@ -390,15 +390,25 @@ class GoogleVeoService
         $candidates = [
             'response.generatedVideos.0.video.downloadUri',
             'response.generatedVideos.0.downloadUri',
+            'response.generated_videos.0.video.download_uri',
+            'response.generated_videos.0.video.downloadUri',
+            'response.generated_videos.0.download_uri',
+            'response.generated_videos.0.downloadUri',
             'response.generateVideoResponse.generatedSamples.0.video.downloadUri',
             'response.generateVideoResponse.generatedVideos.0.video.downloadUri',
             'generatedVideos.0.video.downloadUri',
             'generatedVideos.0.downloadUri',
+            'generated_videos.0.video.download_uri',
+            'generated_videos.0.video.downloadUri',
+            'generated_videos.0.download_uri',
+            'generated_videos.0.downloadUri',
             'file.downloadUri',
             'downloadUri',
             'response.generatedVideos.0.video.uri',
+            'response.generated_videos.0.video.uri',
             'response.generateVideoResponse.generatedSamples.0.video.uri',
             'generatedVideos.0.video.uri',
+            'generated_videos.0.video.uri',
             'file.uri',
             'uri',
         ];
@@ -420,9 +430,11 @@ class GoogleVeoService
     {
         $candidates = [
             'response.generatedVideos.0.video.name',
+            'response.generated_videos.0.video.name',
             'response.generateVideoResponse.generatedSamples.0.video.name',
             'response.generateVideoResponse.generatedVideos.0.video.name',
             'generatedVideos.0.video.name',
+            'generated_videos.0.video.name',
             'file.name',
             'name',
         ];

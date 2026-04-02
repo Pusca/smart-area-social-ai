@@ -86,6 +86,34 @@ class GoogleVeoServiceTest extends TestCase
         $this->assertSame('VIDEO_BYTES', $bytes);
     }
 
+    public function test_it_downloads_google_veo_video_from_snake_case_generated_videos_payload(): void
+    {
+        config()->set('google_veo.api_key', 'google-veo-key');
+        config()->set('google_veo.base_url', 'https://generativelanguage.googleapis.com');
+        config()->set('google_veo.api_version', 'v1beta');
+
+        Http::fake([
+            'https://generativelanguage.googleapis.com/v1beta/files/generated-snake:download' => Http::response('VIDEO_BYTES_SNAKE', 200, [
+                'Content-Type' => 'video/mp4',
+            ]),
+        ]);
+
+        $service = app(GoogleVeoService::class);
+        $bytes = $service->downloadVideoContent([
+            'response' => [
+                'generated_videos' => [
+                    [
+                        'video' => [
+                            'uri' => 'https://generativelanguage.googleapis.com/v1beta/files/generated-snake:download',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame('VIDEO_BYTES_SNAKE', $bytes);
+    }
+
     public function test_it_surfaces_google_veo_operation_failure_reason(): void
     {
         config()->set('google_veo.api_key', 'google-veo-key');
