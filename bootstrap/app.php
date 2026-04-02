@@ -18,6 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withSchedule(function (Schedule $schedule): void {
+        $schedule->command('ai:drain-generation-queue --queue=default')
+            ->everyMinute()
+            ->withoutOverlapping();
+
         $schedule->command('social:publish-due --limit=25')
             ->everyMinute()
             ->withoutOverlapping();

@@ -266,3 +266,30 @@ Artisan::command('trends:refresh {--tenant=} {--force}', function () {
 
     return self::SUCCESS;
 })->purpose('Refresh trend signals and trend briefs for one tenant or all tenant profiles');
+
+Artisan::command('ai:drain-generation-queue {--queue=default}', function () {
+    $connection = trim((string) config('queue.default', 'database'));
+    $queue = trim((string) ($this->option('queue') ?: 'default'));
+
+    if ($connection === '' || $connection === 'sync') {
+        $this->warn('Queue connection sincrona o non configurata: nessun drain necessario.');
+
+        return self::SUCCESS;
+    }
+
+    $this->line("Drain generation queue connection={$connection} queue={$queue}");
+
+    $exitCode = Artisan::call('queue:work', [
+        'connection' => $connection,
+        '--queue' => $queue,
+        '--stop-when-empty' => true,
+        '--tries' => 1,
+        '--timeout' => 1200,
+        '--sleep' => 1,
+        '--no-interaction' => true,
+    ]);
+
+    $this->output->write(Artisan::output());
+
+    return is_int($exitCode) ? $exitCode : self::SUCCESS;
+})->purpose('Drain queued AI generation jobs until the target queue is empty');
