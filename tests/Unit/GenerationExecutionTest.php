@@ -46,6 +46,23 @@ class GenerationExecutionTest extends TestCase
         $this->assertStringContainsString('--timeout=1200', $command);
     }
 
+    public function test_it_prefers_artisan_wrapper_for_background_worker_when_available(): void
+    {
+        $command = GenerationExecution::buildBackgroundQueueWorkerCommand(
+            phpBinary: '/usr/bin/php',
+            artisanPath: '/var/www/app/artisan-egpcs',
+            connection: 'database'
+        );
+
+        $this->assertStringContainsString('artisan-egpcs', $command);
+        if (PHP_OS_FAMILY === 'Windows') {
+            $this->assertStringContainsString('/usr/bin/php', $command);
+        } else {
+            $this->assertStringNotContainsString('/usr/bin/php', $command);
+        }
+        $this->assertStringContainsString('queue:work', $command);
+    }
+
     public function test_database_queue_retry_after_is_longer_than_ai_generation_timeout(): void
     {
         $job = new GenerateAiForContentItem(123);

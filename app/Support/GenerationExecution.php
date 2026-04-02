@@ -95,11 +95,9 @@ class GenerationExecution
         ?string $connection = null
     ): string {
         $phpBinary = trim((string) ($phpBinary ?: self::resolvePhpBinary()));
-        $artisanPath = trim((string) ($artisanPath ?: base_path('artisan')));
+        $artisanPath = trim((string) ($artisanPath ?: self::resolveQueueWorkerEntrypoint()));
         $connection = trim((string) ($connection ?: config('queue.default', 'database')));
-        $command = implode(' ', array_map('escapeshellarg', [
-            $phpBinary,
-            $artisanPath,
+        $arguments = [
             'queue:work',
             $connection,
             '--once',
@@ -107,7 +105,20 @@ class GenerationExecution
             '--tries=1',
             '--sleep=1',
             '--no-interaction',
-        ]));
+        ];
+
+        if (self::shouldUseArtisanWrapper($artisanPath)) {
+            $command = implode(' ', array_map('escapeshellarg', [
+                $artisanPath,
+                ...$arguments,
+            ]));
+        } else {
+            $command = implode(' ', array_map('escapeshellarg', [
+                $phpBinary,
+                $artisanPath,
+                ...$arguments,
+            ]));
+        }
 
         if (PHP_OS_FAMILY === 'Windows') {
             return 'start /B "" ' . $command;
@@ -135,7 +146,7 @@ class GenerationExecution
         try {
             $command = self::buildBackgroundQueueWorkerCommand(
                 phpBinary: self::resolvePhpBinary(),
-                artisanPath: base_path('artisan'),
+                artisanPath: self::resolveQueueWorkerEntrypoint(),
                 connection: $connection
             );
 
@@ -238,5 +249,24 @@ class GenerationExecution
         }
 
         return 'php';
+    }
+
+    private static function resolveQueueWorkerEntrypoint(): string
+    {
+        $wrapper = base_path('artisan-egpcs');
+        if (PHP_OS_FAMILY !== 'Windows' && is_file($wrapper)) {
+            return $wrapper;
+        }
+
+        return base_path('artisan');
+    }
+
+    private static function shouldUseArtisanWrapper(string $artisanPath): bool
+    {
+        if ($artisanPath === '' || PHP_OS_FAMILY === 'Windows') {
+            return false;
+        }
+
+        return is_file($artisanPath) && basename($artisanPath) === 'artisan-egpcs';
     }
 }
