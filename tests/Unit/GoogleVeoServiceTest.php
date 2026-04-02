@@ -114,6 +114,71 @@ class GoogleVeoServiceTest extends TestCase
         $this->assertSame('VIDEO_BYTES_SNAKE', $bytes);
     }
 
+    public function test_it_downloads_google_veo_video_from_versioned_file_name_when_uri_is_missing(): void
+    {
+        config()->set('google_veo.api_key', 'google-veo-key');
+        config()->set('google_veo.base_url', 'https://generativelanguage.googleapis.com');
+        config()->set('google_veo.api_version', 'v1beta');
+
+        Http::fake([
+            'https://generativelanguage.googleapis.com/v1beta/files/generated-versioned' => Http::response([
+                'name' => 'files/generated-versioned',
+            ], 200),
+            'https://generativelanguage.googleapis.com/v1beta/files/generated-versioned:download' => Http::response('VIDEO_BYTES_VERSIONED', 200, [
+                'Content-Type' => 'video/mp4',
+            ]),
+        ]);
+
+        $service = app(GoogleVeoService::class);
+        $bytes = $service->downloadVideoContent([
+            'response' => [
+                'generateVideoResponse' => [
+                    'generatedSamples' => [
+                        [
+                            'video' => [
+                                'name' => 'v1beta/files/generated-versioned',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame('VIDEO_BYTES_VERSIONED', $bytes);
+    }
+
+    public function test_it_downloads_google_veo_video_from_embedded_file_uri_payload(): void
+    {
+        config()->set('google_veo.api_key', 'google-veo-key');
+        config()->set('google_veo.base_url', 'https://generativelanguage.googleapis.com');
+        config()->set('google_veo.api_version', 'v1beta');
+
+        Http::fake([
+            'https://generativelanguage.googleapis.com/download/v1beta/files/generated-embedded?alt=media' => Http::response('VIDEO_BYTES_EMBEDDED', 200, [
+                'Content-Type' => 'video/mp4',
+            ]),
+        ]);
+
+        $service = app(GoogleVeoService::class);
+        $bytes = $service->downloadVideoContent([
+            'response' => [
+                'generateVideoResponse' => [
+                    'generatedSamples' => [
+                        [
+                            'video' => [
+                                'file' => [
+                                    'uri' => 'https://generativelanguage.googleapis.com/download/v1beta/files/generated-embedded?alt=media',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame('VIDEO_BYTES_EMBEDDED', $bytes);
+    }
+
     public function test_it_surfaces_google_veo_operation_failure_reason(): void
     {
         config()->set('google_veo.api_key', 'google-veo-key');

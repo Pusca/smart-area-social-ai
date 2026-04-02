@@ -31,7 +31,7 @@ class GoogleVeoService
 
     private function request(int $timeout, bool $asJson = true): PendingRequest
     {
-        $request = Http::acceptJson()
+        $request = Http::accept($asJson ? 'application/json' : '*/*')
             ->timeout($timeout)
             ->connectTimeout((int) (config('google_veo.connect_timeout') ?: 15))
             ->withHeaders([
@@ -261,6 +261,11 @@ class GoogleVeoService
         }
 
         if ($downloadUrl === '') {
+            Log::warning('GoogleVeoService missing downloadable video URL', [
+                'top_level_keys' => array_keys($jobPayload),
+                'response_keys' => array_keys((array) ($jobPayload['response'] ?? [])),
+                'file_name_candidate' => $this->extractFileName($jobPayload),
+            ]);
             throw new RuntimeException('Google Veo completed payload missing downloadable video URL.');
         }
 
@@ -395,18 +400,50 @@ class GoogleVeoService
             'response.generated_videos.0.download_uri',
             'response.generated_videos.0.downloadUri',
             'response.generateVideoResponse.generatedSamples.0.video.downloadUri',
+            'response.generateVideoResponse.generatedSamples.0.video.download_uri',
+            'response.generateVideoResponse.generatedSamples.0.video.file.downloadUri',
+            'response.generateVideoResponse.generatedSamples.0.video.file.download_uri',
+            'response.generateVideoResponse.generatedSamples.0.video.file.uri',
+            'response.generateVideoResponse.generatedSamples.0.uri',
             'response.generateVideoResponse.generatedVideos.0.video.downloadUri',
+            'response.generateVideoResponse.generatedVideos.0.video.download_uri',
+            'response.generateVideoResponse.generatedVideos.0.video.file.downloadUri',
+            'response.generateVideoResponse.generatedVideos.0.video.file.download_uri',
+            'response.generateVideoResponse.generatedVideos.0.video.file.uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.downloadUri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.download_uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.downloadUri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.download_uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.downloadUri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.download_uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.downloadUri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.download_uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.uri',
             'generatedVideos.0.video.downloadUri',
             'generatedVideos.0.downloadUri',
             'generated_videos.0.video.download_uri',
             'generated_videos.0.video.downloadUri',
             'generated_videos.0.download_uri',
             'generated_videos.0.downloadUri',
+            'generatedVideos.0.video.file.downloadUri',
+            'generatedVideos.0.video.file.download_uri',
+            'generatedVideos.0.video.file.uri',
+            'generated_videos.0.video.file.downloadUri',
+            'generated_videos.0.video.file.download_uri',
+            'generated_videos.0.video.file.uri',
             'file.downloadUri',
+            'file.download_uri',
             'downloadUri',
+            'download_uri',
             'response.generatedVideos.0.video.uri',
             'response.generated_videos.0.video.uri',
             'response.generateVideoResponse.generatedSamples.0.video.uri',
+            'response.generateVideoResponse.generatedVideos.0.video.uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.uri',
             'generatedVideos.0.video.uri',
             'generated_videos.0.video.uri',
             'file.uri',
@@ -430,23 +467,35 @@ class GoogleVeoService
     {
         $candidates = [
             'response.generatedVideos.0.video.name',
+            'response.generatedVideos.0.video.file.name',
             'response.generated_videos.0.video.name',
+            'response.generated_videos.0.video.file.name',
             'response.generateVideoResponse.generatedSamples.0.video.name',
+            'response.generateVideoResponse.generatedSamples.0.video.file.name',
             'response.generateVideoResponse.generatedVideos.0.video.name',
+            'response.generateVideoResponse.generatedVideos.0.video.file.name',
+            'response.result.generateVideoResponse.generatedSamples.0.video.name',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.name',
+            'response.result.generateVideoResponse.generatedVideos.0.video.name',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.name',
             'generatedVideos.0.video.name',
+            'generatedVideos.0.video.file.name',
             'generated_videos.0.video.name',
+            'generated_videos.0.video.file.name',
             'file.name',
             'name',
         ];
 
         foreach ($candidates as $path) {
-            $value = trim((string) data_get($payload, $path, ''));
-            if (str_starts_with($value, 'files/')) {
+            $value = $this->normalizeFileResourceName((string) data_get($payload, $path, ''));
+            if ($value !== '') {
                 return $value;
             }
         }
 
-        return $this->findFirstMatchingStringRecursive($payload, fn (string $value) => str_starts_with($value, 'files/'));
+        return $this->normalizeFileResourceName(
+            $this->findFirstMatchingStringRecursive($payload, fn (string $value) => $this->looksLikeFileResource($value))
+        );
     }
 
     private function isLikelyDownloadUrl(string $value): bool
@@ -462,7 +511,47 @@ class GoogleVeoService
 
         return str_contains($value, ':download')
             || str_contains($value, 'alt=media')
-            || str_contains($value, '/files/');
+            || str_contains($value, '/files/')
+            || str_contains($value, '/download/')
+            || preg_match('/\.(mp4|mov|webm)(?:\?|$)/i', $value) === 1;
+    }
+
+    private function looksLikeFileResource(string $value): bool
+    {
+        return $this->normalizeFileResourceName($value) !== '';
+    }
+
+    private function normalizeFileResourceName(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
+            $path = trim((string) parse_url($value, PHP_URL_PATH));
+            if ($path !== '') {
+                $value = $path;
+            }
+        }
+
+        $value = ltrim($value, '/');
+        $apiVersion = preg_quote($this->apiVersion(), '/');
+        $value = preg_replace('/^' . $apiVersion . '\//i', '', $value) ?? $value;
+        $value = preg_replace('/^download\/' . $apiVersion . '\//i', '', $value) ?? $value;
+        $value = preg_replace('/^download\//i', '', $value) ?? $value;
+        $value = preg_replace('/^upload\/' . $apiVersion . '\//i', '', $value) ?? $value;
+        $value = preg_replace('/[:?].*$/', '', $value) ?? $value;
+
+        if (!str_starts_with($value, 'files/')) {
+            $offset = stripos($value, 'files/');
+            if ($offset === false) {
+                return '';
+            }
+            $value = substr($value, $offset);
+        }
+
+        return trim($value);
     }
 
     /**
