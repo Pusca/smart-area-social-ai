@@ -118,7 +118,6 @@ class GoogleVeoService
                 'durationSeconds' => $seconds,
                 'resolution' => $resolution,
                 'sampleCount' => 1,
-                'generateAudio' => $generateAudio,
             ],
         ];
 
@@ -132,8 +131,16 @@ class GoogleVeoService
                     'mimeType' => $mime,
                 ];
                 $payload['parameters']['personGeneration'] = (string) (config('google_veo.person_generation_image') ?: 'allow_adult');
+                if ($this->shouldForceEightSecondReferenceVideo($model)) {
+                    $seconds = 8;
+                    $payload['parameters']['durationSeconds'] = 8;
+                }
                 $hasImageInput = true;
             }
+        }
+
+        if ($generateAudio && $this->supportsGenerateAudio($model)) {
+            $payload['parameters']['generateAudio'] = true;
         }
 
         if (!$hasImageInput) {
@@ -169,6 +176,7 @@ class GoogleVeoService
             'aspect_ratio' => $ratio,
             'resolution' => $resolution,
             'generate_audio' => $generateAudio,
+            'generate_audio_forwarded' => (bool) data_get($payload, 'parameters.generateAudio', false),
             'has_image_input' => $hasImageInput,
             'has_negative_prompt' => $negativePrompt !== '',
         ];
@@ -322,6 +330,20 @@ class GoogleVeoService
         }
 
         return 8;
+    }
+
+    private function shouldForceEightSecondReferenceVideo(string $model): bool
+    {
+        $model = strtolower(trim($model));
+
+        return str_starts_with($model, 'veo-3.1');
+    }
+
+    private function supportsGenerateAudio(string $model): bool
+    {
+        $model = strtolower(trim($model));
+
+        return !str_starts_with($model, 'veo-3.1');
     }
 
     private function normalizeAspectRatio(string $ratio, string $size = ''): string

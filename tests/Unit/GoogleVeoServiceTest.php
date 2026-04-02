@@ -24,9 +24,9 @@ class GoogleVeoServiceTest extends TestCase
         Http::fake([
             'https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning' => function (Request $request) {
                 $this->assertTrue($request->hasHeader('x-goog-api-key', 'google-veo-key'));
-                $this->assertSame(6, data_get($request->data(), 'parameters.durationSeconds'));
+                $this->assertSame(8, data_get($request->data(), 'parameters.durationSeconds'));
                 $this->assertSame('9:16', data_get($request->data(), 'parameters.aspectRatio'));
-                $this->assertFalse((bool) data_get($request->data(), 'parameters.generateAudio'));
+                $this->assertNull(data_get($request->data(), 'parameters.generateAudio'));
                 $this->assertSame('allow_adult', data_get($request->data(), 'parameters.personGeneration'));
                 $this->assertNotEmpty((string) data_get($request->data(), 'instances.0.image.bytesBase64Encoded'));
                 $this->assertSame('image/png', data_get($request->data(), 'instances.0.image.mimeType'));
@@ -47,6 +47,8 @@ class GoogleVeoServiceTest extends TestCase
 
             $this->assertSame('operations/veo-task-123', $result['id']);
             $this->assertSame('image_to_video', data_get($result, 'request_summary.mode'));
+            $this->assertFalse((bool) data_get($result, 'request_summary.generate_audio_forwarded'));
+            $this->assertSame(8, data_get($result, 'request_summary.seconds'));
         } finally {
             @unlink($imagePath);
         }
