@@ -59,6 +59,7 @@ class GenerationExecutionTest extends TestCase
             $this->assertStringContainsString('/usr/bin/php', $command);
         } else {
             $this->assertStringNotContainsString('/usr/bin/php', $command);
+            $this->assertStringContainsString('bash', $command);
         }
         $this->assertStringContainsString('queue:work', $command);
     }

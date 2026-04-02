@@ -109,6 +109,7 @@ class GenerationExecution
 
         if (self::shouldUseArtisanWrapper($artisanPath)) {
             $command = implode(' ', array_map('escapeshellarg', [
+                self::resolveShellBinary(),
                 $artisanPath,
                 ...$arguments,
             ]));
@@ -268,5 +269,16 @@ class GenerationExecution
         }
 
         return is_file($artisanPath) && basename($artisanPath) === 'artisan-egpcs';
+    }
+
+    private static function resolveShellBinary(): string
+    {
+        foreach (['/bin/bash', '/usr/bin/bash', 'bash'] as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return 'bash';
     }
 }
