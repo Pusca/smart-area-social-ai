@@ -25,6 +25,7 @@
     $videoProviderOptions = [
         'openai' => 'Sora + GPT (OpenAI)',
         'runway' => $isReelPreset ? 'Runway image-to-video' : 'Runway',
+        'google_veo' => 'Google Veo 3.1 (direct)',
         'kling' => 'Kling (coerenza persona)',
     ];
     $imageProviderOptions = [
@@ -904,6 +905,9 @@
                     if (videoProvider === 'runway') {
                         return 150;
                     }
+                    if (videoProvider === 'google_veo') {
+                        return 185;
+                    }
                     if (videoProvider === 'kling') {
                         return 175;
                     }
@@ -912,6 +916,9 @@
                 if (format === 'story') {
                     if (videoProvider === 'runway') {
                         return 120;
+                    }
+                    if (videoProvider === 'google_veo') {
+                        return 140;
                     }
                     if (videoProvider === 'kling') {
                         return 145;

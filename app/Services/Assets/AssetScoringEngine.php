@@ -567,6 +567,10 @@ class AssetScoringEngine
                 return 3;
             }
 
+            if ($provider === 'google_veo') {
+                return 1;
+            }
+
             if ($provider === 'kling') {
                 return 4;
             }
@@ -880,6 +884,13 @@ class AssetScoringEngine
 
         if ($provider === 'runway' && $area === 'video') {
             $score += (bool) ($candidate['is_canonical'] ?? false) ? 0.08 : 0.02;
+        }
+
+        if ($provider === 'google_veo' && $area === 'video') {
+            $score += (bool) ($candidate['is_primary_canonical'] ?? false) ? 0.1 : 0.01;
+            if ((int) ($candidate['slot_priority'] ?? 99) > 1) {
+                $score -= 0.08;
+            }
         }
 
         if ($provider === 'kling' && $area === 'video') {

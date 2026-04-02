@@ -51,6 +51,7 @@ class ReelCreatePresetTest extends TestCase
             ->assertOk()
             ->assertSee('Crea un reel singolo pensato per il feed')
             ->assertSee('Runway image-to-video')
+            ->assertSee('Google Veo 3.1 (direct)')
             ->assertSee('Kling (coerenza persona)')
             ->assertSee('value="reel"', false)
             ->assertSee('value="runway" selected', false);

@@ -14,7 +14,7 @@ class ProviderCapabilityRegistryTest extends TestCase
 
         $registry = app(ProviderCapabilityRegistry::class);
 
-        $this->assertSame(['openai', 'runway', 'kling'], $registry->allowedProviders('video'));
+        $this->assertSame(['openai', 'runway', 'kling', 'google_veo'], $registry->allowedProviders('video'));
         $this->assertSame('runway', $registry->defaultProvider('video'));
         $this->assertSame('runway', $registry->resolveProvider('video', 'invalid-provider', 'runway'));
         $this->assertSame(['elevenlabs'], $registry->allowedProviders('voice_clone'));
@@ -27,6 +27,8 @@ class ProviderCapabilityRegistryTest extends TestCase
 
         $this->assertSame(12, $registry->normalizeVideoDuration('openai', 10, 'sora-2'));
         $this->assertSame(8, $registry->normalizeVideoDuration('runway', 10, 'veo3.1_fast'));
+        $this->assertSame(6, $registry->normalizeVideoDuration('google_veo', 5, 'veo3.1'));
+        $this->assertSame(8, $registry->normalizeVideoDuration('google_veo', 10, 'veo3.1'));
         $this->assertSame(10, $registry->normalizeVideoDuration('runway', 12, 'gen4.5'));
         $this->assertSame(12, $registry->normalizeVideoDuration('kling', 12, 'kling-v3-omni'));
         $this->assertSame(3, $registry->normalizeVideoDuration('kling', 1, 'kling-v3'));
@@ -41,6 +43,7 @@ class ProviderCapabilityRegistryTest extends TestCase
         $this->assertSame('kling-v3-omni', $registry->defaultModel('kling', 'video', ['mode' => 'text']));
         $this->assertSame('kling-v3', $registry->defaultModel('kling', 'video', ['mode' => 'image']));
         $this->assertSame('kling-v3', $registry->defaultModel('kling', 'video', ['mode' => 'multi_image']));
+        $this->assertSame('veo-3.1-generate-preview', $registry->normalizeModel('google_veo', 'video', 'veo3.1'));
     }
 
     public function test_it_respects_provider_lock_when_building_fallbacks(): void

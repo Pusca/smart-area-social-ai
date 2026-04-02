@@ -6,6 +6,7 @@ use App\Jobs\GenerateAiForContentItem;
 use App\Services\AI\ContentAlignmentService;
 use App\Services\GenerationAuditService;
 use App\Services\GenerationMetricsService;
+use App\Services\GoogleVeoService;
 use App\Services\KlingService;
 use App\Services\NanoBananaService;
 use App\Services\OpenAiService;
@@ -23,6 +24,7 @@ class GenerateVisualAssetStep
         private readonly OpenAiService $openAi,
         private readonly RunwayService $runway,
         private readonly KlingService $kling,
+        private readonly GoogleVeoService $googleVeo,
         private readonly NanoBananaService $nanoBanana,
         private readonly ContentAlignmentService $contentAlignment,
         private readonly SpeechSynthesisService $speechSynthesis,
@@ -113,6 +115,7 @@ class GenerateVisualAssetStep
                     nanoBanana: $this->nanoBanana,
                     runway: $this->runway,
                     kling: $this->kling,
+                    googleVeo: $this->googleVeo,
                     item: $item,
                     prompt: $prompt,
                     selectedBrandImageAbs: is_string($selectedBrandImageAbs) ? $selectedBrandImageAbs : null,

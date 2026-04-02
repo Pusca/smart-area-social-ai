@@ -69,6 +69,19 @@ class GenerateAiForContentItemTest extends TestCase
         ]));
     }
 
+    public function test_it_disables_cross_provider_fallback_when_google_veo_strict_model_is_enabled(): void
+    {
+        config()->set('google_veo.strict_model', true);
+
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldAllowCrossProviderVideoFallback');
+        $method->setAccessible(true);
+
+        $this->assertFalse($method->invoke($job, [
+            'video_provider' => 'google_veo',
+        ]));
+    }
+
     public function test_it_builds_creative_direction_prompt_instructions_for_overlay_and_continuity(): void
     {
         $job = new GenerateAiForContentItem(1);
@@ -288,6 +301,22 @@ class GenerateAiForContentItemTest extends TestCase
         );
 
         $this->assertSame('veo3.1', $model);
+    }
+
+    public function test_it_normalizes_google_veo_video_seconds_to_supported_values(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'normalizeVideoOptionsForProvider');
+        $method->setAccessible(true);
+
+        $normalized = $method->invoke($job, 'google_veo', [
+            'model' => 'veo3.1',
+            'seconds' => 5,
+            'size' => '720x1280',
+        ]);
+
+        $this->assertSame('veo-3.1-generate-preview', $normalized['model']);
+        $this->assertSame(6, $normalized['seconds']);
     }
 
     public function test_it_builds_a_fallback_reel_blueprint_when_none_is_present(): void

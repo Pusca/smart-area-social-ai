@@ -22,6 +22,7 @@ use App\Services\AI\ProviderCapabilityRegistry;
 use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\GenerationAuditService;
 use App\Services\GenerationMetricsService;
+use App\Services\GoogleVeoService;
 use App\Services\MemoryBuilderService;
 use App\Support\ImagePromptRealismGuard;
 use App\Services\KlingService;
@@ -798,6 +799,7 @@ SVG;
         NanoBananaService $nanoBanana,
         RunwayService $runway,
         KlingService $kling,
+        GoogleVeoService $googleVeo,
         ContentItem $item,
         string $prompt,
         ?string $selectedBrandImageAbs,
@@ -1050,6 +1052,7 @@ SVG;
         $videoOptions = [
             'model' => match ($videoProvider) {
                 'runway' => $this->resolveRunwayVideoModel($item, $meta, $assetVariables, $imageReferencePathPool),
+                'google_veo' => $this->resolveGoogleVeoVideoModel($meta),
                 'kling' => (string) (config('kling.model') ?: ''),
                 default => (string) (config('openai.video_model') ?: 'sora-2'),
             },
@@ -1061,6 +1064,9 @@ SVG;
             : $videoPrompt;
         $klingExecutionPrompt = $videoProvider === 'kling'
             ? $this->buildKlingExecutionPrompt($videoPrompt, $item, $meta, $assetVariables, $activeFeedbackRequest)
+            : $videoPrompt;
+        $googleVeoExecutionPrompt = $videoProvider === 'google_veo'
+            ? $this->buildGoogleVeoExecutionPrompt($videoPrompt, $item, $meta, $assetVariables)
             : $videoPrompt;
         $openAiExecutionPrompt = $this->prepareOpenAiVideoPromptForExecution(
             $videoPrompt,
@@ -1091,12 +1097,14 @@ SVG;
                     openAi: $openAi,
                     runway: $runway,
                     kling: $kling,
+                    googleVeo: $googleVeo,
                     item: $item,
                     briefRaw: $briefRaw,
                     fallbackPrompt: $prompt,
                     videoProvider: $videoProvider,
                     runwayExecutionPrompt: $runwayExecutionPrompt,
                     klingExecutionPrompt: $klingExecutionPrompt,
+                    googleVeoExecutionPrompt: $googleVeoExecutionPrompt,
                     openAiExecutionPrompt: $openAiExecutionPrompt,
                     referenceAbs: $referenceAbs,
                     referencePath: $referencePath,
@@ -1132,6 +1140,25 @@ SVG;
                 'delivered_seconds' => $videoOptions['seconds'],
                 'ffmpeg_binary' => $ffmpeg,
             ]);
+        }
+
+        if ($videoProvider === 'google_veo') {
+            return $finalizeVideoResult($this->generateVideoWithGoogleVeo(
+                googleVeo: $googleVeo,
+                item: $item,
+                briefRaw: $briefRaw,
+                fallbackPrompt: $prompt,
+                videoPrompt: $googleVeoExecutionPrompt,
+                referenceAbs: $referenceAbs,
+                referencePath: $referencePath,
+                referencePaths: $referencePaths,
+                referenceReason: $referenceReason,
+                compositionMeta: $compositionMeta,
+                brandDecision: $brandDecision,
+                videoOptions: $videoOptions,
+                generationReferenceAbsPool: $generationReferenceAbsPool,
+                imageReferencePathPool: $imageReferencePathPool
+            ));
         }
 
         if ($videoProvider === 'kling') {
@@ -1636,6 +1663,10 @@ SVG;
             return array_values(array_filter($durations, fn ($seconds) => in_array($seconds, [4, 8, 12], true)));
         }
 
+        if ($provider === 'google_veo') {
+            return $this->discreteSegmentDurations([4, 6, 8], $targetTotalSeconds);
+        }
+
         if ($provider === 'runway' && $this->isRunwayVeoModel($model)) {
             return $this->discreteSegmentDurations([4, 6, 8], $targetTotalSeconds);
         }
@@ -1941,6 +1972,7 @@ SVG;
     {
         return match (strtolower(trim($provider))) {
             'runway' => max(600, min(1600, (int) (config('runway.max_prompt_chars') ?: 1400))),
+            'google_veo' => max(600, min(2000, (int) (config('google_veo.max_prompt_chars') ?: 1600))),
             'kling' => max(400, min(1800, (int) (config('kling.max_prompt_chars') ?: 1400))),
             default => 1800,
         };
@@ -1962,12 +1994,14 @@ SVG;
         OpenAiService $openAi,
         RunwayService $runway,
         KlingService $kling,
+        GoogleVeoService $googleVeo,
         ContentItem $item,
         string $briefRaw,
         string $fallbackPrompt,
         string $videoProvider,
         string $runwayExecutionPrompt,
         string $klingExecutionPrompt,
+        string $googleVeoExecutionPrompt,
         string $openAiExecutionPrompt,
         ?string $referenceAbs,
         ?string $referencePath,
@@ -1998,6 +2032,7 @@ SVG;
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $basePrompt = match ($videoProvider) {
             'runway' => $runwayExecutionPrompt,
+            'google_veo' => $googleVeoExecutionPrompt,
             'kling' => $klingExecutionPrompt,
             default => $openAiExecutionPrompt,
         };
@@ -2061,6 +2096,22 @@ SVG;
                     assetVariables: $assetVariables,
                     activeFeedbackRequest: $activeFeedbackRequest,
                     locationSequenceMode: $locationSequenceMode
+                ),
+                'google_veo' => $this->generateVideoWithGoogleVeo(
+                    googleVeo: $googleVeo,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $fallbackPrompt,
+                    videoPrompt: $segmentPrompt,
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $segmentReferenceReason,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $segmentVideoOptions,
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool
                 ),
                 default => $this->generateVideoWithOpenAi(
                     openAi: $openAi,
@@ -2650,6 +2701,72 @@ SVG;
     }
 
     /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $assetVariables
+     */
+    public function buildGoogleVeoExecutionPrompt(
+        string $videoPrompt,
+        ContentItem $item,
+        array $meta,
+        array $assetVariables
+    ): string {
+        $objective = trim((string) data_get($meta, 'item_brain.objective', data_get($meta, 'plan.goal', '')));
+        $tone = trim((string) data_get($meta, 'strategy.brand_voice.tone', data_get($meta, 'plan.tone', '')));
+        $angle = trim((string) data_get($meta, 'item_brain.angle', data_get($meta, 'editorial.angle', '')));
+        $series = trim((string) data_get($meta, 'item_brain.series', data_get($meta, 'editorial.series', '')));
+        $isReel = Str::lower(trim((string) ($item->format ?? 'post'))) === 'reel';
+        $blueprint = is_array(data_get($meta, 'reel_blueprint', []))
+            ? (array) data_get($meta, 'reel_blueprint', [])
+            : [];
+        $storyboard = is_array(data_get($meta, 'storyboard_meta', []))
+            ? (array) data_get($meta, 'storyboard_meta', [])
+            : [];
+
+        $parts = [
+            'Create a live-action photorealistic social video with stable subject identity, natural motion and clean premium framing.',
+            'No on-screen text, no watermark, no fake logos, no extra subjects replacing the main subject.',
+            'Use natural lens behavior, realistic light, believable skin texture and real-world reflections.',
+        ];
+
+        if ($isReel) {
+            $parts[] = 'Format target: native Instagram reel, vertical 9:16, immediate hook in the first second, then a clear visual development and payoff.';
+        }
+        if ($objective !== '') {
+            $parts[] = "Strategic objective: {$objective}.";
+        }
+        if ($tone !== '') {
+            $parts[] = "Brand tone: {$tone}.";
+        }
+        if ($angle !== '') {
+            $parts[] = "Narrative angle: {$angle}.";
+        }
+        if ($series !== '') {
+            $parts[] = "Editorial series: {$series}.";
+        }
+        if (!empty($blueprint['hook'])) {
+            $parts[] = 'Opening hook to preserve: ' . trim((string) $blueprint['hook']) . '.';
+        }
+        if (!empty($blueprint['continuity_lock'])) {
+            $parts[] = 'Continuity lock: ' . trim((string) $blueprint['continuity_lock']) . '.';
+        }
+        $sceneSummary = $this->summarizeStoryboardSceneChunk((array) data_get($storyboard, 'scene_list', []));
+        if ($sceneSummary !== '') {
+            $parts[] = "Scene plan: {$sceneSummary}.";
+        }
+        if ($this->hasPersonAssetVariable($assetVariables)) {
+            $parts[] = 'If the brand person appears, keep the same real person identity from start to end.';
+        }
+
+        $parts[] = 'Primary visual brief follows. Proper names and brand specifics may appear in Italian; preserve them faithfully.';
+        $parts[] = $videoPrompt;
+
+        $limit = (int) (config('google_veo.max_prompt_chars') ?: 1600);
+        $limit = max(600, min(2000, $limit));
+
+        return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), $limit, '');
+    }
+
+    /**
      * @param  array<string, mixed>  $assetVariables
      * @return array<int, string>
      */
@@ -2727,6 +2844,19 @@ SVG;
     }
 
     /**
+     * @param  array<string, mixed>  $meta
+     */
+    public function resolveGoogleVeoVideoModel(array $meta): string
+    {
+        $explicit = trim((string) data_get($meta, 'video_model', ''));
+        if ($explicit !== '') {
+            return $this->normalizeGoogleVeoVideoModel($explicit);
+        }
+
+        return $this->normalizeGoogleVeoVideoModel($this->capabilityRegistry()->defaultModel('google_veo', 'video'));
+    }
+
+    /**
      * @param  array<string, mixed>  $videoOptions
      * @return array<string, mixed>
      */
@@ -2747,6 +2877,7 @@ SVG;
         if ($seconds <= 0) {
             $seconds = match ($provider) {
                 'runway' => (int) (config('runway.video_seconds') ?: 8),
+                'google_veo' => (int) (config('google_veo.video_seconds') ?: 8),
                 'kling' => (int) (config('kling.video_seconds') ?: 5),
                 default => (int) (config('openai.video_seconds') ?: 8),
             };
@@ -2787,10 +2918,16 @@ SVG;
         return $this->capabilityRegistry()->normalizeModel('kling', 'video', $model);
     }
 
+    public function normalizeGoogleVeoVideoModel(string $model): string
+    {
+        return $this->capabilityRegistry()->normalizeModel('google_veo', 'video', $model);
+    }
+
     public function normalizeVideoModelForProvider(string $provider, string $model = '', array $context = []): string
     {
         return match (strtolower(trim($provider))) {
             'runway' => $this->capabilityRegistry()->normalizeModel('runway', 'video', $model, $context),
+            'google_veo' => $this->capabilityRegistry()->normalizeModel('google_veo', 'video', $model, $context),
             'kling' => $this->capabilityRegistry()->normalizeModel('kling', 'video', $model, $context),
             default => $this->capabilityRegistry()->normalizeModel('openai', 'video', $model, $context),
         };
@@ -3382,6 +3519,113 @@ SVG;
         }
 
         return false;
+    }
+
+    /**
+     * @param  array<int, string>  $referencePaths
+     * @param  array<int, string>  $generationReferenceAbsPool
+     * @param  array<int, string>  $imageReferencePathPool
+     * @param  array<int, string>  $validationReferenceAbsPool
+     * @param  array<string, mixed>|null  $compositionMeta
+     * @param  array<string, mixed>  $brandDecision
+     * @param  array<string, mixed>  $videoOptions
+     * @return array<string, mixed>
+     */
+    public function generateVideoWithGoogleVeo(
+        GoogleVeoService $googleVeo,
+        ContentItem $item,
+        string $briefRaw,
+        string $fallbackPrompt,
+        string $videoPrompt,
+        ?string $referenceAbs,
+        ?string $referencePath,
+        array $referencePaths,
+        string $referenceReason,
+        ?array $compositionMeta,
+        array $brandDecision,
+        array $videoOptions,
+        array $generationReferenceAbsPool,
+        array $imageReferencePathPool
+    ): array {
+        $videoOptions = $this->normalizeVideoOptionsForProvider('google_veo', $videoOptions);
+        $requestSummary = [
+            'requested_reference_count' => count($imageReferencePathPool),
+            'active_reference_count' => 0,
+            'ignored_additional_references' => max(0, count($imageReferencePathPool) - 1),
+            'reference_reason' => $referenceReason,
+        ];
+
+        $activeReferenceAbs = trim((string) $referenceAbs);
+        $activeReferencePath = trim((string) $referencePath);
+        $activeReferencePaths = array_values(array_filter(
+            $activeReferencePath !== '' ? [$activeReferencePath] : array_slice($referencePaths, 0, 1),
+            fn ($value) => is_string($value) && $value !== ''
+        ));
+        if ($activeReferenceAbs === '' && !empty($generationReferenceAbsPool)) {
+            $activeReferenceAbs = trim((string) $generationReferenceAbsPool[0]);
+            $activeReferencePath = trim((string) ($imageReferencePathPool[0] ?? $activeReferencePath));
+            $activeReferencePaths = array_values(array_filter(
+                $activeReferencePath !== '' ? [$activeReferencePath] : $activeReferencePaths,
+                fn ($value) => is_string($value) && $value !== ''
+            ));
+        }
+        $requestSummary['active_reference_count'] = $activeReferenceAbs !== '' ? 1 : 0;
+
+        $googleVeoOptions = [
+            'model' => (string) ($videoOptions['model'] ?? config('google_veo.model') ?: 'veo-3.1-generate-preview'),
+            'seconds' => (int) ($videoOptions['seconds'] ?? (int) (config('google_veo.video_seconds') ?: 8)),
+            'size' => (string) ($videoOptions['size'] ?? '720x1280'),
+            'strict_model' => $this->isStrictVideoModelSelection('google_veo', is_array($item->ai_meta) ? $item->ai_meta : []),
+            'negative_prompt' => trim((string) (config('google_veo.negative_prompt') ?: '')),
+            'generate_audio' => false,
+        ];
+
+        $job = $googleVeo->createVideoJob(
+            prompt: $videoPrompt,
+            inputReferenceAbsolutePath: $activeReferenceAbs !== '' ? $activeReferenceAbs : null,
+            options: $googleVeoOptions
+        );
+        $videoId = (string) ($job['id'] ?? '');
+        $jobFinal = $googleVeo->waitForVideoCompletion($videoId);
+        $videoBytes = $googleVeo->downloadVideoContent($jobFinal);
+        $thumbBytes = $googleVeo->downloadThumbnailContent($jobFinal);
+
+        $videoExt = $this->detectVideoExtensionFromBytes($videoBytes);
+        $videoPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $videoExt;
+        Storage::disk('public')->put($videoPath, $videoBytes);
+
+        $thumbPath = null;
+        if (is_string($thumbBytes) && $thumbBytes !== '') {
+            $thumbExt = $this->detectImageExtensionFromBytes($thumbBytes);
+            $thumbPath = 'ai/videos/' . now()->format('Y/m') . '/' . Str::uuid()->toString() . '.' . $thumbExt;
+            Storage::disk('public')->put($thumbPath, $thumbBytes);
+        }
+
+        return [
+            'source' => 'google_veo_video_generation',
+            'provider' => 'google_veo',
+            'video_id' => $videoId,
+            'video_path' => $videoPath,
+            'thumbnail_path' => $thumbPath,
+            'reference_path' => $activeReferencePath,
+            'reference_paths' => $activeReferencePaths,
+            'reference_reason' => $activeReferenceAbs !== '' ? $referenceReason : $referenceReason . '_text_only',
+            'reference_validation' => null,
+            'composition_reference' => $compositionMeta,
+            'generation_attempts' => 1,
+            'job_status' => (bool) ($jobFinal['done'] ?? false) ? 'completed' : 'processing',
+            'brand_selection' => $brandDecision,
+            'provider_fallback' => null,
+            'request_summary' => ($job['request_summary'] ?? []) + [
+                'reel_blueprint' => $this->compactReelBlueprintSummary(
+                    is_array(data_get($item->ai_meta, 'reel_blueprint', [])) ? (array) data_get($item->ai_meta, 'reel_blueprint', []) : []
+                ),
+                'storyboard' => $this->compactStoryboardSummary(
+                    is_array(data_get($item->ai_meta, 'storyboard_meta', [])) ? (array) data_get($item->ai_meta, 'storyboard_meta', []) : []
+                ),
+            ],
+            'reference_input_summary' => $requestSummary,
+        ];
     }
 
     /**
@@ -4236,6 +4480,7 @@ SVG;
 
         return match ($provider) {
             'runway' => (bool) config('runway.strict_model', false),
+            'google_veo' => (bool) config('google_veo.strict_model', false),
             'kling' => (bool) config('kling.strict_model', false),
             default => false,
         };

@@ -77,6 +77,10 @@ return [
                 // Provider con pricing pubblico/API non stabilizzato nel repo: lasciare configurabile.
                 'default_per_second_usd' => null,
             ],
+            'google_veo' => [
+                // Pricing Veo soggetto a piano/quoting Google: lasciare configurabile per il deployment.
+                'default_per_second_usd' => null,
+            ],
         ],
 
         'speech' => [

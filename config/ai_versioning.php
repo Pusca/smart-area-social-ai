@@ -26,6 +26,7 @@ return [
             'openai' => 'openai_video_adapter_v1',
             'runway' => 'runway_video_adapter_v1',
             'kling' => 'kling_video_adapter_v1',
+            'google_veo' => 'google_veo_video_adapter_v1',
         ],
         'speech' => [
             'openai' => 'openai_tts_adapter_v1',

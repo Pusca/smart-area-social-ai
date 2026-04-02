@@ -459,6 +459,11 @@ class GenerationMetricsService
             if ($perSecond === null) {
                 $perSecond = config('ai_observability.pricing.video.kling.default_per_second_usd');
             }
+        } elseif ($provider === 'google_veo') {
+            $perSecond = config('ai_observability.pricing.video.google_veo.models.' . $model . '.per_second_usd');
+            if ($perSecond === null) {
+                $perSecond = config('ai_observability.pricing.video.google_veo.default_per_second_usd');
+            }
         }
 
         if ($perSecond === null) {

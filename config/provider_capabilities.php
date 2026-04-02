@@ -136,6 +136,37 @@ return [
                 ],
             ],
         ],
+        'google_veo' => [
+            'credential_paths' => ['google_veo.api_key'],
+            'areas' => [
+                'video' => [
+                    'reference_aware' => true,
+                    'image_to_video' => true,
+                    'text_to_video' => true,
+                    'native_audio' => false,
+                    'requires_mux' => true,
+                    'strict_asset_mode' => true,
+                    'fallbacks' => ['kling', 'openai'],
+                    'model_config' => 'google_veo.model',
+                    'model_aliases' => [
+                        'veo3.1' => 'veo-3.1-generate-preview',
+                        'veo-3.1' => 'veo-3.1-generate-preview',
+                        'veo_3.1' => 'veo-3.1-generate-preview',
+                        'veo-3.1-generate-001' => 'veo-3.1-generate-preview',
+                    ],
+                    'duration_rule' => [
+                        'mode' => 'enum',
+                        'values' => [4, 6, 8],
+                    ],
+                    'sizes' => ['720x1280', '1280x720'],
+                    'aspect_ratios' => ['9:16', '16:9'],
+                    'timeouts' => [
+                        'request' => 'google_veo.timeout_create',
+                        'poll' => 'google_veo.poll_timeout',
+                    ],
+                ],
+            ],
+        ],
         'kling' => [
             'credential_paths' => ['kling.access_key', 'kling.secret_key'],
             'areas' => [

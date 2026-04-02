@@ -160,6 +160,16 @@ class ProviderCapabilityRegistry
             return isset($aliases[$candidate]) ? strtolower(trim((string) $aliases[$candidate])) : $candidate;
         }
 
+        if ($provider === 'google_veo' && $area === 'video') {
+            $configured = strtolower(trim($this->defaultModel('google_veo', 'video', $context)));
+            $candidate = $model !== '' ? $model : $configured;
+            if ($candidate === '' || str_starts_with($candidate, 'sora-') || str_starts_with($candidate, 'kling-') || str_starts_with($candidate, 'gen4')) {
+                return 'veo-3.1-generate-preview';
+            }
+
+            return isset($aliases[$candidate]) ? strtolower(trim((string) $aliases[$candidate])) : $candidate;
+        }
+
         if ($provider === 'kling' && $area === 'video') {
             if ($model !== '' && str_starts_with($model, 'kling-')) {
                 return $model;
@@ -231,7 +241,7 @@ class ProviderCapabilityRegistry
 
         sort($values);
 
-        if ($provider === 'openai') {
+        if (in_array($provider, ['openai', 'google_veo'], true)) {
             foreach ($values as $value) {
                 if ($seconds <= $value) {
                     return $value;

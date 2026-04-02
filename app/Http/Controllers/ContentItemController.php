@@ -1597,6 +1597,7 @@ class ContentItemController extends Controller
         if ($format === 'reel') {
             return match ($videoProvider) {
                 'runway' => 150,
+                'google_veo' => 185,
                 'kling' => 175,
                 default => 190,
             };
@@ -1605,6 +1606,7 @@ class ContentItemController extends Controller
         if ($format === 'story') {
             return match ($videoProvider) {
                 'runway' => 120,
+                'google_veo' => 140,
                 'kling' => 145,
                 default => 150,
             };
