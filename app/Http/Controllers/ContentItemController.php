@@ -216,7 +216,7 @@ class ContentItemController extends Controller
         }
 
         $status = strtolower(trim((string) ($contentItem->ai_status ?? '')));
-        if (!in_array($status, ['queued', 'pending'], true)) {
+        if ($status !== 'queued') {
             return;
         }
 
@@ -225,8 +225,8 @@ class ContentItemController extends Controller
             return;
         }
 
-        $lockKey = 'generation-status-drain:' . $queueConnection;
-        if (!Cache::add($lockKey, now()->timestamp, 20)) {
+        $lockKey = 'generation-status-drain:' . $queueConnection . ':' . (int) $contentItem->id;
+        if (!Cache::add($lockKey, now()->timestamp, 90)) {
             return;
         }
 

@@ -44,4 +44,14 @@ class GenerationExecutionTest extends TestCase
         $this->assertStringContainsString('--once', $command);
         $this->assertStringContainsString('--timeout=1200', $command);
     }
+
+    public function test_database_queue_retry_after_is_longer_than_ai_generation_timeout(): void
+    {
+        $job = new GenerateAiForContentItem(123);
+
+        $this->assertGreaterThan(
+            $job->timeout,
+            (int) config('queue.connections.database.retry_after')
+        );
+    }
 }
