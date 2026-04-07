@@ -27,11 +27,16 @@ class GenerationRuntimeMonitor
             return false;
         }
 
-        if ($status === 'queued' && $this->maybeRecoverQueuedItem($item)) {
+        $recoveryTriggered = false;
+        if ($status === 'queued') {
+            $recoveryTriggered = $this->maybeRecoverQueuedItem($item);
+        }
+
+        if ($this->maybeFailStaleItem($item, $status)) {
             return true;
         }
 
-        return $this->maybeFailStaleItem($item, $status);
+        return $recoveryTriggered;
     }
 
     public function reconcilePlan(ContentPlan $plan): void
@@ -51,7 +56,7 @@ class GenerationRuntimeMonitor
             return false;
         }
 
-        if ($referenceAt->diffInSeconds(now()) < $this->queuedStaleAfterSeconds()) {
+        if ($referenceAt->diffInSeconds(now()) < $this->queuedNudgeAfterSeconds()) {
             return false;
         }
 
@@ -62,8 +67,8 @@ class GenerationRuntimeMonitor
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
         $monitorMeta = (array) data_get($meta, 'generation_monitor', []);
         $lastRecoveryAttemptAt = $this->parseTimestamp(data_get($monitorMeta, 'last_recovery_attempt_at'));
-        if ($lastRecoveryAttemptAt) {
-            return $lastRecoveryAttemptAt->diffInSeconds(now()) < $this->queuedRecoveryGraceSeconds();
+        if ($lastRecoveryAttemptAt && $lastRecoveryAttemptAt->diffInSeconds(now()) < $this->queuedRecoveryRetrySeconds()) {
+            return false;
         }
 
         $recoveryTriggered = false;
@@ -197,6 +202,22 @@ class GenerationRuntimeMonitor
         return max(180, (int) config('generation.queued_stale_after_seconds', 480));
     }
 
+    private function queuedNudgeAfterSeconds(): int
+    {
+        return max(5, min(
+            $this->queuedStaleAfterSeconds(),
+            (int) config('generation.queued_nudge_after_seconds', 15)
+        ));
+    }
+
+    private function queuedRecoveryRetrySeconds(): int
+    {
+        return max(10, min(
+            $this->queuedRecoveryGraceSeconds(),
+            (int) config('generation.queued_recovery_retry_seconds', 45)
+        ));
+    }
+
     private function queuedRecoveryGraceSeconds(): int
     {
         return max(60, (int) config('generation.queued_recovery_grace_seconds', 150));
@@ -219,19 +240,19 @@ class GenerationRuntimeMonitor
         return $queueConnection !== '' && $queueConnection !== 'sync';
     }
 
-    private function shouldUseHttpDrainFallback(): bool
+    protected function shouldUseHttpDrainFallback(): bool
     {
         return !$this->isConsoleContext()
             && $this->hasAsyncQueueConnection()
             && (bool) config('generation.queue_http_drain_fallback', true);
     }
 
-    private function isConsoleContext(): bool
+    protected function isConsoleContext(): bool
     {
         return app()->runningInConsole() || app()->runningUnitTests();
     }
 
-    private function drainQueueOnceViaHttp(ContentItem $item): bool
+    protected function drainQueueOnceViaHttp(ContentItem $item): bool
     {
         $queueConnection = trim((string) config('queue.default', 'database'));
         $lockKey = 'generation-runtime-monitor:http-drain:' . $queueConnection . ':' . (int) $item->id;
@@ -240,12 +261,12 @@ class GenerationRuntimeMonitor
         }
 
         try {
-            Artisan::call('ai:drain-generation-queue', [
+            $exitCode = Artisan::call('ai:drain-generation-queue', [
                 '--queue' => 'default',
                 '--once' => true,
             ]);
 
-            return true;
+            return (int) $exitCode === 0;
         } catch (\Throwable) {
             return false;
         } finally {

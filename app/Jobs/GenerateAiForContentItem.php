@@ -820,7 +820,7 @@ SVG;
         $briefNorm = $this->normalizeText((string) data_get($meta, 'manual_brief', ''));
         $assetVariables = (array) data_get($meta, 'asset_variables', []);
         $videoProvider = $this->resolveVideoProvider($meta);
-        $allowCrossProviderFallback = $this->shouldAllowCrossProviderVideoFallback($meta);
+        $allowSecondaryVideoFallback = $this->canAttemptSecondaryVideoFallback($meta, $videoProvider);
         $explicitReferencePaths = array_values(array_filter(array_map(
             'strval',
             (array) data_get($meta, 'image_references.selected_paths', [])
@@ -1143,22 +1143,110 @@ SVG;
         }
 
         if ($videoProvider === 'google_veo') {
-            return $finalizeVideoResult($this->generateVideoWithGoogleVeo(
-                googleVeo: $googleVeo,
-                item: $item,
-                briefRaw: $briefRaw,
-                fallbackPrompt: $prompt,
-                videoPrompt: $googleVeoExecutionPrompt,
-                referenceAbs: $referenceAbs,
-                referencePath: $referencePath,
-                referencePaths: $referencePaths,
-                referenceReason: $referenceReason,
-                compositionMeta: $compositionMeta,
-                brandDecision: $brandDecision,
-                videoOptions: $videoOptions,
-                generationReferenceAbsPool: $generationReferenceAbsPool,
-                imageReferencePathPool: $imageReferencePathPool
-            ));
+            try {
+                return $finalizeVideoResult($this->generateVideoWithGoogleVeo(
+                    googleVeo: $googleVeo,
+                    item: $item,
+                    briefRaw: $briefRaw,
+                    fallbackPrompt: $prompt,
+                    videoPrompt: $googleVeoExecutionPrompt,
+                    referenceAbs: $referenceAbs,
+                    referencePath: $referencePath,
+                    referencePaths: $referencePaths,
+                    referenceReason: $referenceReason,
+                    compositionMeta: $compositionMeta,
+                    brandDecision: $brandDecision,
+                    videoOptions: $videoOptions,
+                    generationReferenceAbsPool: $generationReferenceAbsPool,
+                    imageReferencePathPool: $imageReferencePathPool
+                ));
+            } catch (Throwable $googleVeoError) {
+                if (!$allowSecondaryVideoFallback || !$this->shouldFallbackFromGoogleVeoToSecondaryProvider($googleVeoError)) {
+                    throw $googleVeoError;
+                }
+
+                $fallbackProviders = $this->secondaryVideoProvidersForGoogleVeoFailure();
+                $fallbackFailures = [];
+
+                foreach ($fallbackProviders as $fallbackProvider) {
+                    try {
+                        if ($fallbackProvider === 'kling') {
+                            $result = $this->generateVideoWithKling(
+                                kling: $kling,
+                                item: $item,
+                                briefRaw: $briefRaw,
+                                fallbackPrompt: $prompt,
+                                videoPrompt: $klingExecutionPrompt,
+                                referenceAbs: is_string($referenceAbs) ? $referenceAbs : null,
+                                referencePath: is_string($referencePath) ? $referencePath : null,
+                                referenceAbsPool: $generationReferenceAbsPool,
+                                referencePaths: $imageReferencePathPool,
+                                referenceReason: $referenceReason . '_kling_fallback_after_google_veo_failure',
+                                compositionMeta: $compositionMeta,
+                                brandDecision: $brandDecision,
+                                videoOptions: $videoOptions,
+                                assetVariables: $assetVariables,
+                                activeFeedbackRequest: $activeFeedbackRequest,
+                                locationSequenceMode: $locationSequenceMode
+                            );
+                        } else {
+                            $result = $this->generateVideoWithOpenAi(
+                                openAi: $openAi,
+                                briefRaw: $briefRaw,
+                                fallbackPrompt: $prompt,
+                                videoPrompt: $this->buildOpenAiVideoFallbackPrompt($openAiExecutionPrompt, $briefRaw, $referencePaths),
+                                referenceAbs: $referenceAbs,
+                                referencePath: $referencePath,
+                                referencePaths: $referencePaths,
+                                referenceReason: $referenceReason . '_openai_fallback_after_google_veo_failure',
+                                generationReferenceAbsPool: $generationReferenceAbsPool,
+                                imageReferencePathPool: $imageReferencePathPool,
+                                validationReferenceAbsPool: $validationReferenceAbsPool,
+                                mustEnforceExplicitReferences: $mustValidateReferenceMatch,
+                                compositionMeta: $compositionMeta,
+                                brandDecision: $brandDecision,
+                                videoOptions: $videoOptions,
+                                assetVariables: $assetVariables,
+                                providerFallback: [
+                                    'from' => 'google_veo',
+                                    'to' => 'openai',
+                                    'reason' => Str::limit($googleVeoError->getMessage(), 220, ''),
+                                    'at' => now()->toDateTimeString(),
+                                ]
+                            );
+                        }
+
+                        $result['provider_fallback'] = [
+                            'from' => 'google_veo',
+                            'to' => $fallbackProvider,
+                            'reason' => Str::limit($googleVeoError->getMessage(), 220, ''),
+                            'at' => now()->toDateTimeString(),
+                            'nested' => $result['provider_fallback'] ?? null,
+                        ];
+
+                        return $finalizeVideoResult($result);
+                    } catch (Throwable $fallbackError) {
+                        $fallbackFailures[] = $fallbackProvider . ': ' . Str::limit($fallbackError->getMessage(), 220, '');
+
+                        Log::warning('GenerateAiForContentItem video fallback failed', [
+                            'content_item_id' => $item->id,
+                            'from_provider' => 'google_veo',
+                            'to_provider' => $fallbackProvider,
+                            'error' => $fallbackError->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (!empty($fallbackFailures)) {
+                    throw new \RuntimeException(
+                        $googleVeoError->getMessage() . ' | VIDEO_PROVIDER_FALLBACKS_FAILED=' . implode(' || ', $fallbackFailures),
+                        0,
+                        $googleVeoError
+                    );
+                }
+
+                throw $googleVeoError;
+            }
         }
 
         if ($videoProvider === 'kling') {
@@ -1182,7 +1270,7 @@ SVG;
                     locationSequenceMode: $locationSequenceMode
                 ));
             } catch (Throwable $klingError) {
-                if (!$allowCrossProviderFallback || !$this->shouldFallbackFromKlingToSecondaryProvider($klingError)) {
+                if (!$allowSecondaryVideoFallback || !$this->shouldFallbackFromKlingToSecondaryProvider($klingError)) {
                     throw $klingError;
                 }
 
@@ -1299,7 +1387,7 @@ SVG;
                     videoOptions: $videoOptions
                 ));
             } catch (Throwable $runwayError) {
-                if (!$allowCrossProviderFallback || !$this->shouldFallbackFromRunwayToOpenAi($runwayError)) {
+                if (!$allowSecondaryVideoFallback || !$this->shouldFallbackFromRunwayToOpenAi($runwayError)) {
                     throw $runwayError;
                 }
 
@@ -1408,7 +1496,7 @@ SVG;
                 providerFallback: null
             ));
         } catch (Throwable $openAiError) {
-            if (!$allowCrossProviderFallback || !$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiError)) {
+            if (!$allowSecondaryVideoFallback || !$this->shouldFallbackFromOpenAiToSecondaryProvider($openAiError)) {
                 throw $openAiError;
             }
 
@@ -2809,6 +2897,28 @@ SVG;
         $provider = $this->resolveVideoProvider($meta);
 
         return !$this->isStrictVideoModelSelection($provider, $meta);
+    }
+
+    public function canAttemptSecondaryVideoFallback(array $meta, string $provider): bool
+    {
+        if ($this->shouldAllowCrossProviderVideoFallback($meta)) {
+            return true;
+        }
+
+        return $this->shouldAllowLockedVideoProviderFailover($meta, $provider);
+    }
+
+    public function shouldAllowLockedVideoProviderFailover(array $meta, string $provider): bool
+    {
+        if (!(bool) config('generation.locked_video_provider_failover', true)) {
+            return false;
+        }
+
+        if (!(bool) data_get($meta, 'video_provider_lock', false)) {
+            return false;
+        }
+
+        return $this->resolveVideoProvider($meta) === strtolower(trim($provider));
     }
 
     /**
@@ -4535,12 +4645,51 @@ SVG;
             || $this->isTransientNetworkError($error);
     }
 
+    public function shouldFallbackFromGoogleVeoToSecondaryProvider(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+        if ($message === '') {
+            return false;
+        }
+
+        if (str_contains($message, 'missing google_veo_api_key')) {
+            return false;
+        }
+
+        if (str_contains($message, 'google veo video create error (400)')) {
+            return false;
+        }
+
+        return str_contains($message, 'google veo video generation timeout')
+            || str_contains($message, 'google veo video retrieve error (500)')
+            || str_contains($message, 'google veo video retrieve error (502)')
+            || str_contains($message, 'google veo video retrieve error (503)')
+            || str_contains($message, 'google veo video retrieve error (504)')
+            || str_contains($message, 'google veo completed payload missing downloadable video url')
+            || str_contains($message, 'google veo video download error')
+            || str_contains($message, 'google veo video download returned an empty body')
+            || str_contains($message, 'invalid google veo')
+            || str_contains($message, 'server error')
+            || str_contains($message, 'server_error')
+            || str_contains($message, 'temporarily unavailable')
+            || str_contains($message, 'gateway timeout')
+            || $this->isTransientNetworkError($error);
+    }
+
     /**
      * @return array<int, string>
      */
     public function secondaryVideoProvidersForKlingFailure(): array
     {
         return $this->capabilityRegistry()->fallbackProviders('kling', 'video');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function secondaryVideoProvidersForGoogleVeoFailure(): array
+    {
+        return $this->capabilityRegistry()->fallbackProviders('google_veo', 'video');
     }
 
     public function shouldFallbackFromOpenAiToSecondaryProvider(Throwable $error): bool

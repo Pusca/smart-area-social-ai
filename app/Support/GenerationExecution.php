@@ -97,10 +97,15 @@ class GenerationExecution
         $phpBinary = trim((string) ($phpBinary ?: self::resolvePhpBinary()));
         $artisanPath = trim((string) ($artisanPath ?: self::resolveQueueWorkerEntrypoint()));
         $connection = trim((string) ($connection ?: config('queue.default', 'database')));
+        $queue = trim((string) config('queue.connections.' . $connection . '.queue', 'default'));
+        if ($queue === '') {
+            $queue = 'default';
+        }
         $arguments = [
             'queue:work',
             $connection,
-            '--once',
+            '--queue=' . $queue,
+            '--stop-when-empty',
             '--timeout=1200',
             '--tries=1',
             '--sleep=1',

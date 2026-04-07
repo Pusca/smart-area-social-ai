@@ -42,7 +42,8 @@ class GenerationExecutionTest extends TestCase
 
         $this->assertStringContainsString('queue:work', $command);
         $this->assertStringContainsString('database', $command);
-        $this->assertStringContainsString('--once', $command);
+        $this->assertStringContainsString('--queue=default', $command);
+        $this->assertStringContainsString('--stop-when-empty', $command);
         $this->assertStringContainsString('--timeout=1200', $command);
     }
 

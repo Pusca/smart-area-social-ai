@@ -4,6 +4,8 @@ return [
     'force_sync' => (bool) env('GENERATION_FORCE_SYNC', false),
     'queue_auto_kick' => (bool) env('GENERATION_QUEUE_AUTO_KICK', true),
     'queue_http_drain_fallback' => (bool) env('GENERATION_QUEUE_HTTP_DRAIN_FALLBACK', true),
+    'queued_nudge_after_seconds' => (int) env('GENERATION_QUEUED_NUDGE_AFTER_SECONDS', 15),
+    'queued_recovery_retry_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_RETRY_SECONDS', 45),
     'queued_stale_after_seconds' => (int) env('GENERATION_QUEUED_STALE_AFTER_SECONDS', 480),
     'queued_recovery_grace_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_GRACE_SECONDS', 150),
     'pending_stale_after_seconds' => (int) env('GENERATION_PENDING_STALE_AFTER_SECONDS', 1800),
@@ -20,6 +22,7 @@ return [
 
     'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'kling'),
     'video_providers' => ['openai', 'runway', 'kling', 'google_veo'],
+    'locked_video_provider_failover' => (bool) env('GENERATION_LOCKED_VIDEO_PROVIDER_FAILOVER', true),
 
     'image_provider_default' => env('IMAGE_PROVIDER_DEFAULT', 'nanobanana'),
     'image_providers' => ['nanobanana', 'openai'],

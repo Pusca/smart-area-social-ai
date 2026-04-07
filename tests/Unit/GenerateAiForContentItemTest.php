@@ -69,6 +69,25 @@ class GenerateAiForContentItemTest extends TestCase
         ]));
     }
 
+    public function test_it_allows_locked_video_provider_failover_when_enabled(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'canAttemptSecondaryVideoFallback');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, [
+            'video_provider' => 'google_veo',
+            'video_provider_lock' => true,
+        ], 'google_veo'));
+
+        config()->set('generation.locked_video_provider_failover', false);
+
+        $this->assertFalse($method->invoke($job, [
+            'video_provider' => 'google_veo',
+            'video_provider_lock' => true,
+        ], 'google_veo'));
+    }
+
     public function test_it_disables_cross_provider_fallback_when_google_veo_strict_model_is_enabled(): void
     {
         config()->set('google_veo.strict_model', true);
@@ -80,6 +99,18 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertFalse($method->invoke($job, [
             'video_provider' => 'google_veo',
         ]));
+    }
+
+    public function test_it_marks_google_veo_runtime_failures_as_fallback_candidates(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldFallbackFromGoogleVeoToSecondaryProvider');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, new RuntimeException('Google Veo completed payload missing downloadable video URL.')));
+        $this->assertTrue($method->invoke($job, new RuntimeException('Google Veo video generation timeout after 900s')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('Missing GOOGLE_VEO_API_KEY')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('Google Veo video create error (400) BODY=validation error')));
     }
 
     public function test_it_builds_creative_direction_prompt_instructions_for_overlay_and_continuity(): void
