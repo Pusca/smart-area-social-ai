@@ -99,6 +99,118 @@ class GoogleVeoService
     }
 
     /**
+     * @return array{bytes:string,mime:string,normalized:bool,source_mime:string,source_bytes:int,payload_bytes:int}|null
+     */
+    private function prepareReferenceImagePayload(string $absolutePath): ?array
+    {
+        if (!is_file($absolutePath)) {
+            return null;
+        }
+
+        $sourceMime = strtolower((string) (mime_content_type($absolutePath) ?: ''));
+        if (!str_starts_with($sourceMime, 'image/') || str_contains($sourceMime, 'svg')) {
+            return null;
+        }
+
+        $sourceBytes = @file_get_contents($absolutePath);
+        if (!is_string($sourceBytes) || $sourceBytes === '') {
+            return null;
+        }
+
+        $sourceLength = strlen($sourceBytes);
+        $image = $this->loadRasterImage($absolutePath, $sourceMime);
+        if (!$image) {
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        $srcW = imagesx($image);
+        $srcH = imagesy($image);
+        if ($srcW < 1 || $srcH < 1) {
+            imagedestroy($image);
+
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        $maxDim = max(512, (int) (config('google_veo.reference_max_dimension') ?: 1280));
+        $quality = max(60, min(92, (int) (config('google_veo.reference_jpeg_quality') ?: 84)));
+        $scale = min(1.0, $maxDim / max($srcW, $srcH));
+        $dstW = max(1, (int) round($srcW * $scale));
+        $dstH = max(1, (int) round($srcH * $scale));
+
+        $canvas = imagecreatetruecolor($dstW, $dstH);
+        imagealphablending($canvas, true);
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $dstW, $dstH, $white);
+        imagecopyresampled($canvas, $image, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+
+        ob_start();
+        imagejpeg($canvas, null, $quality);
+        $jpegBytes = ob_get_clean();
+
+        imagedestroy($canvas);
+        imagedestroy($image);
+
+        if (!is_string($jpegBytes) || $jpegBytes === '') {
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        $jpegLength = strlen($jpegBytes);
+        $shouldUseNormalized = $scale < 1.0 || $jpegLength < $sourceLength;
+
+        if (!$shouldUseNormalized) {
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        return [
+            'bytes' => $jpegBytes,
+            'mime' => 'image/jpeg',
+            'normalized' => true,
+            'source_mime' => $sourceMime,
+            'source_bytes' => $sourceLength,
+            'payload_bytes' => $jpegLength,
+        ];
+    }
+
+    private function loadRasterImage(string $path, string $mime)
+    {
+        return match (strtolower($mime)) {
+            'image/png' => @imagecreatefrompng($path),
+            'image/jpeg', 'image/jpg' => @imagecreatefromjpeg($path),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : false,
+            'image/gif' => @imagecreatefromgif($path),
+            default => false,
+        };
+    }
+
+    /**
      * @param  array<string, mixed>  $options
      * @return array{id:string,raw:array<string,mixed>,request_summary:array<string,mixed>}
      */
@@ -128,12 +240,11 @@ class GoogleVeoService
 
         $hasImageInput = false;
         if (is_string($inputReferenceAbsolutePath) && $inputReferenceAbsolutePath !== '' && is_file($inputReferenceAbsolutePath)) {
-            $mime = strtolower((string) (mime_content_type($inputReferenceAbsolutePath) ?: ''));
-            $bytes = @file_get_contents($inputReferenceAbsolutePath);
-            if (str_starts_with($mime, 'image/') && is_string($bytes) && $bytes !== '') {
+            $referencePayload = $this->prepareReferenceImagePayload($inputReferenceAbsolutePath);
+            if (is_array($referencePayload)) {
                 $payload['instances'][0]['image'] = [
-                    'bytesBase64Encoded' => base64_encode($bytes),
-                    'mimeType' => $mime,
+                    'bytesBase64Encoded' => base64_encode((string) $referencePayload['bytes']),
+                    'mimeType' => (string) $referencePayload['mime'],
                 ];
                 $payload['parameters']['personGeneration'] = (string) (config('google_veo.person_generation_image') ?: 'allow_adult');
                 if ($this->shouldForceEightSecondReferenceVideo($model)) {
@@ -185,6 +296,13 @@ class GoogleVeoService
             'has_image_input' => $hasImageInput,
             'has_negative_prompt' => $negativePrompt !== '',
         ];
+        if (isset($referencePayload) && is_array($referencePayload)) {
+            $summary['image_input_mime'] = (string) ($referencePayload['mime'] ?? '');
+            $summary['image_input_source_mime'] = (string) ($referencePayload['source_mime'] ?? '');
+            $summary['image_input_normalized'] = (bool) ($referencePayload['normalized'] ?? false);
+            $summary['image_input_source_bytes'] = (int) ($referencePayload['source_bytes'] ?? 0);
+            $summary['image_input_payload_bytes'] = (int) ($referencePayload['payload_bytes'] ?? 0);
+        }
 
         Log::info('GoogleVeoService createVideoJob', $summary + [
             'operation_name' => $operationName,

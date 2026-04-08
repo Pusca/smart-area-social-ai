@@ -116,6 +116,28 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertFalse($method->invoke($job, new RuntimeException('Google Veo video create error (400) BODY=validation error')));
     }
 
+    public function test_it_defaults_video_output_language_to_italian(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $instruction = $job->videoOutputLanguageInstruction([
+            'manual_brief' => 'Mostra il locale con stile premium.',
+        ], 'Crea un reel realistico per Instagram.');
+
+        $this->assertStringContainsString('italiano naturale', $instruction);
+    }
+
+    public function test_it_respects_explicit_non_italian_video_language_requests(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $instruction = $job->videoOutputLanguageInstruction([
+            'manual_brief' => 'Make it in English for a US audience.',
+        ], 'Create a premium social reel.', true);
+
+        $this->assertStringContainsString('Requested output language: English', $instruction);
+    }
+
     public function test_it_marks_nanobanana_empty_image_payloads_as_openai_fallback_candidates(): void
     {
         $job = new GenerateAiForContentItem(1);

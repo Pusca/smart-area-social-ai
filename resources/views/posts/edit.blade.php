@@ -45,7 +45,9 @@
     if (!array_key_exists($imageProviderValue, $imageProviderOptions)) {
         $imageProviderValue = 'nanobanana';
     }
+    $videoProviderRequested = (string) data_get($contentItem->ai_meta, 'video_generation.provider_requested', data_get($contentItem->ai_meta, 'video_provider_requested', $videoProviderValue));
     $videoProviderLastUsed = (string) data_get($contentItem->ai_meta, 'video_provider_last_used', $videoProviderValue);
+    $videoProviderEffective = (string) data_get($contentItem->ai_meta, 'video_generation.provider_effective', data_get($contentItem->ai_meta, 'video_generation.provider', $videoProviderLastUsed));
     $videoProviderLabels = [
         'openai' => 'Sora + GPT',
         'runway' => 'Runway',
@@ -145,11 +147,11 @@
                         {{ $publicationInfo['label'] }}
                     </span>
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        Video provider: {{ $videoProviderLabels[$videoProviderValue] ?? 'Video AI' }}
+                        Video richiesto: {{ $videoProviderLabels[$videoProviderRequested] ?? ($videoProviderLabels[$videoProviderValue] ?? 'Video AI') }}
                     </span>
-                    @if($videoProviderLastUsed !== '' && $videoProviderLastUsed !== $videoProviderValue)
+                    @if($videoProviderEffective !== '' && $videoProviderEffective !== $videoProviderRequested)
                         <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                            Ultimo output video: {{ $videoProviderLabels[$videoProviderLastUsed] ?? 'Video AI' }}
+                            Video effettivo: {{ $videoProviderLabels[$videoProviderEffective] ?? 'Video AI' }}
                         </span>
                     @endif
                     <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">

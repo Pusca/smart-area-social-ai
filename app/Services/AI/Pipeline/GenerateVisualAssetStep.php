@@ -173,9 +173,13 @@ class GenerateVisualAssetStep
 
                     $metaNow = is_array($item->ai_meta) ? $item->ai_meta : [];
                     $storyboardMeta = (array) data_get($metaNow, 'storyboard_meta', []);
+                    $requestedVideoProvider = \App\Support\VideoProviderResolver::normalize((string) data_get($metaNow, 'video_provider', ''));
+                    $effectiveVideoProvider = (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai'));
                     $metaNow['video_generation'] = [
                         'source' => (string) ($videoResult['source'] ?? 'sora_video'),
-                        'provider' => (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai')),
+                        'provider' => $effectiveVideoProvider,
+                        'provider_requested' => $requestedVideoProvider !== '' ? $requestedVideoProvider : $effectiveVideoProvider,
+                        'provider_effective' => $effectiveVideoProvider,
                         'video_id' => (string) ($videoResult['video_id'] ?? ''),
                         'video_path' => $videoPath,
                         'thumbnail_path' => $thumbPath,
@@ -208,8 +212,8 @@ class GenerateVisualAssetStep
                         'provider_fallback' => $videoResult['provider_fallback'] ?? null,
                         'generated_at' => now()->toDateTimeString(),
                     ];
-                    $metaNow['video_provider_requested'] = \App\Support\VideoProviderResolver::normalize((string) data_get($metaNow, 'video_provider', ''));
-                    $metaNow['video_provider_last_used'] = (string) ($videoResult['provider'] ?? data_get($metaNow, 'video_provider', 'openai'));
+                    $metaNow['video_provider_requested'] = $requestedVideoProvider;
+                    $metaNow['video_provider_last_used'] = $effectiveVideoProvider;
                     $item->ai_meta = $metaNow;
 
                     $assets = array_values(array_filter(

@@ -2520,7 +2520,88 @@ SVG;
             $parts[] = 'Usa i riferimenti richiesti dall utente in modo riconoscibile, senza sostituire i soggetti principali con alternative casuali.';
         }
 
+        $parts[] = $this->videoOutputLanguageInstruction($meta, $briefRaw);
+
         return Str::limit(trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== ''))), 900, '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public function videoOutputLanguageInstruction(array $meta, string $briefRaw, bool $english = false): string
+    {
+        $language = $this->detectExplicitVideoOutputLanguage([
+            $briefRaw,
+            (string) data_get($meta, 'manual_brief', ''),
+            (string) data_get($meta, 'video_prompt', ''),
+            (string) data_get($meta, 'voiceover', ''),
+            (string) data_get($meta, 'caption', ''),
+            (string) data_get($meta, 'title', ''),
+        ]);
+
+        if ($language !== null && $language !== 'it') {
+            $label = $this->videoOutputLanguageLabel($language, $english);
+
+            return $english
+                ? "Requested output language: {$label}. Keep dialogue, voice, subtitles, readable signage and any visible text in {$label} because the brief explicitly asks for it."
+                : "Lingua output richiesta: {$label}. Mantieni dialoghi, voce, sottotitoli, insegne leggibili e testo visibile in {$label} perche il brief lo richiede esplicitamente.";
+        }
+
+        return $english
+            ? 'Default output language: Italian. If there is dialogue, voice, subtitles, readable signage or any visible text, it must be natural Italian unless the user explicitly asked for another language.'
+            : 'Lingua output predefinita: italiano naturale. Se compaiono dialoghi, voce, sottotitoli, insegne leggibili o testo visibile, devono essere in italiano corretto salvo richiesta esplicita diversa nel brief.';
+    }
+
+    /**
+     * @param  array<int, string>  $texts
+     */
+    private function detectExplicitVideoOutputLanguage(array $texts): ?string
+    {
+        $source = Str::lower(trim(implode(' ', array_filter(
+            array_map(fn ($value) => is_string($value) ? trim($value) : '', $texts),
+            fn ($value) => $value !== ''
+        ))));
+
+        if ($source === '') {
+            return null;
+        }
+
+        $patterns = [
+            'en' => ['/\\bin english\\b/u', '/\\benglish\\b/u', '/\\bin inglese\\b/u', '/\\binglese\\b/u'],
+            'es' => ['/\\bin spanish\\b/u', '/\\bspanish\\b/u', '/\\bin spagnolo\\b/u', '/\\bspagnolo\\b/u'],
+            'fr' => ['/\\bin french\\b/u', '/\\bfrench\\b/u', '/\\bin francese\\b/u', '/\\bfrancese\\b/u'],
+            'de' => ['/\\bin german\\b/u', '/\\bgerman\\b/u', '/\\bin tedesco\\b/u', '/\\btedesco\\b/u'],
+            'pt' => ['/\\bin portuguese\\b/u', '/\\bportuguese\\b/u', '/\\bin portoghese\\b/u', '/\\bportoghese\\b/u'],
+            'it' => ['/\\bin italian\\b/u', '/\\bitalian\\b/u', '/\\bin italiano\\b/u', '/\\bitaliano\\b/u'],
+        ];
+
+        foreach (['en', 'es', 'fr', 'de', 'pt'] as $language) {
+            foreach ($patterns[$language] as $pattern) {
+                if (preg_match($pattern, $source) === 1) {
+                    return $language;
+                }
+            }
+        }
+
+        foreach ($patterns['it'] as $pattern) {
+            if (preg_match($pattern, $source) === 1) {
+                return 'it';
+            }
+        }
+
+        return null;
+    }
+
+    private function videoOutputLanguageLabel(string $language, bool $english = false): string
+    {
+        return match ($language) {
+            'en' => $english ? 'English' : 'inglese',
+            'es' => $english ? 'Spanish' : 'spagnolo',
+            'fr' => $english ? 'French' : 'francese',
+            'de' => $english ? 'German' : 'tedesco',
+            'pt' => $english ? 'Portuguese' : 'portoghese',
+            default => $english ? 'Italian' : 'italiano',
+        };
     }
 
     /**
@@ -2821,6 +2902,7 @@ SVG;
         }
         $parts[] = 'Ogni shot deve cambiare davvero per angolazione, distanza, movimento camera o dettaglio principale, mantenendo continuita narrativa.';
         $parts[] = 'Movimenti camera preferiti: push-in leggero, reveal laterale, tracking morbido, micro parallax. Evita motion caotico.';
+        $parts[] = $this->videoOutputLanguageInstruction($meta, (string) data_get($meta, 'manual_brief', ''));
 
         $limit = (int) (config('runway.max_prompt_chars') ?: 1400);
         $limit = max(600, min(1600, $limit));
@@ -2891,6 +2973,7 @@ SVG;
         if ($this->feedbackTargetsVisual($activeFeedbackRequest)) {
             $parts[] = 'This generation follows a correction request: the new result must visibly improve, not just slightly vary the previous cut.';
         }
+        $parts[] = $this->videoOutputLanguageInstruction($meta, (string) data_get($meta, 'manual_brief', ''), true);
 
         $limit = (int) (config('kling.max_prompt_chars') ?: 1400);
         $limit = max(400, min(1800, $limit));
@@ -2954,6 +3037,7 @@ SVG;
         if ($this->hasPersonAssetVariable($assetVariables)) {
             $parts[] = 'If the brand person appears, keep the same real person identity from start to end.';
         }
+        $parts[] = $this->videoOutputLanguageInstruction($meta, (string) data_get($meta, 'manual_brief', ''), true);
 
         $parts[] = 'Primary visual brief follows. Proper names and brand specifics may appear in Italian; preserve them faithfully.';
         $parts[] = $videoPrompt;

@@ -55,6 +55,53 @@ class GoogleVeoServiceTest extends TestCase
         }
     }
 
+    public function test_it_normalizes_large_reference_images_before_sending_them_to_google_veo(): void
+    {
+        if (!function_exists('imagecreatetruecolor')) {
+            $this->markTestSkipped('GD extension is required for image normalization tests.');
+        }
+
+        config()->set('google_veo.api_key', 'google-veo-key');
+        config()->set('google_veo.base_url', 'https://generativelanguage.googleapis.com');
+        config()->set('google_veo.api_version', 'v1beta');
+        config()->set('google_veo.model', 'veo-3.1-generate-preview');
+        config()->set('google_veo.reference_max_dimension', 1280);
+        config()->set('google_veo.reference_jpeg_quality', 84);
+
+        $imagePath = tempnam(sys_get_temp_dir(), 'veo-large-');
+        $canvas = imagecreatetruecolor(2200, 1800);
+        imagefill($canvas, 0, 0, imagecolorallocate($canvas, 24, 84, 160));
+        imagepng($canvas, $imagePath, 0);
+        imagedestroy($canvas);
+
+        Http::fake([
+            'https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning' => function (Request $request) {
+                $this->assertSame('image/jpeg', data_get($request->data(), 'instances.0.image.mimeType'));
+                $this->assertNotEmpty((string) data_get($request->data(), 'instances.0.image.bytesBase64Encoded'));
+
+                return Http::response([
+                    'name' => 'operations/veo-task-large',
+                ], 200);
+            },
+        ]);
+
+        try {
+            $service = app(GoogleVeoService::class);
+            $result = $service->createVideoJob('Prompt di test', $imagePath, [
+                'model' => 'veo3.1',
+                'seconds' => 8,
+                'size' => '720x1280',
+            ]);
+
+            $this->assertSame('operations/veo-task-large', $result['id']);
+            $this->assertTrue((bool) data_get($result, 'request_summary.image_input_normalized'));
+            $this->assertSame('image/jpeg', data_get($result, 'request_summary.image_input_mime'));
+            $this->assertSame('image/png', data_get($result, 'request_summary.image_input_source_mime'));
+        } finally {
+            @unlink($imagePath);
+        }
+    }
+
     public function test_it_waits_for_completion_and_downloads_google_veo_video(): void
     {
         config()->set('google_veo.api_key', 'google-veo-key');

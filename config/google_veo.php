@@ -21,6 +21,8 @@ return [
     'negative_prompt' => $envOrDefault('GOOGLE_VEO_NEGATIVE_PROMPT', ''),
     'generate_audio' => (bool) env('GOOGLE_VEO_GENERATE_AUDIO', false),
     'max_prompt_chars' => (int) env('GOOGLE_VEO_MAX_PROMPT_CHARS', 1600),
+    'reference_max_dimension' => (int) env('GOOGLE_VEO_REFERENCE_MAX_DIMENSION', 1280),
+    'reference_jpeg_quality' => (int) env('GOOGLE_VEO_REFERENCE_JPEG_QUALITY', 84),
 
     'timeout_create' => (int) env('GOOGLE_VEO_TIMEOUT_CREATE', 60),
     'timeout_poll' => (int) env('GOOGLE_VEO_TIMEOUT_POLL', 60),
