@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>{{ config('app.name', 'Social AI') }}</title>
     <meta name="theme-color" content="#0A2D6F">
@@ -147,6 +148,192 @@
             </div>
         </div>
     </nav>
+
+    @auth
+        <div
+            id="generation-drawer"
+            data-feed-url="{{ route('posts.generation.feed') }}"
+            class="pointer-events-none fixed inset-x-0 bottom-20 z-50 hidden px-3 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[24rem] sm:px-0"
+        >
+            <div class="pointer-events-auto overflow-hidden rounded-[28px] border border-slate-200 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.18)] backdrop-blur">
+                <button
+                    id="generation-drawer-toggle"
+                    type="button"
+                    class="flex w-full items-center justify-between gap-3 bg-gradient-to-r from-cyan-500 via-sky-600 to-indigo-700 px-4 py-4 text-left text-white"
+                    aria-expanded="true"
+                >
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/80">Generazioni attive</p>
+                        <p id="generation-drawer-summary" class="mt-1 truncate text-sm font-semibold">Sto seguendo i contenuti in background.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="generation-drawer-count" class="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-white/18 px-2 py-1 text-xs font-semibold text-white">0</span>
+                        <span id="generation-drawer-chevron" class="text-lg leading-none">−</span>
+                    </div>
+                </button>
+
+                <div id="generation-drawer-body" class="space-y-3 border-t border-slate-200 bg-white/96 p-3">
+                    <div id="generation-drawer-items" class="max-h-[55vh] space-y-3 overflow-y-auto pr-1"></div>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-600">
+                        Puoi continuare a navigare: aggiorno questo pannello finche la generazione non esce da sola da queued o pending.
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endauth
+
+    @auth
+        <script>
+            (() => {
+                const root = document.getElementById('generation-drawer');
+                if (!root || !window.fetch) {
+                    return;
+                }
+
+                const feedUrl = root.dataset.feedUrl || '';
+                if (!feedUrl) {
+                    return;
+                }
+
+                const toggleBtn = document.getElementById('generation-drawer-toggle');
+                const bodyEl = document.getElementById('generation-drawer-body');
+                const itemsEl = document.getElementById('generation-drawer-items');
+                const countEl = document.getElementById('generation-drawer-count');
+                const summaryEl = document.getElementById('generation-drawer-summary');
+                const chevronEl = document.getElementById('generation-drawer-chevron');
+                const collapsedKey = 'socialai:generation-drawer:collapsed';
+                let pollTimer = null;
+
+                const formatAge = (seconds) => {
+                    const safe = Math.max(0, Math.round(Number(seconds || 0)));
+                    if (safe < 60) {
+                        return `${safe} sec`;
+                    }
+
+                    const minutes = Math.floor(safe / 60);
+                    const rest = safe % 60;
+                    return rest > 0 ? `${minutes} min ${rest} sec` : `${minutes} min`;
+                };
+
+                const escapeHtml = (value) => String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+
+                const setCollapsed = (collapsed) => {
+                    if (!bodyEl || !toggleBtn) {
+                        return;
+                    }
+
+                    bodyEl.classList.toggle('hidden', collapsed);
+                    toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                    if (chevronEl) {
+                        chevronEl.textContent = collapsed ? '+' : '−';
+                    }
+                    window.localStorage.setItem(collapsedKey, collapsed ? '1' : '0');
+                };
+
+                const isCollapsed = () => window.localStorage.getItem(collapsedKey) === '1';
+
+                const renderItems = (items) => {
+                    if (!itemsEl || !summaryEl || !countEl) {
+                        return;
+                    }
+
+                    if (!Array.isArray(items) || items.length === 0) {
+                        root.classList.add('hidden');
+                        itemsEl.innerHTML = '';
+                        countEl.textContent = '0';
+                        summaryEl.textContent = 'Nessuna generazione attiva.';
+                        return;
+                    }
+
+                    root.classList.remove('hidden');
+                    countEl.textContent = String(items.length);
+                    summaryEl.textContent = items.length === 1
+                        ? `1 contenuto in lavorazione: ${items[0]?.title || 'contenuto'}`
+                        : `${items.length} contenuti in lavorazione`;
+
+                    itemsEl.innerHTML = items.map((item) => {
+                        const status = item?.status || {};
+                        const runtime = item?.runtime || {};
+                        const progress = Math.max(6, Math.min(100, Number(runtime.progress || 0)));
+                        const title = escapeHtml(item?.title || `Contenuto #${item?.id || ''}`);
+                        const stage = escapeHtml(runtime.stage_label || status.description || 'Generazione in corso');
+                        const age = formatAge(runtime.age_seconds || 0);
+                        const editUrl = escapeHtml(item?.edit_url || '#');
+                        const generatingUrl = escapeHtml(item?.generating_url || editUrl);
+                        const format = escapeHtml(String(item?.format || 'post').toUpperCase());
+                        const platform = escapeHtml(String(item?.platform || 'instagram').toUpperCase());
+                        const badgeClass = escapeHtml(status.badge || 'border-slate-200 bg-slate-50 text-slate-700');
+                        const label = escapeHtml(status.label || 'In lavorazione');
+
+                        return `
+                            <article class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-semibold text-slate-900">${title}</p>
+                                        <p class="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">${format} · ${platform}</p>
+                                    </div>
+                                    <span class="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeClass}">
+                                        ${label}
+                                    </span>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="flex items-center justify-between gap-3 text-xs text-slate-600">
+                                        <span class="truncate">${stage}</span>
+                                        <span>${age}</span>
+                                    </div>
+                                    <div class="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                                        <div class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-sky-500 to-emerald-400" style="width:${progress}%"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-3 flex items-center gap-2">
+                                    <a href="${editUrl}" class="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Apri contenuto</a>
+                                    <a href="${generatingUrl}" class="inline-flex items-center rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">Apri live</a>
+                                </div>
+                            </article>
+                        `;
+                    }).join('');
+                };
+
+                const poll = async () => {
+                    try {
+                        const response = await fetch(feedUrl, {
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                            credentials: 'same-origin',
+                            cache: 'no-store',
+                        });
+
+                        if (!response.ok) {
+                            return;
+                        }
+
+                        const payload = await response.json();
+                        renderItems(Array.isArray(payload?.items) ? payload.items : []);
+                    } catch (_) {
+                        // no-op
+                    }
+                };
+
+                setCollapsed(isCollapsed());
+                poll();
+                pollTimer = window.setInterval(poll, 8000);
+
+                toggleBtn?.addEventListener('click', () => {
+                    setCollapsed(!isCollapsed());
+                });
+
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        poll();
+                    }
+                });
+            })();
+        </script>
+    @endauth
 </body>
 </html>
 

@@ -93,6 +93,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
 
     Route::prefix('posts')->name('posts.')->group(function () {
         Route::get('/', [ContentItemController::class, 'index'])->name('index');
+        Route::get('/generation-feed', [ContentItemController::class, 'activeGenerations'])->name('generation.feed');
 
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');
         Route::get('/reels/create', [ContentItemController::class, 'createReel'])->name('reels.create');

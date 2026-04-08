@@ -12,6 +12,12 @@ use Throwable;
 
 class GenerationExecution
 {
+    /**
+     * @var array<int, int>
+     */
+    private static array $afterResponseContentItems = [];
+    private static bool $afterResponseRegistered = false;
+
     public static function shouldRunSync(): bool
     {
         return app()->environment('local');
@@ -19,7 +25,10 @@ class GenerationExecution
 
     public static function shouldDispatchAfterResponse(): bool
     {
-        return false;
+        return !self::shouldRunSync()
+            && !app()->runningInConsole()
+            && !app()->runningUnitTests()
+            && (bool) config('generation.after_response_enabled', true);
     }
 
     public static function shouldKickBackgroundQueueWorker(): bool
@@ -42,13 +51,66 @@ class GenerationExecution
             return;
         }
 
+        // The request that created/regenerated the content item is the most reliable
+        // runner on constrained hosting: once the response is sent, continue in-process.
+        self::ensureAfterResponseProcessor($contentItemId);
+
         if (self::shouldKickBackgroundQueueWorker()) {
-            if (self::ensureBackgroundQueueWorker($contentItemId)) {
-                return;
-            }
+            self::ensureBackgroundQueueWorker($contentItemId);
         }
 
+        // Keep the database queue as a durable backup in case the web-side bootstrap dies.
         GenerateAiForContentItem::dispatch($contentItemId);
+    }
+
+    public static function ensureAfterResponseProcessor(?int $contentItemId = null): bool
+    {
+        if (!self::shouldDispatchAfterResponse()) {
+            return false;
+        }
+
+        if (($contentItemId ?? 0) > 0) {
+            self::$afterResponseContentItems[(int) $contentItemId] = (int) $contentItemId;
+        }
+
+        if (self::$afterResponseRegistered) {
+            return true;
+        }
+
+        self::$afterResponseRegistered = true;
+
+        app()->terminating(static function (): void {
+            if (empty(self::$afterResponseContentItems)) {
+                self::$afterResponseRegistered = false;
+
+                return;
+            }
+
+            $contentItemIds = array_slice(
+                array_values(array_unique(self::$afterResponseContentItems)),
+                0,
+                max(1, (int) config('generation.after_response_batch_limit', 2))
+            );
+
+            self::$afterResponseContentItems = [];
+            self::$afterResponseRegistered = false;
+
+            ignore_user_abort(true);
+            @set_time_limit(0);
+
+            foreach ($contentItemIds as $contentItemId) {
+                try {
+                    self::runContentItemDirect((int) $contentItemId);
+                } catch (Throwable $e) {
+                    Log::warning('GenerationExecution after-response processor failed', [
+                        'content_item_id' => (int) $contentItemId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        });
+
+        return true;
     }
 
     public static function ensureBackgroundQueueWorker(?int $contentItemId = null): bool
@@ -144,16 +206,6 @@ class GenerationExecution
             return 0;
         }
 
-        $lockKey = 'generation:content-item-running:' . (int) $item->id;
-        if (!Cache::add($lockKey, now()->timestamp, 90)) {
-            Log::info('GenerationExecution direct run skipped because content item is already starting', [
-                'content_item_id' => $item->id,
-                'ai_status' => $status,
-            ]);
-
-            return 0;
-        }
-
         $job = new GenerateAiForContentItem((int) $item->id, $runKey);
 
         try {
@@ -165,8 +217,6 @@ class GenerationExecution
             $job->failed($e);
 
             throw $e;
-        } finally {
-            Cache::forget($lockKey);
         }
     }
 

@@ -2,14 +2,17 @@
 
 return [
     'force_sync' => (bool) env('GENERATION_FORCE_SYNC', false),
+    'after_response_enabled' => (bool) env('GENERATION_AFTER_RESPONSE_ENABLED', true),
+    'after_response_batch_limit' => (int) env('GENERATION_AFTER_RESPONSE_BATCH_LIMIT', 2),
     'queue_auto_kick' => (bool) env('GENERATION_QUEUE_AUTO_KICK', true),
     'queue_http_drain_fallback' => (bool) env('GENERATION_QUEUE_HTTP_DRAIN_FALLBACK', true),
     'processor_batch_limit' => (int) env('GENERATION_PROCESSOR_BATCH_LIMIT', 1),
-    'queued_nudge_after_seconds' => (int) env('GENERATION_QUEUED_NUDGE_AFTER_SECONDS', 15),
-    'queued_recovery_retry_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_RETRY_SECONDS', 45),
-    'queued_stale_after_seconds' => (int) env('GENERATION_QUEUED_STALE_AFTER_SECONDS', 480),
-    'queued_recovery_grace_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_GRACE_SECONDS', 150),
-    'pending_stale_after_seconds' => (int) env('GENERATION_PENDING_STALE_AFTER_SECONDS', 1800),
+    'active_drawer_limit' => (int) env('GENERATION_ACTIVE_DRAWER_LIMIT', 5),
+    'queued_nudge_after_seconds' => (int) env('GENERATION_QUEUED_NUDGE_AFTER_SECONDS', 6),
+    'queued_recovery_retry_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_RETRY_SECONDS', 20),
+    'queued_stale_after_seconds' => (int) env('GENERATION_QUEUED_STALE_AFTER_SECONDS', 150),
+    'queued_recovery_grace_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_GRACE_SECONDS', 60),
+    'pending_stale_after_seconds' => (int) env('GENERATION_PENDING_STALE_AFTER_SECONDS', 900),
 
     'text_provider_default' => env('TEXT_PROVIDER_DEFAULT', 'openai'),
     'text_providers' => ['openai'],

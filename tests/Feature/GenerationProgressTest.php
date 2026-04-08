@@ -62,7 +62,83 @@ class GenerationProgressTest extends TestCase
             ->assertJsonPath('item_id', $item->id)
             ->assertJsonPath('ai_status', 'queued')
             ->assertJsonPath('active', true)
-            ->assertJsonPath('redirect_url', route('posts.edit', $item));
+            ->assertJsonPath('redirect_url', route('posts.edit', $item))
+            ->assertJsonPath('runtime.stage_label', 'In attesa di bootstrap');
+    }
+
+    public function test_active_generation_feed_lists_current_tenant_items_only(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Demo Tenant',
+            'slug' => 'demo-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        $otherTenant = Tenant::create([
+            'name' => 'Other Tenant',
+            'slug' => 'other-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+
+        $user = User::factory()->create([
+            'tenant_id' => $tenant->id,
+            'role' => 'owner',
+        ]);
+
+        $plan = ContentPlan::create([
+            'tenant_id' => $tenant->id,
+            'created_by' => $user->id,
+            'name' => 'Piano demo',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->toDateString(),
+            'status' => 'draft',
+            'settings' => ['mode' => 'single_manual'],
+        ]);
+
+        $otherPlan = ContentPlan::create([
+            'tenant_id' => $otherTenant->id,
+            'created_by' => $user->id,
+            'name' => 'Other plan',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->toDateString(),
+            'status' => 'draft',
+            'settings' => ['mode' => 'single_manual'],
+        ]);
+
+        $activeItem = ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'status' => 'draft',
+            'title' => 'Demo post',
+            'caption' => 'Brief demo',
+            'ai_status' => 'queued',
+            'ai_meta' => ['source' => 'manual_single_content'],
+        ]);
+
+        ContentItem::create([
+            'tenant_id' => $otherTenant->id,
+            'content_plan_id' => $otherPlan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'status' => 'draft',
+            'title' => 'Other post',
+            'caption' => 'Brief other',
+            'ai_status' => 'queued',
+            'ai_meta' => ['source' => 'manual_single_content'],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('posts.generation.feed'))
+            ->assertOk()
+            ->assertJsonPath('count', 1)
+            ->assertJsonPath('items.0.id', $activeItem->id)
+            ->assertJsonPath('items.0.stage', 'In attesa di bootstrap');
     }
 
     public function test_plan_generation_page_is_available_for_quickstart_context(): void

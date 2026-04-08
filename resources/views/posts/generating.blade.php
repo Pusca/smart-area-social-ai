@@ -69,6 +69,9 @@
                     <a href="{{ $returnUrl }}" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-app bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:border-brand hover:text-brand">
                         Apri il contenuto adesso
                     </a>
+                    <a href="{{ route('posts.index') }}" class="mt-2 inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+                        Continua a navigare
+                    </a>
                 </div>
             </div>
         </div>
@@ -233,6 +236,12 @@
                 }
                 if (status.description) {
                     statusDescriptionEl.textContent = status.description;
+                }
+                if (payload.runtime?.stage_label) {
+                    stageEl.textContent = payload.runtime.stage_label;
+                }
+                if (payload.runtime?.age_seconds > 0 && !payload.completed && !payload.error) {
+                    detailEl.textContent = `In lavorazione da ${formatTime(payload.runtime.age_seconds)}`;
                 }
 
                 if (payload.completed || payload.error) {

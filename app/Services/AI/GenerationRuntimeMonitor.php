@@ -71,6 +71,9 @@ class GenerationRuntimeMonitor
         }
 
         $recoveryTriggered = false;
+        if (GenerationExecution::shouldDispatchAfterResponse()) {
+            $recoveryTriggered = GenerationExecution::ensureAfterResponseProcessor((int) $item->id) || $recoveryTriggered;
+        }
         if (GenerationExecution::shouldKickBackgroundQueueWorker()) {
             $recoveryTriggered = GenerationExecution::ensureBackgroundQueueWorker((int) $item->id) || $recoveryTriggered;
         }
@@ -198,7 +201,7 @@ class GenerationRuntimeMonitor
 
     private function queuedStaleAfterSeconds(): int
     {
-        return max(180, (int) config('generation.queued_stale_after_seconds', 480));
+        return max(90, (int) config('generation.queued_stale_after_seconds', 150));
     }
 
     private function queuedNudgeAfterSeconds(): int
@@ -211,20 +214,20 @@ class GenerationRuntimeMonitor
 
     private function queuedRecoveryRetrySeconds(): int
     {
-        return max(10, min(
+        return max(6, min(
             $this->queuedRecoveryGraceSeconds(),
-            (int) config('generation.queued_recovery_retry_seconds', 45)
+            (int) config('generation.queued_recovery_retry_seconds', 20)
         ));
     }
 
     private function queuedRecoveryGraceSeconds(): int
     {
-        return max(60, (int) config('generation.queued_recovery_grace_seconds', 150));
+        return max(30, (int) config('generation.queued_recovery_grace_seconds', 60));
     }
 
     private function pendingStaleAfterSeconds(): int
     {
-        $configured = max(900, (int) config('generation.pending_stale_after_seconds', 1800));
+        $configured = max(480, (int) config('generation.pending_stale_after_seconds', 900));
         $queueConnection = trim((string) config('queue.default', 'database'));
         $retryAfter = (int) config('queue.connections.' . $queueConnection . '.retry_after', 0);
         $jobTimeout = (int) (new GenerateAiForContentItem(0))->timeout;
@@ -259,7 +262,8 @@ class GenerationRuntimeMonitor
         }
 
         try {
-            return GenerationExecution::ensureBackgroundQueueWorker((int) $item->id);
+            return GenerationExecution::ensureAfterResponseProcessor((int) $item->id)
+                || GenerationExecution::ensureBackgroundQueueWorker((int) $item->id);
         } catch (\Throwable) {
             return false;
         } finally {

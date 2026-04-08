@@ -39,6 +39,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -75,73 +76,127 @@ class GenerateAiForContentItem implements ShouldQueue
     ): void
     {
         $item = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
+        $status = strtolower(trim((string) ($item->ai_status ?? '')));
+        if (!in_array($status, ['queued', 'pending'], true)) {
+            Log::info('GenerateAiForContentItem skipped because content item is no longer active', [
+                'content_item_id' => $item->id,
+                'run_key' => $this->runKey,
+                'ai_status' => $status,
+            ]);
+
+            return;
+        }
+
+        $lockKey = $this->processingLockKey();
+        if (!Cache::add($lockKey, $this->runKey, max(1800, $this->timeout + 300))) {
+            Log::info('GenerateAiForContentItem skipped because another runner already owns the content item lock', [
+                'content_item_id' => $item->id,
+                'run_key' => $this->runKey,
+                'ai_status' => $status,
+            ]);
+
+            return;
+        }
+
+        $this->touchGenerationRuntime($item, 'booting', 'Avvio generazione', 6, [
+            'runner' => app()->runningInConsole() ? 'console' : 'web',
+        ]);
+
         $state = GenerationPipelineState::fromItem(
             $item,
             (bool) config('generation.strict_asset_mode', true)
         );
 
-        $state = $buildGenerationContext->handle($this, $state);
-        $state = $resolveProviderMatrix->handle($this, $state);
+        try {
+            $this->touchGenerationRuntime($item, 'context', 'Analisi strategia e brand', 18);
+            $state = $buildGenerationContext->handle($this, $state);
+            $item = $state->item;
 
-        if ($this->isDemoMode()) {
-            $demoAttempt = $generationAudit->startAttempt($state->run, 'demo_preset', [
-                'type' => 'system',
-                'stage' => 'demo_preset',
-                'provider_requested' => 'local_demo',
-                'provider_effective' => 'local_demo',
-                'model_requested' => 'demo_preset_v1',
-                'model_effective' => 'demo_preset_v1',
-                'input_summary' => [
-                    'format' => (string) $item->format,
-                    'platform' => (string) $item->platform,
-                ],
-            ]);
+            $this->touchGenerationRuntime($item, 'providers', 'Scelta provider e modello', 28);
+            $state = $resolveProviderMatrix->handle($this, $state);
+            $item = $state->item;
 
-            $this->applyDemoPreset(
+            if ($this->isDemoMode()) {
+                $demoAttempt = $generationAudit->startAttempt($state->run, 'demo_preset', [
+                    'type' => 'system',
+                    'stage' => 'demo_preset',
+                    'provider_requested' => 'local_demo',
+                    'provider_effective' => 'local_demo',
+                    'model_requested' => 'demo_preset_v1',
+                    'model_effective' => 'demo_preset_v1',
+                    'input_summary' => [
+                        'format' => (string) $item->format,
+                        'platform' => (string) $item->platform,
+                    ],
+                ]);
+
+                $this->applyDemoPreset(
+                    $item,
+                    (array) $state->get('tenant_profile', []),
+                    (array) $state->get('item_brain', []),
+                    $state->meta
+                );
+
+                $generationAudit->completeAttempt($demoAttempt, [
+                    'status' => 'succeeded',
+                    'output_summary' => $this->buildRunResultSummary($item),
+                    'tenant_id' => (int) $item->tenant_id,
+                    'final_provider' => 'local_demo',
+                    'failure_mode' => null,
+                ]);
+
+                $runMetrics = $generationMetrics->buildRunMetrics($item, $state->run);
+                $state->run = $generationAudit->completeRun($state->run, [
+                    'status' => 'succeeded',
+                    'effective_output' => $this->buildRunEffectiveOutput($item),
+                    'result_summary' => $this->buildRunResultSummary($item),
+                    'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
+                    'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
+                    'version_meta' => $this->generationVersionMeta(
+                        is_array($item->ai_meta) ? $item->ai_meta : []
+                    ),
+                ] + $runMetrics);
+                $scorecard = $qualityScorecard->buildForContentItem($item, $state->run);
+                $state->run = $generationAudit->syncRun($state->run, [
+                    'quality_scorecard' => $scorecard,
+                ]);
+                $qualityScorecard->storeOnContentItem($item, $scorecard, $state->run);
+                $this->updateGenerationAuditMeta($item, $state->run?->id, 'succeeded', [
+                    'completed_at' => now()->toDateTimeString(),
+                    'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
+                ]);
+                $this->markGenerationRuntimeFinished($item, 'done', 'Contenuto pronto');
+                $item->save();
+                $this->notifyAiSuccess($item, $workspaceNotifications);
+
+                return;
+            }
+
+            $this->touchGenerationRuntime($item, 'text', 'Scrittura copy e struttura', 42);
+            $state = $generateBaseText->handle($this, $state);
+            $item = $state->item;
+
+            $this->touchGenerationRuntime($item, 'prompt', 'Preparazione direzione visuale', 58);
+            $state = $buildVisualPrompt->handle($this, $state);
+            $item = $state->item;
+
+            $this->touchGenerationRuntime($item, 'visual', 'Generazione visual', 76);
+            $state = $generateVisualAsset->handle($this, $state);
+            $item = $state->item;
+
+            $this->touchGenerationRuntime($item, 'finalizing', 'Salvataggio output finale', 92);
+            $persistGenerationOutputs->handle($this, $state);
+
+            $item->refresh();
+            $this->markGenerationRuntimeFinished(
                 $item,
-                (array) $state->get('tenant_profile', []),
-                (array) $state->get('item_brain', []),
-                $state->meta
+                (string) ($item->ai_status ?: 'done'),
+                $item->ai_status === 'done' ? 'Contenuto pronto' : 'Serve una verifica'
             );
-
-            $generationAudit->completeAttempt($demoAttempt, [
-                'status' => 'succeeded',
-                'output_summary' => $this->buildRunResultSummary($item),
-                'tenant_id' => (int) $item->tenant_id,
-                'final_provider' => 'local_demo',
-                'failure_mode' => null,
-            ]);
-
-            $runMetrics = $generationMetrics->buildRunMetrics($item, $state->run);
-            $state->run = $generationAudit->completeRun($state->run, [
-                'status' => 'succeeded',
-                'effective_output' => $this->buildRunEffectiveOutput($item),
-                'result_summary' => $this->buildRunResultSummary($item),
-                'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
-                'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
-                'version_meta' => $this->generationVersionMeta(
-                    is_array($item->ai_meta) ? $item->ai_meta : []
-                ),
-            ] + $runMetrics);
-            $scorecard = $qualityScorecard->buildForContentItem($item, $state->run);
-            $state->run = $generationAudit->syncRun($state->run, [
-                'quality_scorecard' => $scorecard,
-            ]);
-            $qualityScorecard->storeOnContentItem($item, $scorecard, $state->run);
-            $this->updateGenerationAuditMeta($item, $state->run?->id, 'succeeded', [
-                'completed_at' => now()->toDateTimeString(),
-                'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
-            ]);
             $item->save();
-            $this->notifyAiSuccess($item, $workspaceNotifications);
-
-            return;
+        } finally {
+            Cache::forget($lockKey);
         }
-
-        $state = $generateBaseText->handle($this, $state);
-        $state = $buildVisualPrompt->handle($this, $state);
-        $state = $generateVisualAsset->handle($this, $state);
-        $persistGenerationOutputs->handle($this, $state);
     }
 
     public function failed(Throwable $e): void
@@ -169,6 +224,9 @@ class GenerateAiForContentItem implements ShouldQueue
         if (trim((string) $item->ai_error) === '') {
             $item->ai_error = 'JOB: ' . $e->getMessage();
         }
+        $this->markGenerationRuntimeFinished($item, 'error', 'Serve intervento', [
+            'last_error' => Str::limit($e->getMessage(), 220, ''),
+        ]);
         $existingRun = \App\Models\GenerationRun::query()
             ->where('content_item_id', (int) $item->id)
             ->where('run_key', $this->runKey)
@@ -462,6 +520,58 @@ class GenerateAiForContentItem implements ShouldQueue
             $extra
         );
         $item->ai_meta = $meta;
+    }
+
+    public function touchGenerationRuntime(ContentItem $item, string $stage, string $label, int $progress, array $extra = []): void
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $runtime = (array) data_get($meta, 'generation_runtime', []);
+        $runtime = array_merge($runtime, [
+            'run_key' => $this->runKey,
+            'stage' => $stage,
+            'stage_label' => $label,
+            'progress' => max(0, min(100, $progress)),
+            'heartbeat_at' => now()->toDateTimeString(),
+            'status' => (string) ($item->ai_status ?: 'queued'),
+        ], $extra);
+
+        if (trim((string) ($runtime['started_at'] ?? '')) === '') {
+            $runtime['started_at'] = now()->toDateTimeString();
+        }
+
+        $meta['generation_runtime'] = $runtime;
+        $item->ai_meta = $meta;
+        $item->save();
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    public function markGenerationRuntimeFinished(ContentItem $item, string $status, string $label, array $extra = []): void
+    {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $runtime = (array) data_get($meta, 'generation_runtime', []);
+        $runtime = array_merge($runtime, [
+            'run_key' => $this->runKey,
+            'stage' => strtolower(trim($status)) === 'done' ? 'completed' : 'failed',
+            'stage_label' => $label,
+            'progress' => 100,
+            'heartbeat_at' => now()->toDateTimeString(),
+            'finished_at' => now()->toDateTimeString(),
+            'status' => $status,
+        ], $extra);
+
+        if (trim((string) ($runtime['started_at'] ?? '')) === '') {
+            $runtime['started_at'] = now()->toDateTimeString();
+        }
+
+        $meta['generation_runtime'] = $runtime;
+        $item->ai_meta = $meta;
+    }
+
+    private function processingLockKey(): string
+    {
+        return 'generation:content-item-processing:' . max(1, $this->contentItemId);
     }
 
     public function isDemoMode(): bool

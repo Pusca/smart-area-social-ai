@@ -23,14 +23,12 @@ class AiGenerateController extends Controller
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
-        if (GenerationExecution::shouldShowProgressPage()) {
-            return redirect()->route('posts.generating', $contentItem);
-        }
-
-        return back()->with('status', GenerationExecution::shouldRunSync()
-            ? 'Rigenerazione AI completata.'
-            : 'Rigenerazione AI messa in coda (JOBv4).'
-        );
+        return redirect()
+            ->route('posts.edit', $contentItem)
+            ->with('status', GenerationExecution::shouldRunSync()
+                ? 'Rigenerazione AI completata.'
+                : 'Rigenerazione AI avviata. Puoi continuare a navigare: trovi lo stato dal pannello generazioni.'
+            );
     }
 
     public function generatePlan(Request $request, ContentPlan $contentPlan)
@@ -75,13 +73,11 @@ class AiGenerateController extends Controller
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
-        if (GenerationExecution::shouldShowProgressPage()) {
-            return redirect()->route('posts.generating', $contentItem);
-        }
-
-        return back()->with('status', GenerationExecution::shouldRunSync()
-            ? 'Rigenerazione visual completata.'
-            : 'Rigenerazione visual messa in coda.');
+        return redirect()
+            ->route('posts.edit', $contentItem)
+            ->with('status', GenerationExecution::shouldRunSync()
+                ? 'Rigenerazione visual completata.'
+                : 'Rigenerazione visual avviata. Puoi continuare a navigare: trovi lo stato dal pannello generazioni.');
     }
 
     private function applyVideoProviderPreference(ContentItem $item, string $requestedProvider): string

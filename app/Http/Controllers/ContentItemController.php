@@ -196,6 +196,7 @@ class ContentItemController extends Controller
         $contentItem->refresh();
 
         $status = (string) ($contentItem->ai_status ?? '');
+        $runtime = $this->generationRuntimePayload($contentItem);
 
         return response()->json([
             'item_id' => (int) $contentItem->id,
@@ -206,6 +207,37 @@ class ContentItemController extends Controller
             'error' => $status === 'error',
             'redirect_url' => route('posts.edit', $contentItem),
             'updated_at' => optional($contentItem->updated_at)->toDateTimeString(),
+            'runtime' => $runtime,
+            'stage' => (string) ($runtime['stage_label'] ?? ''),
+        ]);
+    }
+
+    public function activeGenerations(Request $request): JsonResponse
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+        $limit = max(1, min(8, (int) config('generation.active_drawer_limit', 5)));
+
+        $items = ContentItem::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('ai_status', ['queued', 'pending'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
+
+        $items->each(function (ContentItem $item): void {
+            $this->generationRuntimeMonitor->reconcileContentItem($item);
+            $item->refresh();
+        });
+
+        $activeItems = $items
+            ->filter(fn (ContentItem $item) => in_array((string) $item->ai_status, ['queued', 'pending'], true))
+            ->values();
+
+        return response()->json([
+            'count' => $activeItems->count(),
+            'items' => $activeItems->map(fn (ContentItem $item) => $this->activeGenerationPayload($item))->all(),
+            'has_active' => $activeItems->isNotEmpty(),
         ]);
     }
 
@@ -500,15 +532,11 @@ class ContentItemController extends Controller
                 ->with('status', trim('Contenuto creato, ma la generazione AI non e partita: ' . $e->getMessage() . ' ' . $this->publicationSyncMessage($publicationSync)));
         }
 
-        if (GenerationExecution::shouldShowProgressPage()) {
-            return redirect()->route('posts.generating', $item);
-        }
-
         return redirect()
             ->route('posts.edit', $item)
             ->with('status', GenerationExecution::shouldRunSync()
                 ? trim('Contenuto creato e generato con AI. ' . $this->publicationSyncMessage($publicationSync))
-                : trim('Contenuto creato e messo in coda AI. ' . $this->publicationSyncMessage($publicationSync)));
+                : trim('Contenuto creato e generazione AI avviata. Puoi continuare a navigare: trovi lo stato dal pannello generazioni. ' . $this->publicationSyncMessage($publicationSync)));
     }
 
     public function edit(Request $request, ContentItem $contentItem)
@@ -1608,6 +1636,92 @@ class ContentItemController extends Controller
         $preset = Str::lower(trim($preset));
 
         return $preset === 'reel' ? 'reel' : 'default';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function activeGenerationPayload(ContentItem $contentItem): array
+    {
+        $runtime = $this->generationRuntimePayload($contentItem);
+
+        return [
+            'id' => (int) $contentItem->id,
+            'title' => trim((string) ($contentItem->title ?: $contentItem->content_angle ?: ('Contenuto #' . $contentItem->id))),
+            'format' => strtolower(trim((string) ($contentItem->format ?? 'post'))),
+            'platform' => strtolower(trim((string) ($contentItem->platform ?? 'instagram'))),
+            'ai_status' => (string) ($contentItem->ai_status ?? ''),
+            'status' => UiStatus::ai((string) $contentItem->ai_status),
+            'runtime' => $runtime,
+            'stage' => (string) ($runtime['stage_label'] ?? ''),
+            'edit_url' => route('posts.edit', $contentItem),
+            'generating_url' => route('posts.generating', $contentItem),
+            'updated_at' => optional($contentItem->updated_at)->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function generationRuntimePayload(ContentItem $contentItem): array
+    {
+        $meta = is_array($contentItem->ai_meta) ? $contentItem->ai_meta : [];
+        $runtime = (array) data_get($meta, 'generation_runtime', []);
+        $monitor = (array) data_get($meta, 'generation_monitor', []);
+        $status = strtolower(trim((string) ($contentItem->ai_status ?? '')));
+
+        $startedAt = $this->parseGenerationTimestamp($runtime['started_at'] ?? null)
+            ?? $this->parseGenerationTimestamp($monitor['queue_reference_at'] ?? null)
+            ?? $contentItem->updated_at
+            ?? $contentItem->created_at;
+        $heartbeatAt = $this->parseGenerationTimestamp($runtime['heartbeat_at'] ?? null) ?? $startedAt;
+        $finishedAt = $this->parseGenerationTimestamp($runtime['finished_at'] ?? null);
+
+        $stageLabel = trim((string) ($runtime['stage_label'] ?? ''));
+        if ($stageLabel === '') {
+            $stageLabel = match ($status) {
+                'queued' => 'In attesa di bootstrap',
+                'pending' => 'Generazione in corso',
+                'done' => 'Contenuto pronto',
+                'error' => 'Serve una verifica',
+                default => 'In attesa',
+            };
+        }
+
+        $progress = (int) ($runtime['progress'] ?? 0);
+        if ($progress < 1) {
+            $progress = match ($status) {
+                'queued' => 10,
+                'pending' => 64,
+                'done', 'error' => 100,
+                default => 0,
+            };
+        }
+
+        return [
+            'stage' => trim((string) ($runtime['stage'] ?? '')),
+            'stage_label' => $stageLabel,
+            'progress' => max(0, min(100, $progress)),
+            'started_at' => $startedAt?->toDateTimeString(),
+            'heartbeat_at' => $heartbeatAt?->toDateTimeString(),
+            'finished_at' => $finishedAt?->toDateTimeString(),
+            'age_seconds' => $startedAt ? max(0, $startedAt->diffInSeconds(now())) : 0,
+            'status' => trim((string) ($runtime['status'] ?? $status)),
+        ];
+    }
+
+    private function parseGenerationTimestamp(mixed $value): ?Carbon
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
 }
