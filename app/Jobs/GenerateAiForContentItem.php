@@ -4798,6 +4798,7 @@ SVG;
         }
 
         return str_contains($message, 'google veo video generation timeout')
+            || str_contains($message, 'google veo video create error (417)')
             || str_contains($message, 'google veo video retrieve error (500)')
             || str_contains($message, 'google veo video retrieve error (502)')
             || str_contains($message, 'google veo video retrieve error (503)')

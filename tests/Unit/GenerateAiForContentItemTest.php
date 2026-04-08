@@ -110,6 +110,7 @@ class GenerateAiForContentItemTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertTrue($method->invoke($job, new RuntimeException('Google Veo completed payload missing downloadable video URL.')));
+        $this->assertTrue($method->invoke($job, new RuntimeException('Google Veo video create error (417) URL=https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning BODY=<html>')));
         $this->assertTrue($method->invoke($job, new RuntimeException('Google Veo video generation timeout after 900s')));
         $this->assertFalse($method->invoke($job, new RuntimeException('Missing GOOGLE_VEO_API_KEY')));
         $this->assertFalse($method->invoke($job, new RuntimeException('Google Veo video create error (400) BODY=validation error')));

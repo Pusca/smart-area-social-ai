@@ -34,8 +34,13 @@ class GoogleVeoService
         $request = Http::accept($asJson ? 'application/json' : '*/*')
             ->timeout($timeout)
             ->connectTimeout((int) (config('google_veo.connect_timeout') ?: 15))
+            ->withOptions([
+                // Some Google Veo gateway paths reject the default large-body Expect handshake with 417.
+                'expect' => false,
+            ])
             ->withHeaders([
                 'x-goog-api-key' => $this->apiKey(),
+                'Expect' => '',
             ]);
 
         if ($asJson) {

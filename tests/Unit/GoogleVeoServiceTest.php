@@ -24,6 +24,7 @@ class GoogleVeoServiceTest extends TestCase
         Http::fake([
             'https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning' => function (Request $request) {
                 $this->assertTrue($request->hasHeader('x-goog-api-key', 'google-veo-key'));
+                $this->assertTrue($request->hasHeader('Expect', ''));
                 $this->assertSame(8, data_get($request->data(), 'parameters.durationSeconds'));
                 $this->assertSame('9:16', data_get($request->data(), 'parameters.aspectRatio'));
                 $this->assertNull(data_get($request->data(), 'parameters.generateAudio'));
