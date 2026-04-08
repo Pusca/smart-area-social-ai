@@ -3184,7 +3184,20 @@ SVG;
             return $openAi->generateImageBase64($prompt);
         }
 
-        return $nanoBanana->generateImageBase64($prompt);
+        try {
+            return $nanoBanana->generateImageBase64($prompt);
+        } catch (Throwable $e) {
+            if (!$this->shouldFallbackFromNanoBananaToOpenAi($e)) {
+                throw $e;
+            }
+
+            Log::warning('GenerateAiForContentItem image generation falling back from NanoBanana to OpenAI', [
+                'content_item_id' => $this->contentItemId,
+                'error' => Str::limit($e->getMessage(), 220, ''),
+            ]);
+
+            return $openAi->generateImageBase64($prompt);
+        }
     }
 
     /**
@@ -3201,7 +3214,21 @@ SVG;
             return $openAi->generateImageEditBase64($prompt, $editPaths);
         }
 
-        return $nanoBanana->generateImageEditBase64($prompt, $editPaths);
+        try {
+            return $nanoBanana->generateImageEditBase64($prompt, $editPaths);
+        } catch (Throwable $e) {
+            if (!$this->shouldFallbackFromNanoBananaToOpenAi($e)) {
+                throw $e;
+            }
+
+            Log::warning('GenerateAiForContentItem image edit falling back from NanoBanana to OpenAI', [
+                'content_item_id' => $this->contentItemId,
+                'error' => Str::limit($e->getMessage(), 220, ''),
+                'edit_paths_count' => count($editPaths),
+            ]);
+
+            return $openAi->generateImageEditBase64($prompt, $editPaths);
+        }
     }
 
     /**
@@ -4835,6 +4862,35 @@ SVG;
             || $this->isTransientNetworkError($error);
     }
 
+    public function shouldFallbackFromNanoBananaToOpenAi(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+        if ($message === '') {
+            return false;
+        }
+
+        if (str_contains($message, 'missing nanobanana_api_key')) {
+            return false;
+        }
+
+        if (str_contains($message, 'nanobanana image error (400)')
+            || str_contains($message, 'nanobanana image edit error (400)')
+            || str_contains($message, 'promptfeedback.blockreason')
+            || str_contains($message, 'blockreason=')
+            || str_contains($message, 'safety')) {
+            return false;
+        }
+
+        return str_contains($message, 'missing base64 image field in nanobanana response')
+            || str_contains($message, 'missing base64 image field in nanobanana edit response')
+            || str_contains($message, 'finishreason=image_other')
+            || str_contains($message, 'invalid nanobanana image response payload')
+            || str_contains($message, 'invalid nanobanana image edit response payload')
+            || str_contains($message, 'temporarily unavailable')
+            || str_contains($message, 'gateway timeout')
+            || $this->isTransientNetworkError($error);
+    }
+
     /**
      * @return array<int, string>
      */
@@ -5992,7 +6048,13 @@ SVG;
             }
 
             try {
-                $img = $nanoBanana->generateImageEditBase64($composePrompt, $refs);
+                $img = $this->generateImageEditWithProvider(
+                    provider: 'nanobanana',
+                    prompt: $composePrompt,
+                    editPaths: $refs,
+                    openAi: $openAi,
+                    nanoBanana: $nanoBanana
+                );
                 $bytes = base64_decode((string) ($img['b64'] ?? ''), true);
                 if (!is_string($bytes) || $bytes === '') {
                     continue;

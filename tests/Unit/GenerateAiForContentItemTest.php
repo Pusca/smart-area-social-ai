@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Services\NanoBananaService;
+use App\Services\OpenAiService;
 use Illuminate\Support\Facades\Storage;
 use ReflectionMethod;
 use RuntimeException;
@@ -111,6 +113,51 @@ class GenerateAiForContentItemTest extends TestCase
         $this->assertTrue($method->invoke($job, new RuntimeException('Google Veo video generation timeout after 900s')));
         $this->assertFalse($method->invoke($job, new RuntimeException('Missing GOOGLE_VEO_API_KEY')));
         $this->assertFalse($method->invoke($job, new RuntimeException('Google Veo video create error (400) BODY=validation error')));
+    }
+
+    public function test_it_marks_nanobanana_empty_image_payloads_as_openai_fallback_candidates(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+        $method = new ReflectionMethod($job, 'shouldFallbackFromNanoBananaToOpenAi');
+        $method->setAccessible(true);
+
+        $this->assertTrue($method->invoke($job, new RuntimeException('Missing base64 image field in NanoBanana response. finishReason=IMAGE_OTHER.')));
+        $this->assertTrue($method->invoke($job, new RuntimeException('Invalid NanoBanana image edit response payload.')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('Missing NANOBANANA_API_KEY')));
+        $this->assertFalse($method->invoke($job, new RuntimeException('NanoBanana image error (400) BODY=safety block')));
+    }
+
+    public function test_it_falls_back_to_openai_for_nanobanana_image_edit_when_payload_is_empty(): void
+    {
+        $job = new GenerateAiForContentItem(1);
+
+        $openAi = $this->mock(OpenAiService::class, function ($mock): void {
+            $mock->shouldReceive('generateImageEditBase64')
+                ->once()
+                ->with('Prompt test', ['ref-a.png'])
+                ->andReturn([
+                    'b64' => 'OPENAI_B64',
+                    'b64_json' => 'OPENAI_B64',
+                    'raw' => ['provider' => 'openai'],
+                ]);
+        });
+
+        $nanoBanana = $this->mock(NanoBananaService::class, function ($mock): void {
+            $mock->shouldReceive('generateImageEditBase64')
+                ->once()
+                ->with('Prompt test', ['ref-a.png'])
+                ->andThrow(new RuntimeException('Missing base64 image field in NanoBanana edit response. finishReason=IMAGE_OTHER.'));
+        });
+
+        $result = $job->generateImageEditWithProvider(
+            'nanobanana',
+            'Prompt test',
+            ['ref-a.png'],
+            $openAi,
+            $nanoBanana
+        );
+
+        $this->assertSame('OPENAI_B64', $result['b64']);
     }
 
     public function test_it_builds_creative_direction_prompt_instructions_for_overlay_and_continuity(): void

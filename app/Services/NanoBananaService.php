@@ -158,7 +158,7 @@ class NanoBananaService
                 throw new RuntimeException('Invalid NanoBanana image response payload.');
             }
 
-            $b64 = $this->extractBase64FromGeminiPayload($data);
+            $b64 = $this->extractBase64FromGeminiPayload($data, $apiKey, $timeout);
             if ($b64 === '') {
                 $retry = $this->retryGeminiImageRequestWithoutText($url, $payload, $apiKey, $timeout);
                 if ($retry !== null) {
@@ -243,7 +243,7 @@ class NanoBananaService
                 throw new RuntimeException('Invalid NanoBanana image edit response payload.');
             }
 
-            $b64 = $this->extractBase64FromGeminiPayload($data);
+            $b64 = $this->extractBase64FromGeminiPayload($data, $apiKey, $timeout);
             if ($b64 === '') {
                 $retry = $this->retryGeminiImageRequestWithoutText($url, $payload, $apiKey, $timeout);
                 if ($retry !== null) {
@@ -557,7 +557,7 @@ class NanoBananaService
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function extractBase64FromGeminiPayload(array $payload): string
+    private function extractBase64FromGeminiPayload(array $payload, string $apiKey = '', int $timeout = 120): string
     {
         $candidates = (array) data_get($payload, 'candidates', []);
         foreach ($candidates as $candidate) {
@@ -567,11 +567,22 @@ class NanoBananaService
                 if ($value !== '') {
                     return $value;
                 }
+
+                $downloadCandidate = $this->extractGeminiDownloadCandidate((array) $part);
+                if ($downloadCandidate !== '' && $apiKey !== '') {
+                    $downloaded = $this->downloadGeminiImageAsBase64($downloadCandidate, $apiKey, $timeout);
+                    if ($downloaded !== '') {
+                        return $downloaded;
+                    }
+                }
             }
         }
 
         foreach ([
             'generatedImages.0.image.imageBytes',
+            'generatedImages.0.image.bytesBase64Encoded',
+            'generated_images.0.image.image_bytes',
+            'generated_images.0.image.bytes_base64_encoded',
             'candidates.0.content.parts.0.inlineData.data',
             'candidates.0.content.parts.0.inline_data.data',
             'data.0.b64_json',
@@ -580,6 +591,13 @@ class NanoBananaService
             $value = trim((string) data_get($payload, $path, ''));
             if ($value !== '') {
                 return $value;
+            }
+        }
+
+        if ($apiKey !== '') {
+            $downloadCandidate = $this->extractGeminiDownloadCandidate($payload);
+            if ($downloadCandidate !== '') {
+                return $this->downloadGeminiImageAsBase64($downloadCandidate, $apiKey, $timeout);
             }
         }
 
@@ -624,7 +642,7 @@ class NanoBananaService
             return null;
         }
 
-        $retryB64 = $this->extractBase64FromGeminiPayload($retryData);
+        $retryB64 = $this->extractBase64FromGeminiPayload($retryData, $apiKey, $timeout);
         if ($retryB64 === '') {
             return null;
         }
@@ -657,6 +675,195 @@ class NanoBananaService
     }
 
     /**
+     * @param  array<string, mixed>|array<int, mixed>  $payload
+     */
+    private function extractGeminiDownloadCandidate(array $payload): string
+    {
+        $candidates = [
+            'candidates.0.content.parts.0.fileData.fileUri',
+            'candidates.0.content.parts.0.fileData.file_uri',
+            'candidates.0.content.parts.0.fileData.uri',
+            'candidates.0.content.parts.0.fileData.downloadUri',
+            'candidates.0.content.parts.0.fileData.download_uri',
+            'candidates.0.content.parts.0.file_data.file_uri',
+            'candidates.0.content.parts.0.file_data.uri',
+            'candidates.0.content.parts.0.file_data.download_uri',
+            'generatedImages.0.image.fileUri',
+            'generatedImages.0.image.file_uri',
+            'generatedImages.0.image.downloadUri',
+            'generatedImages.0.image.download_uri',
+            'generatedImages.0.image.uri',
+            'generated_images.0.image.file_uri',
+            'generated_images.0.image.download_uri',
+            'generated_images.0.image.uri',
+            'fileData.fileUri',
+            'fileData.file_uri',
+            'fileData.downloadUri',
+            'fileData.download_uri',
+            'fileData.uri',
+            'file_data.file_uri',
+            'file_data.download_uri',
+            'file_data.uri',
+            'downloadUri',
+            'download_uri',
+            'uri',
+            'fileUri',
+            'file_uri',
+            'name',
+            'fileData.name',
+            'file_data.name',
+        ];
+
+        foreach ($candidates as $path) {
+            $value = trim((string) data_get($payload, $path, ''));
+            if ($this->looksLikeGeminiImageDownloadCandidate($value)) {
+                return $value;
+            }
+        }
+
+        return $this->findFirstMatchingStringRecursive($payload, fn (string $value) => $this->looksLikeGeminiImageDownloadCandidate($value));
+    }
+
+    private function looksLikeGeminiImageDownloadCandidate(string $value): bool
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/\.(png|jpg|jpeg|webp)(?:\?|$)/i', $value) === 1) {
+            return true;
+        }
+
+        if ((str_starts_with($value, 'http://') || str_starts_with($value, 'https://'))
+            && (
+                str_contains($value, ':download')
+                || str_contains($value, 'alt=media')
+                || str_contains($value, '/files/')
+                || str_contains($value, '/download/')
+            )
+        ) {
+            return true;
+        }
+
+        return preg_match('/^(?:v1(?:alpha|beta)\d*\/)?files\/[A-Za-z0-9._:-]+$/i', ltrim($value, '/')) === 1;
+    }
+
+    private function downloadGeminiImageAsBase64(string $downloadCandidate, string $apiKey, int $timeout): string
+    {
+        $url = $this->resolveGeminiDownloadUrl($downloadCandidate, $apiKey, $timeout);
+        if ($url === '') {
+            return '';
+        }
+
+        $response = $this->request($timeout, $apiKey, false)->get($url);
+        if (!$response->successful()) {
+            return '';
+        }
+
+        $body = $response->body();
+        if (!is_string($body) || $body === '') {
+            return '';
+        }
+
+        $contentType = strtolower(trim((string) $response->header('Content-Type')));
+        if (str_contains($contentType, 'application/json')) {
+            $data = $response->json();
+            if (is_array($data)) {
+                $nextCandidate = $this->extractGeminiDownloadCandidate($data);
+                if ($nextCandidate !== '' && trim($nextCandidate) !== trim($downloadCandidate)) {
+                    return $this->downloadGeminiImageAsBase64($nextCandidate, $apiKey, $timeout);
+                }
+            }
+
+            return '';
+        }
+
+        return base64_encode($body);
+    }
+
+    private function resolveGeminiDownloadUrl(string $downloadCandidate, string $apiKey, int $timeout): string
+    {
+        $downloadCandidate = trim($downloadCandidate);
+        if ($downloadCandidate === '') {
+            return '';
+        }
+
+        if ($this->isDirectGeminiMediaUrl($downloadCandidate)) {
+            return $downloadCandidate;
+        }
+
+        $metadataUrl = $this->geminiFileUrl($downloadCandidate);
+        if ($metadataUrl === '') {
+            return '';
+        }
+
+        if (str_ends_with($metadataUrl, ':download')) {
+            return $metadataUrl;
+        }
+
+        $metadataResponse = $this->request($timeout, $apiKey, true)->get($metadataUrl);
+        if ($metadataResponse->successful()) {
+            $metadata = $metadataResponse->json();
+            if (is_array($metadata)) {
+                foreach (['downloadUri', 'download_uri', 'uri', 'fileUri', 'file_uri'] as $field) {
+                    $value = trim((string) data_get($metadata, $field, ''));
+                    if ($this->isDirectGeminiMediaUrl($value)) {
+                        return $value;
+                    }
+                }
+            }
+        }
+
+        return $metadataUrl . ':download';
+    }
+
+    private function isDirectGeminiMediaUrl(string $value): bool
+    {
+        $value = trim($value);
+        if ($value === '' || (!str_starts_with($value, 'http://') && !str_starts_with($value, 'https://'))) {
+            return false;
+        }
+
+        return str_contains($value, ':download')
+            || str_contains($value, 'alt=media')
+            || str_contains($value, '/download/')
+            || preg_match('/\.(png|jpg|jpeg|webp)(?:\?|$)/i', $value) === 1;
+    }
+
+    private function geminiFileUrl(string $value): string
+    {
+        $normalized = trim($value);
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (str_starts_with($normalized, 'http://') || str_starts_with($normalized, 'https://')) {
+            $path = trim((string) parse_url($normalized, PHP_URL_PATH));
+            if ($path === '') {
+                return '';
+            }
+            $normalized = $path;
+        }
+
+        $normalized = ltrim($normalized, '/');
+        $version = trim((string) (config('nanobanana.api_version') ?: 'v1beta'));
+        $normalized = preg_replace('/^download\/' . preg_quote($version, '/') . '\//i', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/^' . preg_quote($version, '/') . '\//i', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/[:?].*$/', '', $normalized) ?? $normalized;
+
+        if (!str_starts_with($normalized, 'files/')) {
+            $offset = stripos($normalized, 'files/');
+            if ($offset === false) {
+                return '';
+            }
+            $normalized = substr($normalized, $offset);
+        }
+
+        return rtrim($this->configuredBaseUrl(), '/') . '/' . $version . '/' . ltrim($normalized, '/');
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     private function extractGeminiText(array $payload): string
@@ -684,6 +891,31 @@ class NanoBananaService
         }
 
         return mb_substr($text, 0, 220);
+    }
+
+    /**
+     * @param  array<string, mixed>|array<int, mixed>  $payload
+     */
+    private function findFirstMatchingStringRecursive(array $payload, callable $matcher): string
+    {
+        foreach ($payload as $value) {
+            if (is_string($value)) {
+                $trimmed = trim($value);
+                if ($trimmed !== '' && $matcher($trimmed) === true) {
+                    return $trimmed;
+                }
+                continue;
+            }
+
+            if (is_array($value)) {
+                $found = $this->findFirstMatchingStringRecursive($value, $matcher);
+                if ($found !== '') {
+                    return $found;
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
