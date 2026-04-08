@@ -43,6 +43,15 @@
                         <p id="single-generation-status-label" class="mt-2 text-lg font-semibold text-gray-950">In lavorazione</p>
                         <p id="single-generation-status-description" class="mt-1 text-sm text-gray-600">La generazione è partita. Ti porto dentro appena è pronta.</p>
                     </div>
+                    <div id="single-generation-push-card" class="hidden rounded-2xl border border-cyan-100 bg-cyan-50/80 p-4">
+                        <p class="text-sm font-semibold text-cyan-900">Vuoi chiudere la pagina?</p>
+                        <p id="single-generation-push-copy" class="mt-1 text-sm text-cyan-800">
+                            Attiva le notifiche push e ti avviso io quando il contenuto è pronto.
+                        </p>
+                        <button id="single-generation-push-enable" type="button" class="mt-3 inline-flex items-center justify-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-700">
+                            Attiva notifiche push
+                        </button>
+                    </div>
                 </div>
 
                 <div class="rounded-[26px] border border-white/80 bg-white/90 p-4">
@@ -79,6 +88,10 @@
         const detailEl = document.getElementById('single-generation-detail');
         const statusLabelEl = document.getElementById('single-generation-status-label');
         const statusDescriptionEl = document.getElementById('single-generation-status-description');
+        const pushCardEl = document.getElementById('single-generation-push-card');
+        const pushCopyEl = document.getElementById('single-generation-push-copy');
+        const pushEnableBtn = document.getElementById('single-generation-push-enable');
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
         const startedAt = Date.now();
         let pollTimer = null;
@@ -94,6 +107,86 @@
             const minutes = Math.floor(safe / 60);
             const rest = safe % 60;
             return rest > 0 ? `${minutes} min ${rest} sec` : `${minutes} min`;
+        };
+
+        const supportsPush = () => {
+            return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+        };
+
+        const urlBase64ToUint8Array = (base64String) => {
+            const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+
+            return outputArray;
+        };
+
+        const fetchJson = async (url, options = {}) => {
+            const response = await fetch(url, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    ...(csrf ? { 'X-CSRF-TOKEN': csrf } : {}),
+                },
+                ...options,
+            });
+
+            const json = await response.json().catch(() => ({}));
+            if (!response.ok || json?.error) {
+                throw new Error(json?.message || `HTTP ${response.status}`);
+            }
+
+            return json;
+        };
+
+        const ensurePushSubscription = async () => {
+            const permission = Notification.permission === 'granted'
+                ? 'granted'
+                : await Notification.requestPermission();
+
+            if (permission !== 'granted') {
+                throw new Error('Permesso notifiche non concesso.');
+            }
+
+            const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            const ready = await navigator.serviceWorker.ready;
+            const keyJson = await fetchJson('/push/public-key');
+            const vapidPublicKey = keyJson.publicKey;
+            if (!vapidPublicKey) {
+                throw new Error('VAPID public key non disponibile.');
+            }
+
+            let subscription = await ready.pushManager.getSubscription();
+            if (!subscription) {
+                subscription = await ready.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+                });
+            }
+
+            await fetchJson('/push/subscribe', {
+                method: 'POST',
+                body: JSON.stringify(subscription.toJSON ? subscription.toJSON() : subscription),
+            });
+        };
+
+        const renderPushCard = () => {
+            if (!pushCardEl || !pushCopyEl || !pushEnableBtn || !supportsPush()) {
+                return;
+            }
+
+            pushCardEl.classList.remove('hidden');
+            if (Notification.permission === 'granted') {
+                pushCopyEl.textContent = 'Notifiche attive: puoi lasciare la pagina e ti avviso io quando la generazione finisce.';
+                pushEnableBtn.classList.add('hidden');
+                ensurePushSubscription().catch(() => {});
+            }
         };
 
         const updateVisualProgress = () => {
@@ -156,9 +249,26 @@
         };
 
         updateVisualProgress();
+        renderPushCard();
         visualTimer = window.setInterval(updateVisualProgress, 300);
         poll();
         pollTimer = window.setInterval(poll, 2500);
+
+        if (pushEnableBtn) {
+            pushEnableBtn.addEventListener('click', async () => {
+                pushEnableBtn.disabled = true;
+                pushEnableBtn.textContent = 'Attivazione...';
+
+                try {
+                    await ensurePushSubscription();
+                    renderPushCard();
+                } catch (error) {
+                    pushCopyEl.textContent = error instanceof Error ? error.message : 'Impossibile attivare le notifiche push.';
+                    pushEnableBtn.disabled = false;
+                    pushEnableBtn.textContent = 'Riprova';
+                }
+            });
+        }
     })();
 </script>
 @endsection

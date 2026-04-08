@@ -9,6 +9,11 @@ use Illuminate\Support\Facades\Notification as NotificationFacade;
 
 class WorkspaceNotificationService
 {
+    public function __construct(
+        private readonly WebPushNotificationService $webPushNotifications
+    ) {
+    }
+
     /**
      * @param  array<string, mixed>  $options
      */
@@ -33,6 +38,7 @@ class WorkspaceNotificationService
         }
 
         NotificationFacade::send($collection, new WorkspaceEventNotification($title, $body, $options));
+        $this->webPushNotifications->notifyUsers($collection, $title, $body, $options);
 
         return $collection->count();
     }

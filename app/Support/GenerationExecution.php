@@ -24,13 +24,9 @@ class GenerationExecution
 
     public static function shouldKickBackgroundQueueWorker(): bool
     {
-        $connection = trim((string) config('queue.default', 'database'));
-
         return !self::shouldRunSync()
             && !app()->runningInConsole()
             && !app()->runningUnitTests()
-            && $connection !== ''
-            && $connection !== 'sync'
             && (bool) config('generation.queue_auto_kick', true);
     }
 
@@ -46,22 +42,22 @@ class GenerationExecution
             return;
         }
 
-        GenerateAiForContentItem::dispatch($contentItemId);
-
         if (self::shouldKickBackgroundQueueWorker()) {
-            self::ensureBackgroundQueueWorker();
+            if (self::ensureBackgroundQueueWorker($contentItemId)) {
+                return;
+            }
         }
+
+        GenerateAiForContentItem::dispatch($contentItemId);
     }
 
-    public static function ensureBackgroundQueueWorker(): bool
+    public static function ensureBackgroundQueueWorker(?int $contentItemId = null): bool
     {
         if (!self::shouldKickBackgroundQueueWorker()) {
             return false;
         }
 
-        self::kickBackgroundQueueWorker();
-
-        return true;
+        return self::kickBackgroundQueueWorker($contentItemId);
     }
 
     public static function primeQueuedState(ContentItem $item): void
@@ -92,25 +88,19 @@ class GenerationExecution
     public static function buildBackgroundQueueWorkerCommand(
         ?string $phpBinary = null,
         ?string $artisanPath = null,
-        ?string $connection = null
+        ?string $connection = null,
+        ?int $contentItemId = null
     ): string {
         $phpBinary = trim((string) ($phpBinary ?: self::resolvePhpBinary()));
         $artisanPath = trim((string) ($artisanPath ?: self::resolveQueueWorkerEntrypoint()));
-        $connection = trim((string) ($connection ?: config('queue.default', 'database')));
-        $queue = trim((string) config('queue.connections.' . $connection . '.queue', 'default'));
-        if ($queue === '') {
-            $queue = 'default';
-        }
         $arguments = [
-            'queue:work',
-            $connection,
-            '--queue=' . $queue,
-            '--stop-when-empty',
-            '--timeout=1200',
-            '--tries=1',
-            '--sleep=1',
+            'ai:drain-generation-queue',
+            '--once',
             '--no-interaction',
         ];
+        if (($contentItemId ?? 0) > 0) {
+            $arguments[] = '--content-item-id=' . (int) $contentItemId;
+        }
 
         if (self::shouldUseArtisanWrapper($artisanPath)) {
             $command = implode(' ', array_map('escapeshellarg', [
@@ -133,27 +123,66 @@ class GenerationExecution
         return 'nohup ' . $command . ' > /dev/null 2>&1 &';
     }
 
-    private static function kickBackgroundQueueWorker(): void
+    public static function runContentItemDirect(int $contentItemId, ?string $runKey = null, bool $force = false): int
     {
-        $connection = trim((string) config('queue.default', 'database'));
-        if ($connection === '' || $connection === 'sync') {
-            Log::warning('GenerationExecution skipped background worker kick because queue connection is not async', [
-                'queue_connection' => $connection,
+        $item = ContentItem::query()->find($contentItemId);
+        if (!$item) {
+            Log::warning('GenerationExecution direct run skipped because content item does not exist', [
+                'content_item_id' => $contentItemId,
             ]);
 
-            return;
+            return 0;
         }
 
-        $lockKey = 'generation:queue-worker-kick:' . $connection;
+        $status = strtolower(trim((string) ($item->ai_status ?? '')));
+        if (!$force && !in_array($status, ['queued', 'pending'], true)) {
+            Log::info('GenerationExecution direct run skipped because content item is not queued', [
+                'content_item_id' => $item->id,
+                'ai_status' => $status,
+            ]);
+
+            return 0;
+        }
+
+        $lockKey = 'generation:content-item-running:' . (int) $item->id;
+        if (!Cache::add($lockKey, now()->timestamp, 90)) {
+            Log::info('GenerationExecution direct run skipped because content item is already starting', [
+                'content_item_id' => $item->id,
+                'ai_status' => $status,
+            ]);
+
+            return 0;
+        }
+
+        $job = new GenerateAiForContentItem((int) $item->id, $runKey);
+
+        try {
+            @set_time_limit(0);
+            app()->call([$job, 'handle']);
+
+            return 0;
+        } catch (Throwable $e) {
+            $job->failed($e);
+
+            throw $e;
+        } finally {
+            Cache::forget($lockKey);
+        }
+    }
+
+    private static function kickBackgroundQueueWorker(?int $contentItemId = null): bool
+    {
+        $lockKey = 'generation:processor-kick:' . (($contentItemId ?? 0) > 0 ? (int) $contentItemId : 'global');
         if (!Cache::add($lockKey, now()->timestamp, 15)) {
-            return;
+            return true;
         }
 
         try {
             $command = self::buildBackgroundQueueWorkerCommand(
                 phpBinary: self::resolvePhpBinary(),
                 artisanPath: self::resolveQueueWorkerEntrypoint(),
-                connection: $connection
+                connection: null,
+                contentItemId: $contentItemId
             );
 
             $spawnMethod = self::spawnDetachedCommand($command);
@@ -161,19 +190,23 @@ class GenerationExecution
                 throw new \RuntimeException('No detached execution function is available on this PHP installation.');
             }
 
-            Log::info('GenerationExecution kicked background queue worker', [
-                'queue_connection' => $connection,
+            Log::info('GenerationExecution kicked background generation processor', [
+                'content_item_id' => $contentItemId,
                 'command' => $command,
                 'spawn_method' => $spawnMethod,
             ]);
+
+            return true;
         } catch (Throwable $e) {
             Cache::forget($lockKey);
 
-            Log::warning('GenerationExecution failed to kick background queue worker', [
-                'queue_connection' => $connection,
+            Log::warning('GenerationExecution failed to kick background generation processor', [
+                'content_item_id' => $contentItemId,
                 'error' => $e->getMessage(),
                 'available_spawn_methods' => self::availableSpawnMethods(),
             ]);
+
+            return false;
         }
     }
 

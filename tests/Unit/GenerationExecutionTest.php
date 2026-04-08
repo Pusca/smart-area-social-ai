@@ -37,14 +37,13 @@ class GenerationExecutionTest extends TestCase
         $command = GenerationExecution::buildBackgroundQueueWorkerCommand(
             phpBinary: '/usr/bin/php',
             artisanPath: '/var/www/app/artisan',
-            connection: 'database'
+            connection: 'database',
+            contentItemId: 123
         );
 
-        $this->assertStringContainsString('queue:work', $command);
-        $this->assertStringContainsString('database', $command);
-        $this->assertStringContainsString('--queue=default', $command);
-        $this->assertStringContainsString('--stop-when-empty', $command);
-        $this->assertStringContainsString('--timeout=1200', $command);
+        $this->assertStringContainsString('ai:drain-generation-queue', $command);
+        $this->assertStringContainsString('--once', $command);
+        $this->assertStringContainsString('--content-item-id=123', $command);
     }
 
     public function test_it_prefers_artisan_wrapper_for_background_worker_when_available(): void
@@ -52,7 +51,8 @@ class GenerationExecutionTest extends TestCase
         $command = GenerationExecution::buildBackgroundQueueWorkerCommand(
             phpBinary: '/usr/bin/php',
             artisanPath: '/var/www/app/artisan-egpcs',
-            connection: 'database'
+            connection: 'database',
+            contentItemId: 123
         );
 
         $this->assertStringContainsString('artisan-egpcs', $command);
@@ -62,7 +62,7 @@ class GenerationExecutionTest extends TestCase
             $this->assertStringNotContainsString('/usr/bin/php', $command);
             $this->assertStringContainsString('bash', $command);
         }
-        $this->assertStringContainsString('queue:work', $command);
+        $this->assertStringContainsString('ai:drain-generation-queue', $command);
     }
 
     public function test_database_queue_retry_after_is_longer_than_ai_generation_timeout(): void

@@ -10,7 +10,6 @@ use App\Services\GenerationAuditService;
 use App\Support\GenerationExecution;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 
 class GenerationRuntimeMonitor
@@ -73,7 +72,7 @@ class GenerationRuntimeMonitor
 
         $recoveryTriggered = false;
         if (GenerationExecution::shouldKickBackgroundQueueWorker()) {
-            $recoveryTriggered = GenerationExecution::ensureBackgroundQueueWorker() || $recoveryTriggered;
+            $recoveryTriggered = GenerationExecution::ensureBackgroundQueueWorker((int) $item->id) || $recoveryTriggered;
         }
         if ($this->shouldUseHttpDrainFallback()) {
             $recoveryTriggered = $this->drainQueueOnceViaHttp($item) || $recoveryTriggered;
@@ -254,19 +253,13 @@ class GenerationRuntimeMonitor
 
     protected function drainQueueOnceViaHttp(ContentItem $item): bool
     {
-        $queueConnection = trim((string) config('queue.default', 'database'));
-        $lockKey = 'generation-runtime-monitor:http-drain:' . $queueConnection . ':' . (int) $item->id;
+        $lockKey = 'generation-runtime-monitor:http-drain:' . (int) $item->id;
         if (!Cache::add($lockKey, now()->timestamp, 120)) {
             return true;
         }
 
         try {
-            $exitCode = Artisan::call('ai:drain-generation-queue', [
-                '--queue' => 'default',
-                '--once' => true,
-            ]);
-
-            return (int) $exitCode === 0;
+            return GenerationExecution::ensureBackgroundQueueWorker((int) $item->id);
         } catch (\Throwable) {
             return false;
         } finally {

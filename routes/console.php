@@ -267,31 +267,68 @@ Artisan::command('trends:refresh {--tenant=} {--force}', function () {
     return self::SUCCESS;
 })->purpose('Refresh trend signals and trend briefs for one tenant or all tenant profiles');
 
-Artisan::command('ai:drain-generation-queue {--queue=default} {--once}', function () {
-    $connection = trim((string) config('queue.default', 'database'));
-    $queue = trim((string) ($this->option('queue') ?: 'default'));
-    $once = (bool) $this->option('once');
+Artisan::command('ai:generate-content-item-direct {contentItemId} {--run-key=} {--force}', function () {
+    $contentItemId = max(1, (int) $this->argument('contentItemId'));
+    $runKey = trim((string) ($this->option('run-key') ?: ''));
+    $force = (bool) $this->option('force');
 
-    if ($connection === '' || $connection === 'sync') {
-        $this->warn('Queue connection sincrona o non configurata: nessun drain necessario.');
+    try {
+        $exitCode = \App\Support\GenerationExecution::runContentItemDirect(
+            $contentItemId,
+            $runKey !== '' ? $runKey : null,
+            $force
+        );
+
+        $this->info("Processed content item {$contentItemId}.");
+
+        return is_int($exitCode) ? $exitCode : self::SUCCESS;
+    } catch (\Throwable $e) {
+        $this->error("Direct generation failed for content item {$contentItemId}: {$e->getMessage()}");
+
+        return self::FAILURE;
+    }
+})->purpose('Run AI generation directly for a single content item without relying on the queue worker');
+
+Artisan::command('ai:drain-generation-queue {--queue=default} {--once} {--content-item-id=}', function () {
+    $once = (bool) $this->option('once');
+    $contentItemId = max(0, (int) ($this->option('content-item-id') ?: 0));
+    $processed = 0;
+
+    $query = \App\Models\ContentItem::query()
+        ->where('ai_status', 'queued')
+        ->orderBy('updated_at')
+        ->orderBy('id');
+
+    if ($contentItemId > 0) {
+        $query->where('id', $contentItemId);
+    }
+
+    $items = $once
+        ? $query->limit(1)->get()
+        : $query->limit(max(1, (int) config('generation.processor_batch_limit', 1)))->get();
+
+    if ($items->isEmpty()) {
+        $label = $contentItemId > 0 ? "content item {$contentItemId}" : 'queued content items';
+        $this->line("No {$label} to process.");
 
         return self::SUCCESS;
     }
 
-    $this->line("Drain generation queue connection={$connection} queue={$queue}");
+    foreach ($items as $item) {
+        $exitCode = Artisan::call('ai:generate-content-item-direct', [
+            'contentItemId' => (int) $item->id,
+        ]);
 
-    $exitCode = Artisan::call('queue:work', [
-        'connection' => $connection,
-        '--queue' => $queue,
-        '--once' => $once,
-        '--stop-when-empty' => !$once,
-        '--tries' => 1,
-        '--timeout' => 1200,
-        '--sleep' => 1,
-        '--no-interaction' => true,
-    ]);
+        $this->output->write(Artisan::output());
 
-    $this->output->write(Artisan::output());
+        if ((int) $exitCode !== 0) {
+            return (int) $exitCode;
+        }
 
-    return is_int($exitCode) ? $exitCode : self::SUCCESS;
-})->purpose('Drain queued AI generation jobs until the target queue is empty');
+        $processed++;
+    }
+
+    $this->info("Processed {$processed} queued content item(s).");
+
+    return self::SUCCESS;
+})->purpose('Drain queued AI generation items with the direct content generation runner');

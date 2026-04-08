@@ -4,6 +4,7 @@ return [
     'force_sync' => (bool) env('GENERATION_FORCE_SYNC', false),
     'queue_auto_kick' => (bool) env('GENERATION_QUEUE_AUTO_KICK', true),
     'queue_http_drain_fallback' => (bool) env('GENERATION_QUEUE_HTTP_DRAIN_FALLBACK', true),
+    'processor_batch_limit' => (int) env('GENERATION_PROCESSOR_BATCH_LIMIT', 1),
     'queued_nudge_after_seconds' => (int) env('GENERATION_QUEUED_NUDGE_AFTER_SECONDS', 15),
     'queued_recovery_retry_seconds' => (int) env('GENERATION_QUEUED_RECOVERY_RETRY_SECONDS', 45),
     'queued_stale_after_seconds' => (int) env('GENERATION_QUEUED_STALE_AFTER_SECONDS', 480),
