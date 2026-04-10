@@ -9,6 +9,7 @@ use App\Models\EditorialStrategy;
 use App\Models\TenantProfile;
 use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
+use App\Services\BrandScraperService;
 use App\Services\Editorial\EditorialStrategyService;
 use App\Services\Editorial\TrendBriefService;
 use App\Services\GuidedAssetVariableService;
@@ -17,6 +18,7 @@ use App\Services\Onboarding\QuickstartOnboardingService;
 use App\Services\TenantQuotaService;
 use App\Support\SpeechProviderResolver;
 use App\Support\GenerationExecution;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -35,8 +37,29 @@ class TenantProfileController extends Controller
         private readonly GuidedAssetVariableService $guidedAssetVariableService,
         private readonly QuickstartOnboardingService $quickstartOnboardingService,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
-        private readonly TenantQuotaService $tenantQuotaService
+        private readonly TenantQuotaService $tenantQuotaService,
+        private readonly BrandScraperService $brandScraper
     ) {
+    }
+
+    /**
+     * Estrae i dati brand da un URL pubblico e li restituisce come JSON
+     * per pre-compilare il form di onboarding lato client.
+     *
+     * POST /profile/brand/scrape-url
+     * Body: { url: "https://example.com" }
+     *
+     * Risponde sempre con 200; l'errore è nel payload JSON (campo `error`).
+     */
+    public function scrapeUrl(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'url' => ['required', 'string', 'max:500'],
+        ]);
+
+        $result = $this->brandScraper->scrapeFromUrl($data['url']);
+
+        return response()->json($result);
     }
 
     public function show(Request $request)

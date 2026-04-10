@@ -17,7 +17,8 @@ class EditorialStrategyService
         private readonly CreativeDirectionComposer $creativeDirectionComposer,
         private readonly TrendOpportunitySynthesisService $trendOpportunitySynthesis,
         private readonly TrendBriefService $trendBriefService,
-        private readonly TenantLearningLoopService $tenantLearningLoopService
+        private readonly TenantLearningLoopService $tenantLearningLoopService,
+        private readonly IndustryPresetService $industryPresets
     ) {
     }
 
@@ -35,16 +36,30 @@ class EditorialStrategyService
             return $existing;
         }
 
+        $industry = (string) ($profile?->industry ?? '');
+
+        /**
+         * Applica il preset di industry come punto di partenza strategico.
+         * Il preset fornisce pillars, rubrics, CTA rules e brand voice ottimizzati
+         * per il settore. Se il tenant ha già overrides manuali, questi prevalgono.
+         * Se il tenant non ha industry o non c'è preset, si usa la logica generica.
+         */
+        $industryPreset = $this->industryPresets->getPresetForIndustry($industry);
+
         $voice = [
-            'tone' => (string) ($profile?->default_tone ?? 'professionale'),
-            'values' => $this->explode((string) ($profile?->values ?? '')),
-            'target' => (string) ($profile?->target ?? ''),
-            'industry' => (string) ($profile?->industry ?? ''),
+            'tone'     => (string) ($profile?->default_tone
+                ?? data_get($industryPreset, 'brand_voice.tone')
+                ?? 'professionale'),
+            'values'   => $this->explode((string) ($profile?->values ?? ''))
+                ?: (array) data_get($industryPreset, 'brand_voice.values', []),
+            'target'   => (string) ($profile?->target ?? ''),
+            'industry' => $industry,
         ];
 
-        $pillars = $this->buildPillars($profile);
-        $rubrics = $this->buildRubrics($pillars);
-        $ctaRules = $this->buildCtaRules($profile);
+        // I pillars dal preset vengono usati come fallback se il profilo non ha servizi configurati.
+        $pillars  = $this->buildPillars($profile, $industryPreset);
+        $rubrics  = $this->buildRubrics($pillars, $industryPreset);
+        $ctaRules = $this->buildCtaRules($profile, $industryPreset);
         $constraints = [
             'no_repeat_days' => config('editorial.duplicate_window_days', 180),
             'soft_similarity_threshold' => config('editorial.soft_similarity_threshold', 0.78),
@@ -165,17 +180,34 @@ class EditorialStrategyService
         ];
     }
 
-    private function buildPillars(?TenantProfile $profile): array
+    /**
+     * Costruisce i pillars editoriali.
+     * Priorità: servizi del profilo → pillars dal preset industry → fallback generico.
+     *
+     * @param  array<string, mixed>|null  $industryPreset
+     * @return array<int, string>
+     */
+    private function buildPillars(?TenantProfile $profile, ?array $industryPreset = null): array
     {
         $services = $this->explode((string) ($profile?->services ?? ''));
         $industry = Str::title((string) ($profile?->industry ?? 'Attivita'));
 
-        $fallback = [
+        // Pillars dal preset come sostituto del generico "Guide {industry}" ecc.
+        $presetPillars = array_map(
+            fn (string $p) => Str::limit(Str::title($p), 80, ''),
+            (array) data_get($industryPreset, 'pillars', [])
+        );
+
+        $genericFallback = [
             "Guide {$industry}",
             "Case Study {$industry}",
             "Dietro le Quinte {$industry}",
             "Offerta {$industry}",
         ];
+
+        // I servizi del profilo hanno la priorità massima: sono specifici del brand.
+        // Se mancano, usiamo i pillars del preset; se manca anche il preset, il generico.
+        $fallback = !empty($presetPillars) ? $presetPillars : $genericFallback;
 
         $base = array_values(array_unique(array_filter(array_merge(
             array_slice($services, 0, 4),
@@ -185,23 +217,45 @@ class EditorialStrategyService
         return array_map(fn ($p) => Str::limit(Str::title($p), 80, ''), array_slice($base, 0, 8));
     }
 
-    private function buildRubrics(array $pillars): array
+    /**
+     * Costruisce le rubrics.
+     * Se il preset industry ha rubrics proprie, le usa al posto del config generico.
+     *
+     * @param  array<int, string>  $pillars
+     * @param  array<string, mixed>|null  $industryPreset
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildRubrics(array $pillars, ?array $industryPreset = null): array
     {
-        $defaults = config('editorial.rubrics', []);
         $mainPillar = $pillars[0] ?? 'Educativo';
-        $secondary = $pillars[1] ?? $mainPillar;
+        $secondary  = $pillars[1] ?? $mainPillar;
 
+        // Se il preset industry ha rubrics specifiche, usale direttamente
+        $presetRubrics = (array) data_get($industryPreset, 'rubrics', []);
+        if (!empty($presetRubrics)) {
+            return array_map(function (array $row) use ($mainPillar): array {
+                return [
+                    'name'    => (string) ($row['name'] ?? ''),
+                    'weight'  => (float) ($row['weight'] ?? 0.2),
+                    'focus'   => (string) ($row['focus'] ?? ''),
+                    'pillars' => [$mainPillar],
+                ];
+            }, $presetRubrics);
+        }
+
+        // Fallback: rubrics generiche da config
+        $defaults = config('editorial.rubrics', []);
         $byName = [
-            'Educativo' => [$mainPillar, $secondary],
-            'Educational' => [$mainPillar, $secondary],
+            'Educativo'    => [$mainPillar, $secondary],
+            'Educational'  => [$mainPillar, $secondary],
             'Prova Sociale' => [$secondary],
             'Social Proof' => [$secondary],
             'Storia Brand' => [$mainPillar],
-            'Brand Story' => [$mainPillar],
-            'Offerta' => [$secondary, $mainPillar],
-            'Offer' => [$secondary, $mainPillar],
-            'Community' => [$mainPillar],
-            'Trend' => [$secondary],
+            'Brand Story'  => [$mainPillar],
+            'Offerta'      => [$secondary, $mainPillar],
+            'Offer'        => [$secondary, $mainPillar],
+            'Community'    => [$mainPillar],
+            'Trend'        => [$secondary],
         ];
 
         $out = [];
@@ -211,29 +265,39 @@ class EditorialStrategyService
                 continue;
             }
             $out[] = [
-                'name' => $name,
-                'weight' => (float) ($row['weight'] ?? 0),
+                'name'    => $name,
+                'weight'  => (float) ($row['weight'] ?? 0),
                 'pillars' => $byName[$name] ?? [$mainPillar],
             ];
         }
 
         if (empty($out)) {
             $out = [
-                ['name' => 'Educativo', 'weight' => 0.4, 'pillars' => [$mainPillar]],
+                ['name' => 'Educativo',    'weight' => 0.4, 'pillars' => [$mainPillar]],
                 ['name' => 'Prova Sociale', 'weight' => 0.2, 'pillars' => [$secondary]],
                 ['name' => 'Storia Brand', 'weight' => 0.2, 'pillars' => [$mainPillar]],
-                ['name' => 'Offerta', 'weight' => 0.2, 'pillars' => [$secondary]],
+                ['name' => 'Offerta',      'weight' => 0.2, 'pillars' => [$secondary]],
             ];
         }
 
         return $out;
     }
 
-    private function buildCtaRules(?TenantProfile $profile): array
+    /**
+     * Costruisce le CTA rules.
+     * Il preset industry fornisce primary_cta e avoid list settoriali.
+     *
+     * @param  array<string, mixed>|null  $industryPreset
+     * @return array<string, mixed>
+     */
+    private function buildCtaRules(?TenantProfile $profile, ?array $industryPreset = null): array
     {
-        $profileCta = trim((string) ($profile?->cta ?? ''));
+        $profileCta   = trim((string) ($profile?->cta ?? ''));
+        $presetPrimary = trim((string) data_get($industryPreset, 'cta_rules.primary_cta', ''));
+        $presetSecondary = trim((string) data_get($industryPreset, 'cta_rules.secondary_cta', ''));
+        $presetAvoid  = (array) data_get($industryPreset, 'cta_rules.avoid', []);
 
-        $pool = [
+        $genericPool = [
             'Commenta la tua esperienza.',
             'Salva il post per usarlo come checklist.',
             'Scrivici in DM per una consulenza.',
@@ -241,13 +305,19 @@ class EditorialStrategyService
             'Visita il sito per maggiori dettagli.',
         ];
 
-        if ($profileCta !== '') {
-            array_unshift($pool, $profileCta);
-        }
+        // Costruisce il pool: profilo > preset > generico
+        $pool = array_values(array_unique(array_filter([
+            $profileCta,
+            $presetPrimary,
+            $presetSecondary,
+            ...$genericPool,
+        ])));
 
         return [
-            'primary_pool' => array_values(array_unique($pool)),
+            'primary_pool'      => array_values(array_unique($pool)),
             'avoid_consecutive' => true,
+            'avoid'             => $presetAvoid,
+            'compliance_note'   => trim((string) data_get($industryPreset, 'cta_rules.compliance_note', '')),
         ];
     }
 

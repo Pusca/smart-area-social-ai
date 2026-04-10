@@ -202,6 +202,17 @@ class GenerateBaseTextStep
             $similarityFeedback = null;
             $alignmentFeedback = null;
 
+            /**
+             * Raccoglie TUTTE le varianti generate (non solo la migliore).
+             * Vengono salvate in ai_meta.caption_variants per:
+             *   - A/B testing lato utente
+             *   - Fallback manuale se la variante scelta non piace
+             *   - Dataset per fine-tuning futuro
+             *
+             * @var array<int, array<string, mixed>>
+             */
+            $allCaptionVariants = [];
+
             for ($attempt = 0; $attempt < 3; $attempt++) {
                 $iterContext = $context;
                 $generationGuard = [];
@@ -244,6 +255,20 @@ class GenerateBaseTextStep
                 }
 
                 $combinedScore = round(((1 - min(1.0, $score)) * 0.38) + ($alignmentScore * 0.62), 4);
+
+                // Salva questa variante (ogni tentativo è una caption alternativa valida)
+                if (trim($caption) !== '') {
+                    $allCaptionVariants[] = [
+                        'caption'          => trim($caption),
+                        'cta'              => trim((string) ($gen['cta'] ?? '')),
+                        'hashtags'         => (array) ($gen['hashtags'] ?? []),
+                        'combined_score'   => $combinedScore,
+                        'alignment_score'  => round($alignmentScore, 4),
+                        'similarity_score' => round($score, 4),
+                        'attempt'          => $attempt + 1,
+                    ];
+                }
+
                 if ($combinedScore > $bestCombinedScore) {
                     $bestCombinedScore = $combinedScore;
                     $bestScore = $score;
@@ -288,14 +313,41 @@ class GenerateBaseTextStep
             $item->ai_cta = $gen['cta'] ?? ($itemBrain['cta'] ?? $item->ai_cta);
             $item->ai_image_prompt = $gen['image_prompt'] ?? $item->ai_image_prompt;
 
+            // Ordina le varianti per combined_score desc, esclude la variante selezionata come principale
+            $sortedVariants = collect($allCaptionVariants)
+                ->sortByDesc('combined_score')
+                ->values()
+                ->all();
+
+            // Salva max 2 varianti alternative (la principale è già in ai_caption)
+            $alternativeVariants = collect($sortedVariants)
+                ->filter(fn (array $v) => $v['caption'] !== trim((string) ($gen['caption'] ?? '')))
+                ->take(2)
+                ->values()
+                ->all();
+
+            // Aspect ratio consigliato per il placement — utile per l'UI e per la generazione visuale
+            $placementRatio = app(\App\Services\CaptionFormatterService::class)
+                ->placementAspectRatio(
+                    (string) $item->format,
+                    (string) $item->platform
+                );
+
             $nextMeta = array_merge($meta, [
-                'text_similarity_score' => round($bestScore, 4),
-                'text_alignment_score' => round($bestAlignmentScore, 4),
-                'text_alignment_review' => $textAlignmentReview,
+                'text_similarity_score'     => round($bestScore, 4),
+                'text_alignment_score'      => round($bestAlignmentScore, 4),
+                'text_alignment_review'     => $textAlignmentReview,
                 'text_uniqueness_checked_at' => now()->toDateTimeString(),
-                'text_provider_last_used' => (string) data_get($providerMatrix, 'text.provider', 'openai'),
+                'text_provider_last_used'   => (string) data_get($providerMatrix, 'text.provider', 'openai'),
                 'grader_provider_last_used' => (string) data_get($providerMatrix, 'grader.provider', 'openai'),
-                'provider_matrix' => $providerMatrix,
+                'provider_matrix'           => $providerMatrix,
+
+                // Varianti alternative della caption (esclusa quella principale).
+                // Usabili per A/B test, fallback manuale o dataset fine-tuning.
+                'caption_variants' => $alternativeVariants,
+
+                // Aspect ratio consigliato per il placement di questo format+platform.
+                'placement_aspect_ratio' => $placementRatio,
             ]);
 
             $generatedVideoPrompt = trim((string) ($gen['video_prompt'] ?? ''));

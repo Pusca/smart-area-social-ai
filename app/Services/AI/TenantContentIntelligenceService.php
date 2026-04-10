@@ -9,6 +9,7 @@ use App\Models\TenantProfile;
 use App\Services\MemoryBuilderService;
 use App\Services\Trends\TrendOpportunitySynthesisService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class TenantContentIntelligenceService
@@ -20,6 +21,13 @@ class TenantContentIntelligenceService
     }
 
     /**
+     * Entry point principale. Combina la base tenant (cacheable) con gli esempi
+     * specifici del brief (non cacheable perché dipendono dal testo della richiesta).
+     *
+     * Architettura cache:
+     *   - buildTenantBase() → cache Redis/DB per 30 min per tenant
+     *   - selectExamples()  → calcolato fresh ogni volta (dipende dal brief)
+     *
      * @param  array<int, string>  $platforms
      * @return array<string, mixed>
      */
@@ -29,35 +37,96 @@ class TenantContentIntelligenceService
         string $format = '',
         array $platforms = []
     ): array {
-        $brief = trim($brief);
-        $format = strtolower(trim($format));
+        $brief     = trim($brief);
+        $format    = strtolower(trim($format));
         $platforms = array_values(array_unique(array_filter(array_map(
             fn ($value) => strtolower(trim((string) $value)),
             $platforms
         ))));
 
+        // La base tenant (profilo, asset, memoria, trend) cambia raramente:
+        // caching per 30 min riduce 4 query pesanti a 0 per le generazioni successive.
+        $base = $this->buildTenantBaseCached($tenantId);
+
+        // Gli esempi dipendono dal brief: non cacheable in modo utile.
+        $examples         = $this->selectExamples($tenantId, $brief, $format, $platforms);
+        $negativeExamples = $this->selectNegativeExamples($tenantId, $brief, $format, $platforms);
+        $feedbackSignals  = $this->buildFeedbackSignals((array) ($base['feedback_summary'] ?? []));
+
+        $knowledgePack = [
+            'brand_basics'      => $base['brand_basics'],
+            'asset_counts'      => $base['asset_counts'],
+            'asset_library'     => $base['asset_library'],
+            'memory'            => $base['memory'],
+            'feedback'          => $base['feedback'],
+            'brief_focus'       => [
+                'brief_keywords'      => $this->extractKeywords($brief),
+                'requested_format'    => $format,
+                'requested_platforms' => $platforms,
+            ],
+            'trend_intelligence' => $base['trend_intelligence'],
+        ];
+
+        return [
+            'knowledge_pack'   => $knowledgePack,
+            'examples'         => $examples,
+            'negative_examples' => $negativeExamples,
+            'feedback_signals' => $feedbackSignals,
+            'built_at'         => now()->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * Invalida la cache della base tenant per un tenant specifico.
+     * Da chiamare quando cambiano asset brand, profilo o arriva nuovo feedback.
+     */
+    public function invalidateTenantBaseCache(int $tenantId): void
+    {
+        Cache::forget($this->tenantBaseCacheKey($tenantId));
+    }
+
+    /**
+     * Recupera la base tenant dalla cache o la costruisce ex-novo.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildTenantBaseCached(int $tenantId): array
+    {
+        $ttl = (int) config('generation.knowledge_pack_base_cache_ttl', 1800);
+
+        return Cache::remember(
+            $this->tenantBaseCacheKey($tenantId),
+            $ttl,
+            fn () => $this->buildTenantBase($tenantId)
+        );
+    }
+
+    /**
+     * Costruisce la parte statica del knowledge pack (non dipende dal brief).
+     * Comprende profilo brand, asset library, memoria storica e trend intelligence.
+     * Questa è la parte costosa: 4+ query DB e potenziale chiamata trend API.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildTenantBase(int $tenantId): array
+    {
         $profile = TenantProfile::query()
             ->where('tenant_id', $tenantId)
             ->first();
 
-        $memory = $this->memoryBuilder->buildForTenant($tenantId, 40);
+        $memory          = $this->memoryBuilder->buildForTenant($tenantId, 40);
         $feedbackSummary = (array) data_get($memory, 'feedback_summary', []);
-        $assetCounts = $this->loadAssetCounts($tenantId);
+        $assetCounts     = $this->loadAssetCounts($tenantId);
+
         $assetRows = BrandAsset::query()
             ->where('tenant_id', $tenantId)
             ->whereNull('content_plan_id')
             ->latest('id')
             ->limit((int) config('generation.knowledge_pack_asset_rows_limit', 48))
             ->get(['id', 'kind', 'original_name', 'mime', 'meta']);
-        $assetLibrary = $this->buildAssetLibrary($assetRows);
 
-        $examples = $this->selectExamples($tenantId, $brief, $format, $platforms);
-        $negativeExamples = $this->selectNegativeExamples($tenantId, $brief, $format, $platforms);
-        $feedbackSignals = $this->buildFeedbackSignals($feedbackSummary);
+        $assetLibrary      = $this->buildAssetLibrary($assetRows);
         $trendIntelligence = $this->trendOpportunitySynthesis->buildForTenant($tenantId, $profile, [
-            'brief' => $brief,
-            'format' => $format,
-            'platforms' => $platforms,
             'strategy' => [
                 'analysis_framework' => [
                     'primary_goal' => trim((string) ($profile?->default_goal ?? '')),
@@ -66,65 +135,62 @@ class TenantContentIntelligenceService
             'asset_readiness' => $assetCounts,
         ]);
 
-        $knowledgePack = [
+        return [
             'brand_basics' => [
                 'business_name' => trim((string) ($profile?->business_name ?? '')),
-                'industry' => trim((string) ($profile?->industry ?? '')),
-                'vision' => trim((string) ($profile?->vision ?? '')),
-                'mission' => trim((string) ($profile?->mission ?? '')),
-                'tone' => trim((string) ($profile?->default_tone ?? '')),
-                'cta' => trim((string) ($profile?->cta ?? '')),
+                'industry'      => trim((string) ($profile?->industry ?? '')),
+                'vision'        => trim((string) ($profile?->vision ?? '')),
+                'mission'       => trim((string) ($profile?->mission ?? '')),
+                'tone'          => trim((string) ($profile?->default_tone ?? '')),
+                'cta'           => trim((string) ($profile?->cta ?? '')),
             ],
             'asset_counts' => [
-                'logos' => (int) ($assetCounts['logo'] ?? 0),
-                'images' => (int) ($assetCounts['image'] ?? 0),
-                'videos' => (int) ($assetCounts['video'] ?? 0),
-                'audios' => (int) ($assetCounts['audio'] ?? 0),
+                'logos'     => (int) ($assetCounts['logo'] ?? 0),
+                'images'    => (int) ($assetCounts['image'] ?? 0),
+                'videos'    => (int) ($assetCounts['video'] ?? 0),
+                'audios'    => (int) ($assetCounts['audio'] ?? 0),
                 'documents' => (int) ($assetCounts['document'] ?? 0),
-                'texts' => (int) ($assetCounts['text'] ?? 0),
-                'links' => (int) ($assetCounts['link'] ?? 0),
+                'texts'     => (int) ($assetCounts['text'] ?? 0),
+                'links'     => (int) ($assetCounts['link'] ?? 0),
             ],
-            'asset_library' => $assetLibrary,
+            'asset_library'   => $assetLibrary,
             'memory' => [
-                'themes' => (array) ($memory['themes'] ?? []),
-                'offers' => (array) ($memory['offers'] ?? []),
-                'ctas' => (array) ($memory['ctas'] ?? []),
-                'hashtags' => array_slice((array) ($memory['hashtags'] ?? []), 0, 12),
+                'themes'        => (array) ($memory['themes'] ?? []),
+                'offers'        => (array) ($memory['offers'] ?? []),
+                'ctas'          => (array) ($memory['ctas'] ?? []),
+                'hashtags'      => array_slice((array) ($memory['hashtags'] ?? []), 0, 12),
                 'recent_titles' => array_slice((array) ($memory['recent_titles'] ?? []), 0, 6),
-                'recent_hooks' => array_slice((array) ($memory['recent_hooks'] ?? []), 0, 6),
+                'recent_hooks'  => array_slice((array) ($memory['recent_hooks'] ?? []), 0, 6),
             ],
             'feedback' => [
-                'preferred_formats' => (array) ($feedbackSummary['preferred_formats'] ?? []),
-                'preferred_platforms' => (array) ($feedbackSummary['preferred_platforms'] ?? []),
-                'priority_categories' => (array) ($feedbackSummary['priority_categories'] ?? []),
-                'category_breakdown' => (array) ($feedbackSummary['category_breakdown'] ?? []),
-                'severity_breakdown' => (array) ($feedbackSummary['severity_breakdown'] ?? []),
-                'score_averages' => (array) ($feedbackSummary['score_averages'] ?? []),
-                'positive_signals' => (array) ($memory['positive_signals'] ?? []),
-                'hard_avoid_rules' => (array) ($memory['hard_avoid_rules'] ?? []),
-                'recent_objections' => array_slice((array) ($feedbackSummary['recent_objections'] ?? []), 0, 6),
-                'reusable_signals' => array_slice((array) ($feedbackSummary['reusable_signals'] ?? []), 0, 8),
-                'retrieval_hints' => (array) ($feedbackSummary['retrieval_hints'] ?? []),
-            ],
-            'brief_focus' => [
-                'brief_keywords' => $this->extractKeywords($brief),
-                'requested_format' => $format,
-                'requested_platforms' => $platforms,
+                'preferred_formats'    => (array) ($feedbackSummary['preferred_formats'] ?? []),
+                'preferred_platforms'  => (array) ($feedbackSummary['preferred_platforms'] ?? []),
+                'priority_categories'  => (array) ($feedbackSummary['priority_categories'] ?? []),
+                'category_breakdown'   => (array) ($feedbackSummary['category_breakdown'] ?? []),
+                'severity_breakdown'   => (array) ($feedbackSummary['severity_breakdown'] ?? []),
+                'score_averages'       => (array) ($feedbackSummary['score_averages'] ?? []),
+                'positive_signals'     => (array) ($memory['positive_signals'] ?? []),
+                'hard_avoid_rules'     => (array) ($memory['hard_avoid_rules'] ?? []),
+                'recent_objections'    => array_slice((array) ($feedbackSummary['recent_objections'] ?? []), 0, 6),
+                'reusable_signals'     => array_slice((array) ($feedbackSummary['reusable_signals'] ?? []), 0, 8),
+                'retrieval_hints'      => (array) ($feedbackSummary['retrieval_hints'] ?? []),
             ],
             'trend_intelligence' => [
-                'summary' => (array) ($trendIntelligence['summary'] ?? []),
+                'summary'       => (array) ($trendIntelligence['summary'] ?? []),
                 'opportunities' => array_slice((array) ($trendIntelligence['opportunities'] ?? []), 0, 4),
-                'platforms' => (array) ($trendIntelligence['platforms'] ?? []),
+                'platforms'     => (array) ($trendIntelligence['platforms'] ?? []),
             ],
+            // Conserviamo il feedback_summary raw per buildFeedbackSignals()
+            'feedback_summary' => $feedbackSummary,
         ];
+    }
 
-        return [
-            'knowledge_pack' => $knowledgePack,
-            'examples' => $examples,
-            'negative_examples' => $negativeExamples,
-            'feedback_signals' => $feedbackSignals,
-            'built_at' => now()->toDateTimeString(),
-        ];
+    /**
+     * Chiave cache univoca per la base tenant.
+     */
+    private function tenantBaseCacheKey(int $tenantId): string
+    {
+        return 'kp_base.' . $tenantId;
     }
 
     /**

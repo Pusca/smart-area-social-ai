@@ -7,6 +7,7 @@ use App\Models\GenerationRun;
 use App\Models\SocialAccount;
 use App\Models\SocialPublication;
 use App\Services\AI\PublishReadinessGate;
+use App\Services\CaptionFormatterService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -15,29 +16,57 @@ class SocialPublishingService
 {
     public function __construct(
         private readonly SocialAssetUrlService $assetUrlService,
-        private readonly PublishReadinessGate $publishReadinessGate
+        private readonly PublishReadinessGate $publishReadinessGate,
+        private readonly CaptionFormatterService $captionFormatter
     ) {
     }
 
     /**
+     * Approva un contenuto per la pubblicazione dopo aver passato il publish gate.
+     *
+     * Il gate ha tre livelli di decisione:
+     *   - pass / pass_with_warnings  → approvabile normalmente
+     *   - manual_review_required     → approvabile solo con $forceApprove = true (admin override)
+     *   - blocked / regenerate_*     → mai approvabile, richiede rigenerazione
+     *
+     * @param  bool  $forceApprove  Consente all'admin di superare il livello manual_review_required.
      * @return array{scheduled:int,warnings:array<int,string>}
      */
-    public function approve(ContentItem $item): array
+    public function approve(ContentItem $item, bool $forceApprove = false): array
     {
         $run = GenerationRun::query()
             ->where('content_item_id', (int) $item->id)
             ->latest('id')
             ->first();
-        $gate = $this->publishReadinessGate->decideForContentItem($item, $run);
-        if (!(bool) ($gate['approvable'] ?? false)) {
+
+        $gate     = $this->publishReadinessGate->decideForContentItem($item, $run);
+        $decision = (string) ($gate['decision'] ?? 'blocked');
+        $approvable = (bool) ($gate['approvable'] ?? false);
+
+        // Override admin: permette di approvare contenuti in manual_review_required.
+        // I contenuti con decision "blocked" o "regenerate_*" non sono mai override-abili.
+        if (!$approvable && $forceApprove && $decision === 'manual_review_required') {
+            $approvable = true;
+        }
+
+        if (!$approvable) {
             $reasons = array_values(array_filter(array_merge(
                 (array) ($gate['blocking_reasons'] ?? []),
                 (array) ($gate['warnings'] ?? [])
             )));
 
+            // Messaggio specifico per livello di decisione, più actionable per l'utente.
+            $baseMessage = match ($decision) {
+                'blocked'                => 'Contenuto bloccato: non supera i controlli di qualità o identità.',
+                'regenerate_visual'      => 'Il visual non è pronto: rigenera l\'immagine o il video prima di approvare.',
+                'regenerate_audio'       => 'L\'audio non è pronto: rigenera il voiceover prima di approvare.',
+                'regenerate_caption'     => 'La caption non è pronta: rigenera il copy prima di approvare.',
+                'manual_review_required' => 'Il contenuto richiede revisione manuale. Un admin può forzare l\'approvazione.',
+                default                  => 'Contenuto non approvabile al momento.',
+            };
+
             throw new \RuntimeException(
-                'Pubblicazione bloccata dal publish gate: '
-                . ($reasons !== [] ? implode(' ', $reasons) : 'contenuto non approvabile.')
+                $baseMessage . ($reasons !== [] ? ' — ' . implode(' ', $reasons) : '')
             );
         }
 
@@ -53,11 +82,23 @@ class SocialPublishingService
     /**
      * @return array{scheduled:int,warnings:array<int,string>}
      */
+    /**
+     * Piattaforme supportate per la pubblicazione automatica.
+     * Per aggiungere una nuova piattaforma: aggiungerla qui + creare il suo adapter.
+     */
+    private const SUPPORTED_PLATFORMS = [
+        'instagram',
+        'facebook',
+        'linkedin',
+        'tiktok',
+        'google_business',
+    ];
+
     public function syncForContentItem(ContentItem $item): array
     {
         $warnings = [];
         $supportedPlatforms = collect($item->platforms())
-            ->filter(fn (string $platform) => in_array($platform, ['instagram', 'facebook'], true))
+            ->filter(fn (string $platform) => in_array($platform, self::SUPPORTED_PLATFORMS, true))
             ->values()
             ->all();
 
@@ -84,7 +125,6 @@ class SocialPublishingService
             ];
         }
 
-        $caption = $this->buildCaption($item);
         $asset = null;
 
         try {
@@ -93,17 +133,17 @@ class SocialPublishingService
             $warnings[] = $e->getMessage();
         }
 
-        if ($caption === '') {
-            $warnings[] = 'Manca una caption pronta per la pubblicazione.';
-        }
-
         $scheduled = 0;
 
-        DB::transaction(function () use ($item, $supportedPlatforms, $caption, $asset, &$warnings, &$scheduled): void {
+        DB::transaction(function () use ($item, $supportedPlatforms, $asset, &$warnings, &$scheduled): void {
             $existingPlatforms = [];
 
             foreach ($supportedPlatforms as $platform) {
                 $existingPlatforms[] = $platform;
+
+                // Formatta la caption seguendo le regole specifiche della piattaforma target.
+                // Ogni piattaforma ha limiti diversi di caratteri, hashtag e struttura.
+                $caption = $this->buildCaption($item, $platform);
 
                 $account = $this->resolveAccountForPlatform((int) $item->tenant_id, $platform);
                 if (!$account) {
@@ -117,25 +157,41 @@ class SocialPublishingService
                     continue;
                 }
 
+                // Determina media_type: per caroselli Instagram usa 'carousel'
+                $mediaType = (string) ($asset['media_type'] ?? 'image');
+                if (
+                    $platform === 'instagram'
+                    && ($item->format === 'carousel'
+                        || !empty(data_get(is_array($item->ai_meta) ? $item->ai_meta : [], 'carousel_images')))
+                ) {
+                    $mediaType = 'carousel';
+                }
+
                 SocialPublication::query()->updateOrCreate(
                     [
                         'content_item_id' => $item->id,
-                        'platform' => $platform,
+                        'platform'        => $platform,
                     ],
                     [
-                        'tenant_id' => $item->tenant_id,
+                        'tenant_id'        => $item->tenant_id,
                         'social_account_id' => $account->id,
-                        'provider' => 'meta',
-                        'status' => 'scheduled',
-                        'media_type' => (string) ($asset['media_type'] ?? 'image'),
-                        'caption' => $caption,
-                        'media_url' => (string) ($asset['public_url'] ?? ''),
-                        'scheduled_for' => $item->scheduled_at,
-                        'error_message' => null,
-                        'payload' => [
-                            'title' => $item->title,
-                            'format' => $item->format,
-                            'media_path' => $asset['path'] ?? null,
+                        'provider'         => $account->provider,
+                        'status'           => 'scheduled',
+                        'media_type'       => $mediaType,
+                        'caption'          => $caption,
+                        'media_url'        => (string) ($asset['public_url'] ?? ''),
+                        'scheduled_for'    => $item->scheduled_at,
+                        'error_message'    => null,
+                        'payload'          => [
+                            'title'           => $item->title,
+                            'format'          => $item->format,
+                            'media_path'      => $asset['path'] ?? null,
+                            // Passa le slide del carosello al publisher
+                            'carousel_images' => data_get(
+                                is_array($item->ai_meta) ? $item->ai_meta : [],
+                                'carousel_images',
+                                []
+                            ),
                         ],
                     ]
                 );
@@ -230,11 +286,36 @@ class SocialPublishingService
             ]);
     }
 
+    /**
+     * Risolve l'account social attivo per una piattaforma.
+     *
+     * Ogni piattaforma ha il proprio provider:
+     *   instagram / facebook → meta
+     *   linkedin             → linkedin
+     *   tiktok               → tiktok
+     *   google_business      → google
+     *
+     * Se esiste un account `is_primary` lo preferisce, altrimenti prende il più recente.
+     */
     private function resolveAccountForPlatform(int $tenantId, string $platform): ?SocialAccount
     {
+        // Mappa piattaforma → provider API
+        $providerMap = [
+            'instagram'       => 'meta',
+            'facebook'        => 'meta',
+            'linkedin'        => 'linkedin',
+            'tiktok'          => 'tiktok',
+            'google_business' => 'google',
+        ];
+
+        $provider = $providerMap[$platform] ?? null;
+        if ($provider === null) {
+            return null;
+        }
+
         return SocialAccount::query()
             ->where('tenant_id', $tenantId)
-            ->where('provider', 'meta')
+            ->where('provider', $provider)
             ->where('platform', $platform)
             ->where('status', 'active')
             ->orderByDesc('is_primary')
@@ -242,35 +323,24 @@ class SocialPublishingService
             ->first();
     }
 
-    private function buildCaption(ContentItem $item): string
+    /**
+     * Costruisce la caption finale pronta per la pubblicazione.
+     *
+     * Usa CaptionFormatterService per rispettare le regole di ogni piattaforma:
+     * separazione hashtag, limiti caratteri, CTA come paragrafo indipendente.
+     * Il platform viene derivato dalla SocialPublication in corso, non dal ContentItem,
+     * perché lo stesso item può essere pubblicato su piattaforme diverse.
+     */
+    private function buildCaption(ContentItem $item, string $platform = 'instagram'): string
     {
-        $parts = [];
-
-        $caption = trim((string) ($item->ai_caption ?: $item->caption ?: ''));
-        if ($caption !== '') {
-            $parts[] = $caption;
-        }
-
-        $cta = trim((string) ($item->ai_cta ?? ''));
-        if ($cta !== '') {
-            $parts[] = $cta;
-        }
-
+        $caption  = trim((string) ($item->ai_caption ?: $item->caption ?: ''));
+        $cta      = trim((string) ($item->ai_cta ?? ''));
         $hashtags = is_array($item->ai_hashtags) && !empty($item->ai_hashtags)
             ? $item->ai_hashtags
             : (is_array($item->hashtags) ? $item->hashtags : []);
 
-        $hashtagsLine = collect($hashtags)
-            ->map(fn ($tag) => trim((string) $tag))
-            ->filter(fn (string $tag) => $tag !== '')
-            ->map(fn (string $tag) => Str::startsWith($tag, '#') ? $tag : '#' . ltrim($tag, '#'))
-            ->unique()
-            ->implode(' ');
-
-        if ($hashtagsLine !== '') {
-            $parts[] = $hashtagsLine;
-        }
-
-        return trim(implode("\n\n", array_filter($parts)));
+        // CaptionFormatterService gestisce: spacing Instagram, limite caratteri,
+        // blocco hashtag separato, normalizzazione # prefix.
+        return $this->captionFormatter->format($caption, $cta, $hashtags, $platform);
     }
 }

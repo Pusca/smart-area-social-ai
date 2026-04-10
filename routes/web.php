@@ -16,6 +16,10 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\TenantProfileController;
 use App\Http\Controllers\AdminWorkspaceController;
+use App\Http\Controllers\AgencyBrandSwitchController;
+use App\Http\Controllers\LinkedInSocialController;
+use App\Http\Controllers\TikTokSocialController;
+use App\Http\Controllers\GoogleBusinessSocialController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -37,12 +41,26 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/admin/impersonation/stop', [AdminWorkspaceController::class, 'stopImpersonation'])->name('admin.impersonation.stop');
 });
 
-Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
+Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
     Route::post('/calendar/content/{contentItem}/approve', [CalendarController::class, 'approve'])->name('calendar.content.approve');
     Route::redirect('/brand', '/profile/brand', 302)->name('brand.legacy');
+
+    // ── Feature multi-brand / agenzia ────────────────────────────────────────
+    // Lista brand accessibili + switch sessione. Non richiede hasTenant
+    // perché serve anche per il primo switch.
+    Route::prefix('agency')->name('agency.')->group(function () {
+        Route::get('/brands', [AgencyBrandSwitchController::class, 'index'])->name('brands.index');
+        Route::post('/brands/{tenant}/switch', [AgencyBrandSwitchController::class, 'switch'])->name('brands.switch');
+        Route::post('/brands/reset', [AgencyBrandSwitchController::class, 'reset'])->name('brands.reset');
+    });
+
+    // ── Onboarding da URL: scraping brand ───────────────────────────────────
+    // Endpoint usato dal wizard di onboarding per pre-compilare il profilo
+    // estraendo dati dal sito web del cliente senza API esterne.
+    Route::post('/profile/brand/scrape-url', [TenantProfileController::class, 'scrapeUrl'])->name('profile.brand.scrape');
 
     // Profilo attivita e asset del tenant.
     Route::get('/profile/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
@@ -68,6 +86,9 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
     Route::get('/wizard/progress', [PlanWizardController::class, 'progress'])->name('wizard.progress');
     Route::get('/wizard/progress/{contentPlan}', [PlanWizardController::class, 'progress'])->name('wizard.progress.plan');
+    // SSE: sostituisce il polling JS. Connessione keep-alive che emette eventi
+    // 'progress' e 'done' mentre la generazione AI procede in background.
+    Route::get('/wizard/stream/{contentPlan}', [PlanWizardController::class, 'stream'])->name('wizard.stream');
     Route::get('/plans/{contentPlan}/generating', [PlanWizardController::class, 'generating'])->name('plans.generating');
     Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
@@ -85,6 +106,18 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/settings/social/meta/redirect', [SocialAccountController::class, 'redirectToMeta'])->name('settings.social.meta.redirect');
     Route::get('/settings/social/meta/callback', [SocialAccountController::class, 'handleMetaCallback'])->name('settings.social.meta.callback');
     Route::post('/settings/social/accounts/{socialAccount}/disconnect', [SocialAccountController::class, 'disconnect'])->name('settings.social.accounts.disconnect');
+
+    // ── LinkedIn OAuth ────────────────────────────────────────────────────────
+    Route::get('/settings/social/linkedin/redirect', [LinkedInSocialController::class, 'redirectToLinkedIn'])->name('settings.social.linkedin.redirect');
+    Route::get('/settings/social/linkedin/callback', [LinkedInSocialController::class, 'handleLinkedInCallback'])->name('settings.social.linkedin.callback');
+
+    // ── TikTok OAuth ──────────────────────────────────────────────────────────
+    Route::get('/settings/social/tiktok/redirect', [TikTokSocialController::class, 'redirectToTikTok'])->name('settings.social.tiktok.redirect');
+    Route::get('/settings/social/tiktok/callback', [TikTokSocialController::class, 'handleTikTokCallback'])->name('settings.social.tiktok.callback');
+
+    // ── Google Business OAuth ─────────────────────────────────────────────────
+    Route::get('/settings/social/google/redirect', [GoogleBusinessSocialController::class, 'redirectToGoogle'])->name('settings.social.google.redirect');
+    Route::get('/settings/social/google/callback', [GoogleBusinessSocialController::class, 'handleGoogleCallback'])->name('settings.social.google.callback');
     Route::get('/settings/integrations/canva/redirect', [CanvaIntegrationController::class, 'redirect'])->name('settings.integrations.canva.redirect');
     Route::get('/settings/integrations/canva/callback', [CanvaIntegrationController::class, 'callback'])->name('settings.integrations.canva.callback');
     Route::post('/settings/integrations/canva/disconnect', [CanvaIntegrationController::class, 'disconnect'])->name('settings.integrations.canva.disconnect');

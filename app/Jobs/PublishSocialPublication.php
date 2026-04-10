@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\SocialPublication;
 use App\Services\Notification\WorkspaceNotificationService;
-use App\Services\Social\MetaGraphService;
+use App\Services\Social\SocialPublisherRegistry;
 use App\Services\Social\SocialPublishingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,7 +27,7 @@ class PublishSocialPublication implements ShouldQueue
     }
 
     public function handle(
-        MetaGraphService $metaGraphService,
+        SocialPublisherRegistry $publisherRegistry,
         SocialPublishingService $socialPublishingService,
         WorkspaceNotificationService $workspaceNotifications
     ): void
@@ -55,7 +55,10 @@ class PublishSocialPublication implements ShouldQueue
         $publication->save();
 
         try {
-            $result = $metaGraphService->publish($publication->socialAccount, $publication);
+            // Il registry sceglie automaticamente l'adapter corretto
+            // in base a $publication->socialAccount->provider
+            // (meta → MetaGraphService, linkedin → LinkedInApiService, ecc.)
+            $result = $publisherRegistry->publish($publication->socialAccount, $publication);
 
             $publication->status = 'published';
             $publication->published_at = Carbon::now();

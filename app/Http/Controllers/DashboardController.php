@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
+use App\Services\BrandProgressService;
 use App\Services\ContentMediaPreviewService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -11,7 +12,8 @@ use Illuminate\Support\Carbon;
 class DashboardController extends Controller
 {
     public function __construct(
-        private readonly ContentMediaPreviewService $mediaPreviewService
+        private readonly ContentMediaPreviewService $mediaPreviewService,
+        private readonly BrandProgressService $brandProgress
     ) {
     }
 
@@ -102,6 +104,11 @@ class DashboardController extends Controller
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
                     : 'border-red-200 bg-red-50 text-red-700'));
 
+        // ── Brand Progress Score (multi-dimensionale) ─────────────────────────
+        // Calcola completezza profilo, qualità asset, contenuti, pubblicazioni,
+        // apprendimento AI. Usato nel widget "Stato del Brand" nel dashboard.
+        $brandProgressData = $this->brandProgress->computeForTenant($tenantId);
+
         $planItemsTotal = 0;
         $planItemsDone = 0;
         $planItemsQueued = 0;
@@ -150,6 +157,7 @@ class DashboardController extends Controller
         }
 
         return view('dashboard', compact(
+            'brandProgressData',
             'u',
             'latestPlan',
             'totalItems',

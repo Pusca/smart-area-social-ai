@@ -55,6 +55,8 @@ return [
     ],
 
     'professionalism' => [
+        // Frammenti aggressivi generici — validi per tutti i settori.
+        // Le industry_overrides qui sotto aggiungono regole settoriali specifiche.
         'aggressive_fragments' => [
             'compra subito',
             'ultima occasione',
@@ -66,6 +68,88 @@ return [
             'offerta shock',
         ],
         'max_exclamation_marks' => 2,
+    ],
+
+    /**
+     * Regole di professionalismo specifiche per industria.
+     *
+     * Per ogni industry (chiave = valore del campo TenantProfile::industry),
+     * è possibile definire:
+     *   - aggressive_fragments: parole/frasi vietate IN AGGIUNTA alle generiche
+     *   - max_exclamation_marks: override del limite esclamativo
+     *
+     * Le industry sono case-insensitive e vengono confrontate con strtolower().
+     * Se l'industry del tenant non è presente, si usano le regole generiche.
+     */
+    'industry_overrides' => [
+        // Salute, cliniche, medici: nessuna promessa di cura, nessuno sconto urgente
+        'healthcare' => [
+            'aggressive_fragments' => [
+                'guarisci subito',
+                'cura definitiva',
+                'risultati garantiti',
+                'offerta speciale',
+                'prenota ora',
+                'sconto esclusivo',
+                'solo questo mese',
+            ],
+            'max_exclamation_marks' => 1,
+        ],
+
+        // Avvocati, notai, consulenti legali: nessuna promessa di vittoria, no urgenza
+        'legal' => [
+            'aggressive_fragments' => [
+                'vinciamo garantito',
+                'risultato assicurato',
+                'consulenza gratuita subito',
+                'chiama ora',
+                'non perdere tempo',
+            ],
+            'max_exclamation_marks' => 1,
+        ],
+
+        // Finanza e assicurazioni: no promesse di rendimento
+        'finance' => [
+            'aggressive_fragments' => [
+                'rendimento garantito',
+                'guadagno sicuro',
+                'investimento infallibile',
+                'arricchisciti',
+                'soldi facili',
+                'offerta irripetibile',
+            ],
+            'max_exclamation_marks' => 1,
+        ],
+
+        // Food & restaurant: tono più caldo, regole più permissive
+        'food' => [
+            'aggressive_fragments' => [
+                'offerta shock',
+                'prezzi stracciati',
+            ],
+            'max_exclamation_marks' => 3,
+        ],
+
+        // Formazione e infoprodotti: no promesse di trasformazione rapida
+        'education' => [
+            'aggressive_fragments' => [
+                'impara in 24 ore',
+                'diventa esperto subito',
+                'risultati immediati',
+                'successo garantito',
+            ],
+            'max_exclamation_marks' => 2,
+        ],
+
+        // E-commerce: tono commerciale ammesso, ma non aggressivo
+        'ecommerce' => [
+            'aggressive_fragments' => [
+                'offerta shock',
+                'prezzi da shock',
+                'ultima unità',
+            ],
+            'max_exclamation_marks' => 2,
+        ],
     ],
 
     'hook' => [

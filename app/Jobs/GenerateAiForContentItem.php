@@ -51,7 +51,22 @@ class GenerateAiForContentItem implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 1200;
-    public int $tries = 1;
+
+    /**
+     * Numero massimo di tentativi. Impostato a 3 per tollerare errori transitori
+     * (timeout API, connessioni instabili). failOnTimeout = true impedisce retry
+     * su timeout del job, che sono attesi per video lunghi.
+     */
+    public int $tries = 3;
+
+    /**
+     * Backoff progressivo tra i retry: 30s dopo il primo fallimento, 60s dopo il secondo.
+     * Evita di sovraccaricare i provider AI già sotto stress.
+     *
+     * @var array<int, int>
+     */
+    public array $backoff = [30, 60];
+
     public bool $failOnTimeout = true;
     public string $runKey;
 
@@ -88,7 +103,17 @@ class GenerateAiForContentItem implements ShouldQueue
         }
 
         $lockKey = $this->processingLockKey();
-        if (!Cache::add($lockKey, $this->runKey, max(1800, $this->timeout + 300))) {
+
+        /**
+         * Cache::lock() è compatibile con Redis (lock distribuito) e database driver (dev).
+         * A differenza di Cache::add(), gestisce l'owner token in modo atomico e ha
+         * release() sicura anche se il lock è già scaduto.
+         * Timeout: max(1800, job_timeout + 300) per garantire che il lock superi
+         * sempre la durata massima del job.
+         */
+        $lock = Cache::lock($lockKey, max(1800, $this->timeout + 300));
+
+        if (!$lock->get()) {
             Log::info('GenerateAiForContentItem skipped because another runner already owns the content item lock', [
                 'content_item_id' => $item->id,
                 'run_key' => $this->runKey,
@@ -195,7 +220,9 @@ class GenerateAiForContentItem implements ShouldQueue
             );
             $item->save();
         } finally {
-            Cache::forget($lockKey);
+            // Rilascia il lock distribuito in ogni caso: successo, eccezione o timeout.
+            // release() è no-op se il lock è già scaduto — nessun rischio di eccezione.
+            $lock->release();
         }
     }
 

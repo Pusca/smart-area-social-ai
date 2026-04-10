@@ -606,15 +606,19 @@ class GenerationQualityScorecardService
             ], ['Professionalism score non disponibile: mancano copy e segnali strategici sufficienti.']];
         }
 
+        // Legge l'industry dal knowledge pack salvato in meta durante la generazione
+        $industry = strtolower(trim((string) data_get($meta, 'knowledge_pack.brand_basics.industry', '')));
+
         $combined = implode(' ', $signals);
         $score = 0.74;
         if ($this->containsBannedHookFragment($combined)) {
             $score -= 0.28;
         }
-        if ($this->containsAggressiveLanguage($combined)) {
+        // Passa l'industry per applicare le regole specifiche del settore
+        if ($this->containsAggressiveLanguage($combined, $industry)) {
             $score -= 0.18;
         }
-        if ($this->exclamationMarks($combined) > (int) config('ai_quality.professionalism.max_exclamation_marks', 2)) {
+        if ($this->exclamationMarks($combined) > $this->maxExclamationMarksForIndustry($industry)) {
             $score -= 0.08;
         }
         if ($this->uppercaseRatio($combined) > 0.3) {
@@ -1238,10 +1242,23 @@ class GenerationQualityScorecardService
         return false;
     }
 
-    private function containsAggressiveLanguage(string $text): bool
+    /**
+     * Verifica se il testo contiene linguaggio aggressivo.
+     *
+     * Controlla sia le regole generiche sia quelle dell'industry del tenant.
+     * Le regole industry vengono lette da ai_quality.industry_overrides.{industry}.aggressive_fragments.
+     */
+    private function containsAggressiveLanguage(string $text, string $industry = ''): bool
     {
         $normalized = Str::lower(trim($text));
-        foreach ((array) config('ai_quality.professionalism.aggressive_fragments', []) as $fragment) {
+
+        // Frammenti generici (validi per tutti i settori)
+        $fragments = array_merge(
+            (array) config('ai_quality.professionalism.aggressive_fragments', []),
+            $this->industryAggressiveFragments($industry)
+        );
+
+        foreach ($fragments as $fragment) {
             $fragment = Str::lower(trim((string) $fragment));
             if ($fragment !== '' && Str::contains($normalized, $fragment)) {
                 return true;
@@ -1249,6 +1266,37 @@ class GenerationQualityScorecardService
         }
 
         return false;
+    }
+
+    /**
+     * Restituisce i frammenti aggressivi aggiuntivi per una data industry.
+     *
+     * @return array<int, string>
+     */
+    private function industryAggressiveFragments(string $industry): array
+    {
+        $industry = strtolower(trim($industry));
+        if ($industry === '') {
+            return [];
+        }
+
+        return (array) config("ai_quality.industry_overrides.{$industry}.aggressive_fragments", []);
+    }
+
+    /**
+     * Restituisce il limite di esclamativi per una data industry.
+     * Usa il default generico se l'industry non ha override.
+     */
+    private function maxExclamationMarksForIndustry(string $industry): int
+    {
+        $industry = strtolower(trim($industry));
+        $override = config("ai_quality.industry_overrides.{$industry}.max_exclamation_marks");
+
+        if (is_numeric($override)) {
+            return (int) $override;
+        }
+
+        return (int) config('ai_quality.professionalism.max_exclamation_marks', 2);
     }
 
     private function exclamationMarks(string $text): int

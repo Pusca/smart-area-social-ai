@@ -51,5 +51,9 @@ return [
         'max_preferred_items' => 6,
         'max_underperforming_items' => 5,
         'max_provider_paths' => 5,
+
+        // TTL in secondi per la cache del learning loop.
+        // 1800 = 30 min. refreshForTenant() invalida immediatamente quando serve.
+        'cache_ttl' => (int) env('LEARNING_LOOP_CACHE_TTL', 1800),
     ],
 ];

@@ -2,13 +2,14 @@
 
 namespace App\Services\Social;
 
+use App\Contracts\SocialPublisherInterface;
 use App\Models\SocialAccount;
 use App\Models\SocialPublication;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
-class MetaGraphService
+class MetaGraphService implements SocialPublisherInterface
 {
     public function loginUrl(string $state): string
     {
@@ -142,19 +143,107 @@ class MetaGraphService
     }
 
     /**
+     * Pubblica su Facebook o Instagram, scegliendo il metodo corretto
+     * in base alla piattaforma e al tipo di media (image / video / carousel).
+     *
      * @return array<string, mixed>
      */
     public function publish(SocialAccount $account, SocialPublication $publication): array
     {
+        $mediaType  = (string) ($publication->media_type ?? 'image');
+        $isCarousel = $mediaType === 'carousel'
+            || !empty(data_get($publication->payload, 'carousel_images'));
+
         return match ($account->platform) {
-            'facebook' => $publication->media_type === 'video'
+            'facebook' => $mediaType === 'video'
                 ? $this->publishFacebookVideo($account, $publication)
                 : $this->publishFacebookImage($account, $publication),
-            'instagram' => $publication->media_type === 'video'
-                ? $this->publishInstagramVideo($account, $publication)
-                : $this->publishInstagramImage($account, $publication),
+
+            'instagram' => match (true) {
+                $isCarousel    => $this->publishInstagramCarousel($account, $publication),
+                $mediaType === 'video' => $this->publishInstagramVideo($account, $publication),
+                default        => $this->publishInstagramImage($account, $publication),
+            },
+
             default => throw new RuntimeException('Piattaforma Meta non supportata: ' . $account->platform),
         };
+    }
+
+    /**
+     * Pubblica un carosello Instagram (2–10 immagini/video).
+     *
+     * Flusso API:
+     *   1. Per ogni immagine: POST /{ig-id}/media con is_carousel_item=true → child container id
+     *   2. POST /{ig-id}/media con media_type=CAROUSEL, children=[id1,id2,...], caption
+     *   3. POST /{ig-id}/media_publish con creation_id=carousel_container_id
+     *
+     * Le URL delle immagini vengono lette da payload.carousel_images[] o
+     * da media_url (singola) come fallback.
+     *
+     * @return array<string, mixed>
+     */
+    private function publishInstagramCarousel(SocialAccount $account, SocialPublication $publication): array
+    {
+        // ── Raccoglie le URL delle slide ─────────────────────────────────────
+        $carouselImages = (array) data_get($publication->payload, 'carousel_images', []);
+
+        if (empty($carouselImages) && !empty($publication->media_url)) {
+            // Fallback: trata media_url come unica slide (degrada a post singolo)
+            $carouselImages = [$publication->media_url];
+        }
+
+        if (count($carouselImages) < 2) {
+            // Instagram richiede almeno 2 slide per il carosello
+            // Fallback a post singolo con la prima immagine disponibile
+            $publication->media_url = (string) ($carouselImages[0] ?? $publication->media_url);
+
+            return $this->publishInstagramImage($account, $publication);
+        }
+
+        // ── Step 1: crea un child container per ogni slide (max 10) ──────────
+        $childIds = [];
+        foreach (array_slice($carouselImages, 0, 10) as $imageUrl) {
+            $container = $this->request($account->access_token)
+                ->post($this->graphUrl('/' . $account->account_id . '/media'), [
+                    'image_url'          => (string) $imageUrl,
+                    'is_carousel_item'   => 'true',
+                ]);
+
+            if (!$container->successful()) {
+                throw new RuntimeException(
+                    'Instagram carousel child container fallito: ' . $container->body()
+                );
+            }
+
+            $childId = trim((string) data_get($container->json(), 'id', ''));
+            if ($childId === '') {
+                throw new RuntimeException('Instagram carousel child container senza id.');
+            }
+
+            $childIds[] = $childId;
+        }
+
+        // ── Step 2: crea il container del carosello ───────────────────────────
+        $carouselContainer = $this->request($account->access_token)
+            ->post($this->graphUrl('/' . $account->account_id . '/media'), [
+                'media_type' => 'CAROUSEL',
+                'children'   => implode(',', $childIds),
+                'caption'    => (string) ($publication->caption ?? ''),
+            ]);
+
+        if (!$carouselContainer->successful()) {
+            throw new RuntimeException(
+                'Instagram carousel container fallito: ' . $carouselContainer->body()
+            );
+        }
+
+        $carouselId = trim((string) data_get($carouselContainer->json(), 'id', ''));
+        if ($carouselId === '') {
+            throw new RuntimeException('Instagram carousel container senza id.');
+        }
+
+        // ── Step 3: pubblica il carosello ─────────────────────────────────────
+        return $this->publishInstagramContainer($account, $carouselId);
     }
 
     /**

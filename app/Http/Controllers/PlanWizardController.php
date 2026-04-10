@@ -19,7 +19,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\View\View;
 
 class PlanWizardController extends Controller
@@ -498,6 +500,142 @@ class PlanWizardController extends Controller
 
         return redirect()->route('wizard.done')
             ->with('status', "Piano aggiornato (ID: {$plan->id}) con logica editoriale avanzata e anti-duplicati.");
+    }
+
+    /**
+     * Endpoint SSE (Server-Sent Events) per monitorare il progresso
+     * della generazione AI di un piano editoriale in tempo reale.
+     *
+     * Sostituisce il polling `setInterval(poll, 5000)` del client con
+     * un canale push monodirezionale, riducendo le richieste HTTP del 90%
+     * e migliorando la reattività dell'UI.
+     *
+     * GET /wizard/stream/{contentPlan}
+     *
+     * Il client si connette con:
+     *   const source = new EventSource('/wizard/stream/{{ $plan->id }}');
+     *   source.addEventListener('progress', e => { ... });
+     *   source.addEventListener('done', () => source.close());
+     *
+     * Formato eventi emessi:
+     *   event: progress  → aggiornamento periodico dei contatori
+     *   event: done      → generazione completata, il client chiude la connessione
+     *   event: error     → timeout o errore interno, il client chiude la connessione
+     */
+    public function stream(Request $request, ContentPlan $contentPlan): StreamedResponse
+    {
+        // Verifica proprietà del piano
+        $tenantId = (int) $request->user()->tenant_id;
+        if ((int) $contentPlan->tenant_id !== $tenantId) {
+            abort(403);
+        }
+
+        // Massimo tempo di streaming: 5 minuti. Evita connessioni zombi.
+        $maxSeconds  = (int) config('generation.sse_max_seconds', 300);
+        // Intervallo tra i poll al DB (secondi). Basso = più reattivo ma più query.
+        $pollInterval = (int) config('generation.sse_poll_interval', 2);
+
+        return response()->stream(function () use ($contentPlan, $maxSeconds, $pollInterval): void {
+            // Disabilita output buffering per inviare gli eventi immediatamente
+            if (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+
+            $startedAt = time();
+
+            // Compatibilità: alcuni proxy/server hanno buffer aggiuntivo —
+            // inviamo un commento di padding per svuotar lo stack al primo frame
+            echo ": stream-start\n\n";
+            $this->flushOutput();
+
+            while (true) {
+                // ── Timeout guard ────────────────────────────────────────────
+                if ((time() - $startedAt) >= $maxSeconds) {
+                    $this->sendSseEvent('error', ['reason' => 'timeout', 'message' => 'Timeout SSE superato.']);
+                    break;
+                }
+
+                // ── Disconnessione client ─────────────────────────────────────
+                if (connection_aborted()) {
+                    break;
+                }
+
+                // ── Ricarica il piano dal DB per contatori freschi ────────────
+                $contentPlan->refresh();
+                $counts = [
+                    'total'   => ContentItem::query()->where('content_plan_id', $contentPlan->id)->count(),
+                    'queued'  => ContentItem::query()->where('content_plan_id', $contentPlan->id)->where('ai_status', 'queued')->count(),
+                    'pending' => ContentItem::query()->where('content_plan_id', $contentPlan->id)->where('ai_status', 'pending')->count(),
+                    'done'    => ContentItem::query()->where('content_plan_id', $contentPlan->id)->where('ai_status', 'done')->count(),
+                    'error'   => ContentItem::query()->where('content_plan_id', $contentPlan->id)->where('ai_status', 'error')->count(),
+                ];
+
+                $active    = ($counts['queued'] + $counts['pending']) > 0;
+                $completed = $counts['total'] > 0 && !$active;
+
+                $payload = [
+                    'plan_id'   => (int) $contentPlan->id,
+                    'active'    => $active,
+                    'completed' => $completed,
+                    'counts'    => $counts,
+                    'ts'        => now()->toDateTimeString(),
+                ];
+
+                if ($completed) {
+                    // ── Generazione terminata: invia 'done' e chiudi ──────────
+                    $this->sendSseEvent('done', $payload);
+                    break;
+                }
+
+                // ── Aggiornamento periodico ───────────────────────────────────
+                $this->sendSseEvent('progress', $payload);
+
+                // In sync mode (locale senza worker) proviamo a drenare 1 job
+                if (GenerationExecution::shouldRunSync() && $active) {
+                    try {
+                        Artisan::call('queue:work', [
+                            'connection' => 'database',
+                            '--queue'    => 'default',
+                            '--once'     => true,
+                            '--tries'    => 1,
+                            '--timeout'  => 60,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::debug('SSE sync worker error', ['err' => $e->getMessage()]);
+                    }
+                }
+
+                sleep($pollInterval);
+            }
+        }, 200, [
+            'Content-Type'      => 'text/event-stream',
+            'Cache-Control'     => 'no-cache, no-store',
+            'X-Accel-Buffering' => 'no', // disabilita il buffer di Nginx
+            'Connection'        => 'keep-alive',
+        ]);
+    }
+
+    /**
+     * Serializza e scrive un evento SSE nello stream corrente.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function sendSseEvent(string $event, array $data): void
+    {
+        echo "event: {$event}\n";
+        echo 'data: ' . json_encode($data) . "\n\n";
+        $this->flushOutput();
+    }
+
+    /**
+     * Svuota i buffer PHP e di sistema per inviare i dati subito al client.
+     */
+    private function flushOutput(): void
+    {
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
     }
 
     private function buildBrandReferences(array $profileData, array $assets, array $assetVariables = []): array

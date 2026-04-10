@@ -24,6 +24,29 @@ class ContentAlignmentService
         $provider = strtolower(trim((string) data_get($providerMatrix, 'grader.provider', 'openai')));
         $llm = null;
 
+        /**
+         * Short-circuit: se il punteggio euristico supera la soglia configurata,
+         * saltiamo la chiamata LLM di grading. Risparmio: ~1 chiamata OpenAI per
+         * ogni contenuto già ben allineato al brief.
+         *
+         * Soglia default: 0.85 — modificabile via GENERATION_ALIGNMENT_HEURISTIC_SHORT_CIRCUIT.
+         * Con violations attive lo score euristico non può superare 0.80, quindi
+         * il short-circuit non scatta mai quando ci sono regole violate.
+         */
+        $shortCircuitThreshold = (float) config('generation.alignment_heuristic_short_circuit_threshold', 0.85);
+
+        if ($heuristic['overall_score'] >= $shortCircuitThreshold) {
+            return [
+                'provider'      => 'heuristic_short_circuit',
+                'heuristic'     => $heuristic,
+                'llm'           => null,
+                'overall_score' => $heuristic['overall_score'],
+                'should_retry'  => false,
+                'feedback'      => null,
+                'graded_at'     => now()->toDateTimeString(),
+            ];
+        }
+
         if ($provider === 'openai') {
             $llm = $this->openAi->gradeGeneratedDraft([
                 'context' => $context,

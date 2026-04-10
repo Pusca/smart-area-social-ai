@@ -51,6 +51,26 @@ return [
     'alignment_image_reference_validation' => (bool) env('GENERATION_ALIGNMENT_IMAGE_REFERENCE_VALIDATION', true),
     'alignment_image_reference_min_confidence' => (float) env('GENERATION_ALIGNMENT_IMAGE_REFERENCE_MIN_CONFIDENCE', 0.55),
 
+    // Se il punteggio euristico supera questa soglia, si salta la chiamata LLM di grading.
+    // Risparmio: ogni generazione con contenuto già ottimo evita 1 chiamata OpenAI.
+    // Default 0.85 = 85% di coverage heuristica è considerata sufficiente.
+    'alignment_heuristic_short_circuit_threshold' => (float) env('GENERATION_ALIGNMENT_HEURISTIC_SHORT_CIRCUIT', 0.85),
+
+    // TTL in secondi per la cache del knowledge pack base (memoria, asset, trend) per tenant.
+    // 1800 = 30 minuti. Invalida automaticamente quando cambiano asset o arriva nuovo feedback.
+    'knowledge_pack_base_cache_ttl' => (int) env('GENERATION_KNOWLEDGE_PACK_BASE_CACHE_TTL', 1800),
+
     'ffmpeg_binary' => env('FFMPEG_BINARY', ''),
     'ffprobe_binary' => env('FFPROBE_BINARY', ''),
+
+    // ── SSE (Server-Sent Events) per progresso generazione ───────────────────
+    // Usato da PlanWizardController::stream() in sostituzione del polling JS.
+
+    // Durata massima di una connessione SSE aperta (secondi).
+    // Dopo questo tempo viene inviato un evento 'error' con reason='timeout'.
+    'sse_max_seconds' => (int) env('GENERATION_SSE_MAX_SECONDS', 300),
+
+    // Intervallo tra i poll al DB durante lo streaming (secondi).
+    // Valori più bassi = più reattivo ma più query. Default 2 sec.
+    'sse_poll_interval' => (int) env('GENERATION_SSE_POLL_INTERVAL', 2),
 ];

@@ -9,6 +9,7 @@ use App\Models\SocialPublication;
 use App\Models\TenantProfile;
 use App\Services\Feedback\TenantFeedbackSignalSynthesisService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class TenantLearningLoopService
@@ -19,11 +20,18 @@ class TenantLearningLoopService
     }
 
     /**
+     * Forza il ricalcolo del learning loop e aggiorna profilo + cache.
+     * Da chiamare quando arriva nuovo feedback significativo o dopo bulk import.
+     *
      * @return array<string, mixed>
      */
     public function refreshForTenant(int $tenantId): array
     {
-        $learning = $this->buildForTenant($tenantId);
+        // Invalida la cache esistente per forzare il ricalcolo completo.
+        Cache::forget($this->learningCacheKey($tenantId));
+
+        $learning = $this->computeForTenant($tenantId);
+
         $profile = TenantProfile::query()
             ->where('tenant_id', $tenantId)
             ->first();
@@ -33,13 +41,45 @@ class TenantLearningLoopService
             $profile->save();
         }
 
+        // Salva il risultato in cache per le letture successive.
+        $ttl = (int) config('social_manager.learning.cache_ttl', 1800);
+        Cache::put($this->learningCacheKey($tenantId), $learning, $ttl);
+
         return $learning;
     }
 
     /**
+     * Restituisce il learning loop dalla cache o lo calcola se scaduto/assente.
+     * TTL configurabile via social_manager.learning.cache_ttl (default 30 min).
+     *
      * @return array<string, mixed>
      */
     public function buildForTenant(int $tenantId): array
+    {
+        $ttl = (int) config('social_manager.learning.cache_ttl', 1800);
+
+        return Cache::remember(
+            $this->learningCacheKey($tenantId),
+            $ttl,
+            fn () => $this->computeForTenant($tenantId)
+        );
+    }
+
+    /**
+     * Chiave cache univoca per il learning loop del tenant.
+     */
+    private function learningCacheKey(int $tenantId): string
+    {
+        return 'learning_loop.' . $tenantId;
+    }
+
+    /**
+     * Calcola il learning loop interrogando il DB — senza cache.
+     * Analizza feedback, run, pubblicazioni degli ultimi N giorni.
+     *
+     * @return array<string, mixed>
+     */
+    private function computeForTenant(int $tenantId): array
     {
         $windowDays = max(7, (int) config('social_manager.learning.window_days', 90));
         $minEvents = max(1, (int) config('social_manager.learning.min_events_for_bias', 2));
