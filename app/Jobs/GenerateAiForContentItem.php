@@ -3923,28 +3923,25 @@ SVG;
         array $imageReferencePathPool
     ): array {
         $videoOptions = $this->normalizeVideoOptionsForProvider('google_veo', $videoOptions);
-        $requestSummary = [
-            'requested_reference_count' => count($imageReferencePathPool),
-            'active_reference_count' => 0,
-            'ignored_additional_references' => max(0, count($imageReferencePathPool) - 1),
-            'reference_reason' => $referenceReason,
-        ];
-
-        $activeReferenceAbs = trim((string) $referenceAbs);
+        // Reference images disponibili ma NON passate all'API: Veo image-to-video
+        // le userebbe come primo frame, creando un video che inizia con la foto
+        // brand ferma invece del video generato. Usiamo sempre text-to-video.
         $activeReferencePath = trim((string) $referencePath);
+        if ($activeReferencePath === '' && !empty($imageReferencePathPool)) {
+            $activeReferencePath = trim((string) ($imageReferencePathPool[0] ?? ''));
+        }
         $activeReferencePaths = array_values(array_filter(
             $activeReferencePath !== '' ? [$activeReferencePath] : array_slice($referencePaths, 0, 1),
             fn ($value) => is_string($value) && $value !== ''
         ));
-        if ($activeReferenceAbs === '' && !empty($generationReferenceAbsPool)) {
-            $activeReferenceAbs = trim((string) $generationReferenceAbsPool[0]);
-            $activeReferencePath = trim((string) ($imageReferencePathPool[0] ?? $activeReferencePath));
-            $activeReferencePaths = array_values(array_filter(
-                $activeReferencePath !== '' ? [$activeReferencePath] : $activeReferencePaths,
-                fn ($value) => is_string($value) && $value !== ''
-            ));
-        }
-        $requestSummary['active_reference_count'] = $activeReferenceAbs !== '' ? 1 : 0;
+        $requestSummary = [
+            'requested_reference_count' => count($imageReferencePathPool),
+            'active_reference_count'    => 0,
+            'image_input_skipped'       => true,
+            'image_input_skip_reason'   => 'veo_image_to_video_forces_first_frame',
+            'ignored_additional_references' => max(0, count($imageReferencePathPool)),
+            'reference_reason' => $referenceReason,
+        ];
 
         $googleVeoOptions = [
             'model' => (string) ($videoOptions['model'] ?? config('google_veo.model') ?: 'veo-3.1-generate-preview'),
@@ -3955,9 +3952,13 @@ SVG;
             'generate_audio' => false,
         ];
 
+        // Google Veo image-to-video usa il reference come PRIMO FRAME del video
+        // (comportamento API nativo). Per i contenuti brand le reference images
+        // servono per l'identità, non come ancora del primo frame. Si usa sempre
+        // text-to-video: il prompt contiene già la descrizione visiva del soggetto.
         $job = $googleVeo->createVideoJob(
             prompt: $videoPrompt,
-            inputReferenceAbsolutePath: $activeReferenceAbs !== '' ? $activeReferenceAbs : null,
+            inputReferenceAbsolutePath: null,
             options: $googleVeoOptions
         );
         $videoId = (string) ($job['id'] ?? '');
