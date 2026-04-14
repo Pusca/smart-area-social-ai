@@ -283,9 +283,6 @@
                         </p>
                     </div>
 
-                    <h3 class="mt-5 text-lg font-semibold text-gray-900">Dettagli pubblicazione</h3>
-                    <p class="mt-1 text-sm text-gray-600">{{ $isReelPreset ? 'Quando pubblicare il reel e con quale motore video lavorare.' : 'Quando pubblicare e in quale formato.' }}</p>
-
                     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <label for="scheduled_at" class="mb-1 block text-sm font-semibold text-gray-700">Programmazione</label>
@@ -306,49 +303,46 @@
                                 </select>
                             @endif
                         </div>
-                        @unless($isReelPreset)
-                        <div class="sm:col-span-2">
-                            <label for="image_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore immagini</label>
-                            <select id="image_provider" name="image_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                @foreach($imageProviderOptions as $key => $label)
-                                    <option value="{{ $key }}" @selected($defaultImageProvider === $key)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-500">
-                                La base resta Nano Banana. Qui puoi fare un test diverso solo per questo contenuto singolo, senza cambiare il resto dell'app.
-                            </p>
-                        </div>
-                        @endunless
-                        <div class="sm:col-span-2">
-                            <label for="video_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore video (solo reel/story)</label>
-                            <select id="video_provider" name="video_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                @foreach($videoProviderOptions as $key => $label)
-                                    <option value="{{ $key }}" @selected($defaultVideoProvider === $key)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-500">
-                                Per i post immagine il provider video viene ignorato. Se la durata supera il limite del provider, il sistema genera piu segmenti coerenti e li unisce.
-                            </p>
-                        </div>
-                        @if($isReelPreset)
-                        <div class="sm:col-span-2">
-                            <label for="video_duration_seconds_requested" class="mb-1 block text-sm font-semibold text-gray-700">Durata video (secondi)</label>
-                            <input
-                                id="video_duration_seconds_requested"
-                                type="number"
-                                name="video_duration_seconds_requested"
-                                min="4"
-                                max="45"
-                                step="1"
-                                value="{{ $defaultVideoDurationSeconds > 0 ? $defaultVideoDurationSeconds : 20 }}"
-                                class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                            />
-                            <p class="mt-1 text-xs text-gray-500">
-                                Imposta qui la durata finale desiderata. Se supera il limite del provider, il reel viene spezzato in segmenti coerenti e ricucito automaticamente.
-                            </p>
-                        </div>
-                        @endif
                     </div>
+
+                    {{-- Impostazioni provider AI — collassabili --}}
+                    <details class="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50" id="provider-settings-details">
+                        <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100">
+                            <span>Motori AI</span>
+                            <span class="text-xs font-normal text-gray-500" id="provider-summary-label">Kling · NanoBanana</span>
+                        </summary>
+                        <div class="border-t border-gray-200 p-4">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                @unless($isReelPreset)
+                                <div class="sm:col-span-2">
+                                    <label for="image_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore immagini</label>
+                                    <select id="image_provider" name="image_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                        @foreach($imageProviderOptions as $key => $label)
+                                            <option value="{{ $key }}" @selected($defaultImageProvider === $key)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">La base resta NanoBanana. Cambia solo per questo contenuto se vuoi testare un'alternativa.</p>
+                                </div>
+                                @endunless
+                                <div class="sm:col-span-2">
+                                    <label for="video_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore video</label>
+                                    <select id="video_provider" name="video_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                                        @foreach($videoProviderOptions as $key => $label)
+                                            <option value="{{ $key }}" @selected($defaultVideoProvider === $key)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="mt-1 text-xs text-gray-500">Usato solo per reel e story. Se la durata supera il limite, il sistema genera piu clip e le unisce automaticamente.</p>
+                                </div>
+                                @if($isReelPreset)
+                                <div class="sm:col-span-2">
+                                    <label for="video_duration_seconds_requested" class="mb-1 block text-sm font-semibold text-gray-700">Durata video (secondi)</label>
+                                    <input id="video_duration_seconds_requested" type="number" name="video_duration_seconds_requested" min="4" max="45" step="1" value="{{ $defaultVideoDurationSeconds > 0 ? $defaultVideoDurationSeconds : 20 }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                                    <p class="mt-1 text-xs text-gray-500">Se supera il limite del provider, il reel viene spezzato e ricucito automaticamente.</p>
+                                </div>
+                                @endif
+                            </div>
+                        </div>
+                    </details>
                 </div>
 
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -420,74 +414,20 @@
                     @endif
                 </div>
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h2 class="text-lg font-semibold text-gray-900">Identita da preservare</h2>
-                        <span class="text-xs font-semibold text-gray-500">Presenter / product / place</span>
-                    </div>
-                    <p class="mt-1 text-sm text-gray-600">
-                        Questi slot spingono la generazione verso identita persistenti: stessa persona, stesso prodotto, stesso luogo, con variazioni controllate.
-                    </p>
-
-                    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <div>
-                            <label for="presenter_variable_id" class="mb-1 block text-sm font-semibold text-gray-700">Presenter</label>
-                            <select id="presenter_variable_id" name="presenter_variable_id" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                <option value="">Nessuno</option>
-                                @foreach($presenterVariables as $var)
-                                    <option value="{{ (int) ($var['id'] ?? 0) }}" @selected($selectedPresenterId === (int) ($var['id'] ?? 0))>
-                                        {{ (string) ($var['name'] ?? 'Presenter') }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label for="product_variable_id" class="mb-1 block text-sm font-semibold text-gray-700">Product</label>
-                            <select id="product_variable_id" name="product_variable_id" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                <option value="">Nessuno</option>
-                                @foreach($productVariables as $var)
-                                    <option value="{{ (int) ($var['id'] ?? 0) }}" @selected($selectedProductId === (int) ($var['id'] ?? 0))>
-                                        {{ (string) ($var['name'] ?? 'Product') }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label for="place_variable_id" class="mb-1 block text-sm font-semibold text-gray-700">Place</label>
-                            <select id="place_variable_id" name="place_variable_id" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                <option value="">Nessuno</option>
-                                @foreach($placeVariables as $var)
-                                    <option value="{{ (int) ($var['id'] ?? 0) }}" @selected($selectedPlaceId === (int) ($var['id'] ?? 0))>
-                                        {{ (string) ($var['name'] ?? 'Place') }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div>
-                            <label for="seasonal_overlay" class="mb-1 block text-sm font-semibold text-gray-700">Overlay stagionale o tema</label>
-                            <input id="seasonal_overlay" type="text" name="seasonal_overlay" value="{{ $seasonalOverlay }}" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Es. Natale, back to school, summer drop, promo weekend" />
-                        </div>
-                        <div class="lg:col-span-2">
-                            <label for="consistency_mode" class="mb-1 block text-sm font-semibold text-gray-700">Consistency mode</label>
-                            <select id="consistency_mode" name="consistency_mode" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                @foreach($consistencyModeOptions as $modeValue => $modeLabel)
-                                    <option value="{{ $modeValue }}" @selected($selectedConsistencyMode === $modeValue)>{{ $modeLabel }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-500">
-                                Strict forza maggiore fedelta all'identita, Balanced lascia piu regia mantenendo il soggetto, Creative allenta il vincolo se vuoi piu variazione.
-                            </p>
-                        </div>
-                    </div>
-                </div>
+                {{-- Hidden inputs: auto-populated via JS dalle variabili selezionate sotto --}}
+                <input type="hidden" name="presenter_variable_id" id="js-presenter-variable-id" value="{{ $selectedPresenterId ?: '' }}">
+                <input type="hidden" name="product_variable_id" id="js-product-variable-id" value="{{ $selectedProductId ?: '' }}">
+                <input type="hidden" name="place_variable_id" id="js-place-variable-id" value="{{ $selectedPlaceId ?: '' }}">
+                <input type="hidden" name="consistency_mode" id="js-consistency-mode" value="{{ $selectedConsistencyMode }}">
+                <input type="hidden" name="seasonal_overlay" id="js-seasonal-overlay" value="{{ $seasonalOverlay }}">
 
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h2 class="text-lg font-semibold text-gray-900">Variabili salvate</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">Asset e identita brand</h2>
                         <span class="text-xs font-semibold text-gray-500">{{ count($assetVariables) }} disponibili</span>
                     </div>
                     <p class="mt-1 text-sm text-gray-600">
-                        Seleziona variabili salvate (persona, ufficio, prodotto) oppure scrivile nel brief: se riconosciute, vengono applicate automaticamente.
+                        Seleziona le identita da includere nel contenuto — persona, prodotto, luogo. Il sistema riconosce anche il nome scritto nel brief.
                     </p>
 
                     @if(empty($assetVariables))
@@ -498,14 +438,26 @@
                         <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                             @foreach($assetVariables as $var)
                                 @php
-                                    $varId = (int) ($var['id'] ?? 0);
+                                    $varId   = (int) ($var['id'] ?? 0);
                                     $varName = (string) ($var['name'] ?? 'variabile');
                                     $varSlug = (string) ($var['slug'] ?? '');
                                     $varKind = (string) ($var['kind'] ?? 'custom');
                                     $varDesc = trim((string) ($var['description'] ?? ''));
                                     $checked = $varId > 0 && in_array($varId, $selectedVariableIds, true);
+                                    $kindColors = [
+                                        'person'   => 'border-violet-200 bg-violet-50 text-violet-700',
+                                        'product'  => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                                        'location' => 'border-amber-200 bg-amber-50 text-amber-700',
+                                    ];
+                                    $kindLabels = [
+                                        'person'   => 'Persona',
+                                        'product'  => 'Prodotto',
+                                        'location' => 'Luogo',
+                                    ];
+                                    $kindColor = $kindColors[$varKind] ?? 'border-gray-200 bg-gray-50 text-gray-600';
+                                    $kindLabel = $kindLabels[$varKind] ?? ucfirst($varKind);
                                 @endphp
-                                <label class="inline-flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 hover:bg-gray-100">
+                                <label class="inline-flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 transition hover:border-indigo-200 hover:bg-indigo-50/40">
                                     <input
                                         type="checkbox"
                                         name="asset_variable_ids[]"
@@ -514,19 +466,20 @@
                                         data-variable-id="{{ $varId }}"
                                         data-variable-name="{{ strtolower($varName) }}"
                                         data-variable-slug="{{ strtolower($varSlug) }}"
+                                        data-variable-kind="{{ $varKind }}"
                                         @checked($checked)
                                     />
                                     <span class="min-w-0">
                                         <span class="block text-sm font-semibold text-gray-900">{{ $varName }}</span>
-                                        <span class="mt-0.5 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">{{ $varKind }}</span>
+                                        <span class="mt-0.5 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold {{ $kindColor }}">{{ $kindLabel }}</span>
                                         @if($varDesc !== '')
-                                            <span class="mt-1 block text-xs text-gray-600">{{ $varDesc }}</span>
+                                            <span class="mt-1 block text-xs text-gray-500">{{ $varDesc }}</span>
                                         @endif
-                                        <span class="mt-1 block text-[11px] text-gray-500">token: {{ '@' . $varSlug }}</span>
                                     </span>
                                 </label>
                             @endforeach
                         </div>
+                        <div id="js-identity-summary" class="mt-3 hidden rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700"></div>
                     @endif
                 </div>
 
@@ -554,14 +507,15 @@
                     </div>
                 </div>
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div class="flex items-start justify-between gap-4">
+                <details class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" id="overlay-settings-details">
+                    <summary class="flex cursor-pointer list-none items-center justify-between p-6 hover:bg-gray-50">
                         <div>
                             <h2 class="text-lg font-semibold text-gray-900">Text overlays e typography</h2>
-                            <p class="mt-1 text-sm text-gray-600">Sistema brand-aware per hook su immagine/video, CTA finale e leggibilita mobile.</p>
+                            <p class="mt-0.5 text-sm text-gray-500">Hook su immagine/video, CTA, font — gestiti in automatico dal brand. Espandi per personalizzare.</p>
                         </div>
-                        <span class="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Mobile-first</span>
-                    </div>
+                        <span class="ml-4 shrink-0 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">Auto</span>
+                    </summary>
+                    <div class="border-t border-gray-100 p-6">
 
                     <div class="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Default brand attivi</p>
@@ -726,10 +680,8 @@
                         </div>
                     </details>
 
-                    <p class="mt-3 text-xs text-gray-500">
-                        In `auto` il sistema prende hook e CTA dal blueprint strategico. In `manual` usa questi override mantenendo preset, font e safe area brand-aware.
-                    </p>
-                </div>
+                    </div>
+                </details>
 
                 <div class="flex flex-wrap items-center justify-end gap-2">
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -792,6 +744,11 @@
         const formatEl = document.getElementById('format');
         const videoProviderEl = document.getElementById('video_provider');
         const imageProviderEl = document.getElementById('image_provider');
+        const presenterIdEl = document.getElementById('js-presenter-variable-id');
+        const productIdEl = document.getElementById('js-product-variable-id');
+        const placeIdEl = document.getElementById('js-place-variable-id');
+        const identitySummaryEl = document.getElementById('js-identity-summary');
+        const providerSummaryLabel = document.getElementById('provider-summary-label');
         let videoProviderTouched = false;
 
         const normalize = (value) => {
@@ -811,6 +768,39 @@
             const compact = token.replace(/\s+/g, '');
             if (compact && haystack.includes('@' + compact)) return true;
             return false;
+        };
+
+        // Auto-wiring: sincronizza il primo checked di ogni kind ai hidden inputs
+        const syncIdentitySlots = () => {
+            const checked = variableCheckboxes.filter(cb => cb.checked);
+            const first = (kind) => checked.find(cb => cb.dataset.variableKind === kind);
+            const presenter = first('person');
+            const product   = first('product');
+            const place     = first('location');
+            if (presenterIdEl) presenterIdEl.value = presenter ? presenter.value : '';
+            if (productIdEl)   productIdEl.value   = product   ? product.value   : '';
+            if (placeIdEl)     placeIdEl.value     = place     ? place.value     : '';
+
+            if (identitySummaryEl) {
+                const parts = [];
+                if (presenter) parts.push('Persona: ' + (presenter.dataset.variableName || ''));
+                if (product)   parts.push('Prodotto: ' + (product.dataset.variableName || ''));
+                if (place)     parts.push('Luogo: ' + (place.dataset.variableName || ''));
+                if (parts.length > 0) {
+                    identitySummaryEl.textContent = parts.join(' · ');
+                    identitySummaryEl.classList.remove('hidden');
+                } else {
+                    identitySummaryEl.classList.add('hidden');
+                }
+            }
+        };
+
+        // Aggiorna la label riassuntiva nel summary del details provider
+        const updateProviderSummary = () => {
+            if (!providerSummaryLabel) return;
+            const video = (videoProviderEl?.options[videoProviderEl.selectedIndex]?.text || 'Kling').split(' ')[0];
+            const image = (imageProviderEl?.options[imageProviderEl.selectedIndex]?.text || 'NanoBanana').split(' ')[0];
+            providerSummaryLabel.textContent = video + ' · ' + image;
         };
 
         const renderRecognized = (items) => {
@@ -878,6 +868,15 @@
             variableCheckboxes.forEach((cb) => cb.addEventListener('change', syncRecognition));
             syncRecognition();
         }
+
+        // Identity auto-wiring
+        variableCheckboxes.forEach((cb) => cb.addEventListener('change', syncIdentitySlots));
+        syncIdentitySlots();
+
+        // Provider summary
+        if (videoProviderEl) videoProviderEl.addEventListener('change', updateProviderSummary);
+        if (imageProviderEl) imageProviderEl.addEventListener('change', updateProviderSummary);
+        updateProviderSummary();
 
         if (createForm && window.HostupGenerationLoader) {
             const syncVideoProviderWithFormat = () => {

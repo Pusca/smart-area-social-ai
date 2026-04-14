@@ -55,22 +55,29 @@
                 </div>
 
                 <div class="rounded-[26px] border border-white/80 bg-white/90 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Cosa sta facendo ora</p>
-                    <div class="mt-3 space-y-3">
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Riepilogo</p>
+                    <div class="mt-3 space-y-2">
                         <div class="rounded-2xl border border-app bg-app/50 px-4 py-3">
-                            <p class="text-sm font-semibold text-gray-950">Contenuto #{{ $contentItem->id }}</p>
-                            <p class="mt-1 text-sm text-gray-600">Formato {{ strtoupper($formatLabel) }}</p>
+                            <p class="text-xs text-gray-500">Formato</p>
+                            <p class="mt-0.5 text-sm font-semibold text-gray-950">{{ strtoupper($formatLabel) }} #{{ $contentItem->id }}</p>
                         </div>
                         <div class="rounded-2xl border border-app bg-app/50 px-4 py-3">
-                            <p class="text-sm font-semibold text-gray-950">Obiettivo</p>
-                            <p id="single-generation-detail" class="mt-1 text-sm text-gray-600">Sto finalizzando il contenuto senza bloccare la pagina.</p>
+                            <p class="text-xs text-gray-500">Tempo trascorso</p>
+                            <p id="single-generation-elapsed" class="mt-0.5 text-sm font-semibold text-gray-950">0 sec</p>
+                        </div>
+                        <div class="rounded-2xl border border-app bg-app/50 px-4 py-3">
+                            <p class="text-xs text-gray-500">Prossima azione</p>
+                            <p id="single-generation-detail" class="mt-0.5 text-sm text-gray-600">Apertura automatica al termine.</p>
                         </div>
                     </div>
                     <a href="{{ $returnUrl }}" class="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-app bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:border-brand hover:text-brand">
                         Apri il contenuto adesso
                     </a>
                     <a href="{{ route('posts.index') }}" class="mt-2 inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-                        Continua a navigare
+                        Vai alla libreria contenuti
+                    </a>
+                    <a href="{{ route('dashboard') }}" class="mt-2 inline-flex w-full items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50">
+                        Torna alla dashboard
                     </a>
                 </div>
             </div>
@@ -89,6 +96,7 @@
         const stageEl = document.getElementById('single-generation-stage');
         const etaEl = document.getElementById('single-generation-eta');
         const detailEl = document.getElementById('single-generation-detail');
+        const elapsedEl = document.getElementById('single-generation-elapsed');
         const statusLabelEl = document.getElementById('single-generation-status-label');
         const statusDescriptionEl = document.getElementById('single-generation-status-description');
         const pushCardEl = document.getElementById('single-generation-push-card');
@@ -201,8 +209,9 @@
             progressEl.style.width = `${progress}%`;
             stageEl.textContent = stages[stageIndex] || stages[stages.length - 1] || 'Sto finalizzando';
             etaEl.textContent = remaining > 0 ? `Circa ${formatTime(remaining)}` : 'Quasi pronto';
+            if (elapsedEl) elapsedEl.textContent = formatTime(Math.round(elapsed));
             detailEl.textContent = remaining > 0
-                ? `Tempo stimato totale: ${formatTime(estimateSeconds)}`
+                ? `Apertura automatica tra circa ${formatTime(remaining)}`
                 : 'Sto salvando l output finale';
         };
 
