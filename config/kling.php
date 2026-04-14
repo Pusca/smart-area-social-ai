@@ -8,7 +8,7 @@ return [
     'model' => env('KLING_VIDEO_MODEL', 'kling-v3-omni'),
     'strict_model' => (bool) env('KLING_STRICT_MODEL', false),
     'mode' => env('KLING_VIDEO_MODE', 'pro'),
-    'video_seconds' => (int) env('KLING_VIDEO_SECONDS', 5),
+    'video_seconds' => (int) env('KLING_VIDEO_SECONDS', 10),
     'video_ratio' => env('KLING_VIDEO_RATIO', '9:16'),
     'cfg_scale' => (float) env('KLING_CFG_SCALE', 0.78),
     'negative_prompt' => env('KLING_NEGATIVE_PROMPT', ''),

@@ -17,6 +17,7 @@ use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\TenantProfileController;
 use App\Http\Controllers\AdminWorkspaceController;
 use App\Http\Controllers\AgencyBrandSwitchController;
+use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\LinkedInSocialController;
 use App\Http\Controllers\TikTokSocialController;
 use App\Http\Controllers\GoogleBusinessSocialController;
@@ -41,7 +42,17 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/admin/impersonation/stop', [AdminWorkspaceController::class, 'stopImpersonation'])->name('admin.impersonation.stop');
 });
 
+// ── Onboarding (prima del middleware onboarding per evitare loop) ─────────────
 Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->group(function () {
+    Route::get('/onboarding', [OnboardingController::class, 'index'])->name('onboarding');
+    Route::post('/onboarding/brand', [OnboardingController::class, 'saveBrand'])->name('onboarding.brand');
+    Route::post('/onboarding/audience', [OnboardingController::class, 'saveAudience'])->name('onboarding.audience');
+    Route::post('/onboarding/skip-social', [OnboardingController::class, 'skipSocial'])->name('onboarding.skip-social');
+    Route::post('/onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
+});
+
+// ── App principale (protetta da onboarding) ───────────────────────────────────
+Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onboardingComplete'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');

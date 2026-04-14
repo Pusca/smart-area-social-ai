@@ -68,7 +68,7 @@ return [
                     'native_audio' => false,
                     'requires_mux' => true,
                     'strict_asset_mode' => false,
-                    'fallbacks' => ['runway', 'kling'],
+                    'fallbacks' => ['kling', 'google_veo'],
                     'model_config' => 'openai.video_model',
                     'model_prefixes' => ['sora-2'],
                     'duration_rule' => [
@@ -103,7 +103,7 @@ return [
                     'native_audio' => false,
                     'requires_mux' => true,
                     'strict_asset_mode' => true,
-                    'fallbacks' => ['openai', 'kling'],
+                    'fallbacks' => ['kling', 'openai'],
                     'model_config' => 'runway.model',
                     'model_aliases' => [
                         'gen4_turbo' => 'gen4.5',
@@ -177,7 +177,7 @@ return [
                     'native_audio' => false,
                     'requires_mux' => true,
                     'strict_asset_mode' => true,
-                    'fallbacks' => ['runway', 'openai'],
+                    'fallbacks' => ['google_veo', 'openai'],
                     'model_config' => 'kling.model',
                     'context_models' => [
                         'text' => 'kling-v3-omni',

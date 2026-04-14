@@ -18,7 +18,8 @@ class EditorialStrategyService
         private readonly TrendOpportunitySynthesisService $trendOpportunitySynthesis,
         private readonly TrendBriefService $trendBriefService,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
-        private readonly IndustryPresetService $industryPresets
+        private readonly IndustryPresetService $industryPresets,
+        private readonly ViralContentFrameworkService $viralFramework
     ) {
     }
 
@@ -88,6 +89,13 @@ class EditorialStrategyService
             'learning_preferences' => $learningPreferences,
         ]);
 
+        $viralFrameworkData = $this->viralFramework->build(
+            platforms: (array) ($profile?->default_platforms ?? ['instagram']),
+            formats: (array) ($profile?->default_formats ?? ['post']),
+            industryPreset: (array) $industryPreset,
+            industry: $industry,
+        );
+
         $payload = [
             'brand_voice' => array_merge($voice, Arr::get($overrides, 'brand_voice', [])),
             'pillars' => Arr::get($overrides, 'pillars', $pillars),
@@ -99,6 +107,7 @@ class EditorialStrategyService
             'publishing_system' => array_merge($publishing, Arr::get($overrides, 'publishing_system', [])),
             'creative_direction' => array_replace_recursive($creativeDirection, Arr::get($overrides, 'creative_direction', [])),
             'trend_intelligence' => array_replace_recursive($trendIntelligence, Arr::get($overrides, 'trend_intelligence', [])),
+            'viral_framework' => array_replace_recursive($viralFrameworkData, Arr::get($overrides, 'viral_framework', [])),
             'last_refreshed_at' => Carbon::now(),
         ];
 
@@ -126,12 +135,14 @@ class EditorialStrategyService
         $publishing = array_merge((array) $strategy->publishing_system, (array) ($studio['publishing_system'] ?? []));
         $creativeDirection = array_replace_recursive((array) $strategy->creative_direction, (array) ($studio['creative_direction'] ?? []));
         $trendIntelligence = array_replace_recursive((array) $strategy->trend_intelligence, (array) ($studio['trend_intelligence'] ?? []));
+        $viralFrameworkData = array_replace_recursive((array) $strategy->viral_framework, (array) ($studio['viral_framework'] ?? []));
 
         $strategy->analysis_framework = $analysis;
         $strategy->visual_system = $visual;
         $strategy->publishing_system = $publishing;
         $strategy->creative_direction = $creativeDirection;
         $strategy->trend_intelligence = $trendIntelligence;
+        $strategy->viral_framework = $viralFrameworkData;
         $strategy->strategy_notes = (string) ($studio['strategy_notes'] ?? $strategy->strategy_notes ?? '');
         $strategy->is_locked = (bool) ($studio['is_locked'] ?? $strategy->is_locked ?? false);
         $strategy->manual_updated_at = Carbon::now();
@@ -170,6 +181,7 @@ class EditorialStrategyService
             'publishing_system' => $strategy->publishing_system ?? [],
             'creative_direction' => $strategy->creative_direction ?? [],
             'trend_intelligence' => $strategy->trend_intelligence ?? [],
+            'viral_framework' => $strategy->viral_framework ?? [],
             'strategy_notes' => (string) ($strategy->strategy_notes ?? ''),
             'strategy_locked' => (bool) ($strategy->is_locked ?? false),
             'strategy_id' => (int) $strategy->id,
@@ -397,14 +409,37 @@ class EditorialStrategyService
 
     private function buildPublishingSystem(?TenantProfile $profile): array
     {
-        return [
-            'posts_per_week' => (int) ($profile?->default_posts_per_week ?: 5),
-            'best_days' => 'Lun-Mar-Gio',
-            'best_times' => $this->sanitizeTimeSlots('11:00,15:00,19:00'),
-            'channel_priority' => implode(', ', (array) ($profile?->default_platforms ?? ['instagram'])),
-            'format_priority' => implode(', ', (array) ($profile?->default_formats ?? ['post'])),
-            'cadence_rule' => 'Alterna informativo/prova sociale/offerta evitando ripetizioni consecutive.',
+        $platforms = (array) ($profile?->default_platforms ?? ['instagram']);
+        $primaryPlatform = strtolower(trim((string) ($platforms[0] ?? 'instagram')));
+
+        $platformSchedule = [
+            'instagram' => ['days' => 'Mar-Mer-Gio', 'times' => '09:00,12:00,19:00', 'frequency' => 5],
+            'tiktok'    => ['days' => 'Mar-Mer-Gio-Ven', 'times' => '07:00,16:00,21:00', 'frequency' => 7],
+            'linkedin'  => ['days' => 'Mar-Mer-Gio', 'times' => '08:00,10:00,17:00', 'frequency' => 4],
+            'facebook'  => ['days' => 'Mer-Gio-Ven', 'times' => '13:00,15:00,19:00', 'frequency' => 4],
         ];
+
+        $schedule = $platformSchedule[$primaryPlatform] ?? $platformSchedule['instagram'];
+
+        return [
+            'posts_per_week'  => (int) ($profile?->default_posts_per_week ?: $schedule['frequency']),
+            'best_days'       => $schedule['days'],
+            'best_times'      => $this->sanitizeTimeSlots($schedule['times']),
+            'channel_priority'=> implode(', ', $platforms),
+            'format_priority' => implode(', ', (array) ($profile?->default_formats ?? ['post'])),
+            'cadence_rule'    => 'Alterna contenuto di valore (educativo/storytelling) con contenuto di conversione (offerta/prova sociale). Non più di 2 post promozionali consecutivi.',
+            'platform_note'   => $this->platformPublishingNote($primaryPlatform),
+        ];
+    }
+
+    private function platformPublishingNote(string $platform): string
+    {
+        return match ($platform) {
+            'tiktok'   => 'Su TikTok la consistenza è più importante della perfezione. Meglio 4 video discreti che 1 perfetto a settimana.',
+            'linkedin' => 'Su LinkedIn la frequenza ideale è 3-5 post/settimana. Il martedì e giovedì mattina hanno il massimo engagement professionale.',
+            'facebook' => 'Su Facebook i video nativi ottengono 10x più reach dei link. Max 2 post/giorno.',
+            default    => 'Su Instagram i Reels distribuiti il mercoledì 9-11am hanno storicamente il miglior reach iniziale.',
+        };
     }
 
     /**

@@ -25,7 +25,7 @@ return [
     'voice_clone_provider_default' => env('VOICE_CLONE_PROVIDER_DEFAULT', 'elevenlabs'),
 
     'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'kling'),
-    'video_providers' => ['openai', 'runway', 'kling', 'google_veo'],
+    'video_providers' => ['kling', 'google_veo', 'openai', 'runway'],
     'locked_video_provider_failover' => (bool) env('GENERATION_LOCKED_VIDEO_PROVIDER_FAILOVER', true),
 
     'image_provider_default' => env('IMAGE_PROVIDER_DEFAULT', 'nanobanana'),

@@ -54,10 +54,6 @@
                             Setup
                         </x-dropdown-link>
 
-                        <x-dropdown-link :href="route('ai')">
-                            AI Lab
-                        </x-dropdown-link>
-
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <x-dropdown-link :href="route('logout')"
@@ -102,9 +98,6 @@
                 Libreria
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('ai')" :active="request()->routeIs('ai*')">
-                AI Lab
-            </x-responsive-nav-link>
         </div>
 
         <div class="pt-4 pb-1 border-t border-gray-200">

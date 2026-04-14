@@ -92,6 +92,45 @@ class IndustryPresetService
         'tecnologia'        => 'professional',
         'software'          => 'professional',
         'it'                => 'professional',
+
+        // Real Estate
+        'realestate'        => 'realestate',
+        'immobiliare'       => 'realestate',
+        'agenzia immobiliare' => 'realestate',
+        'agente immobiliare'  => 'realestate',
+        'real estate'       => 'realestate',
+        'compravendita'     => 'realestate',
+        'affitti'           => 'realestate',
+
+        // Tourism & Hospitality
+        'tourism'           => 'tourism',
+        'turismo'           => 'tourism',
+        'hotel'             => 'tourism',
+        'albergo'           => 'tourism',
+        'b&b'               => 'tourism',
+        'bed and breakfast' => 'tourism',
+        'agriturismo'       => 'tourism',
+        'travel'            => 'tourism',
+        'viaggi'            => 'tourism',
+        'hospitality'       => 'tourism',
+        'ristrutturazione'  => 'tourism',
+        'struttura ricettiva' => 'tourism',
+
+        // Beauty & Wellness
+        'beauty'            => 'beauty',
+        'estetica'          => 'beauty',
+        'parrucchiere'      => 'beauty',
+        'barbiere'          => 'beauty',
+        'nail art'          => 'beauty',
+        'unghie'            => 'beauty',
+        'make up'           => 'beauty',
+        'trucco'            => 'beauty',
+        'spa'               => 'beauty',
+        'centro estetico'   => 'beauty',
+        'cosmetica'         => 'beauty',
+        'skin care'         => 'beauty',
+        'skincare'          => 'beauty',
+        'capelli'           => 'beauty',
     ];
 
     /**
@@ -133,6 +172,15 @@ class IndustryPresetService
                 'secondary_goal'  => 'Community Building',
                 'content_mix'     => ['visual' => 0.5, 'story' => 0.3, 'promo' => 0.2],
             ],
+            'viral_hooks' => [
+                'Guarda come nasce [piatto] dalla preparazione al piatto.',
+                'Il segreto di questa [ricetta/piatto] che ci chiedono ogni settimana.',
+                'Cosa succede in cucina mezz\'ora prima dell\'apertura.',
+                'X ingredienti che non ti aspetti in questo [piatto].',
+                'Il piatto che i clienti ordinano sempre al secondo tentativo.',
+                'Come scegliamo i fornitori: una visita che non ti aspetti.',
+            ],
+            'viral_formats' => ['before_after', 'day_in_life', 'storytime_reel', 'tutorial_list'],
         ],
 
         // ─── HEALTHCARE ─────────────────────────────────────────────────────
@@ -167,6 +215,15 @@ class IndustryPresetService
                 'secondary_goal' => 'Education',
                 'content_mix'    => ['educational' => 0.5, 'authority' => 0.3, 'social_proof' => 0.2],
             ],
+            'viral_hooks' => [
+                'X segnali che il tuo corpo sta cercando di dirti qualcosa.',
+                'Il mito su [condizione] che sentiamo più spesso in studio.',
+                'Cosa succede davvero durante [procedura comune].',
+                'La domanda che ci fate sempre, con la risposta onesta.',
+                'X abitudini quotidiane che sembrano innocue ma non lo sono.',
+                'Come capire se è il momento giusto per [screening/visita].',
+            ],
+            'viral_formats' => ['myth_busting', 'educational_carousel', 'response_to_question', 'tutorial_list'],
         ],
 
         // ─── E-COMMERCE & RETAIL ────────────────────────────────────────────
@@ -187,7 +244,7 @@ class IndustryPresetService
                 ['name' => 'Promo',            'weight' => 0.10, 'focus' => 'lanci, drop, offerte speciali'],
             ],
             'cta_rules' => [
-                'primary_cta'   => 'Acquista ora',
+                'primary_cta'   => 'Scopri tutti i dettagli nel link in bio',
                 'secondary_cta' => 'Scopri la collezione',
                 'link_cta'      => 'Link diretto nel bio',
                 'avoid'         => ['offerta shock', 'prezzi stracciati'],
@@ -201,6 +258,15 @@ class IndustryPresetService
                 'secondary_goal' => 'Retention e Repeat Purchase',
                 'content_mix'    => ['product' => 0.4, 'educational' => 0.3, 'social_proof' => 0.3],
             ],
+            'viral_hooks' => [
+                'Il motivo per cui il X% dei clienti torna ogni stagione.',
+                'Come scegliere [prodotto] senza sbagliare: la guida onesta.',
+                'Quello che nessuno ti dice quando compri [categoria] online.',
+                'X domande da fare prima di acquistare [prodotto].',
+                'Un cliente ha scritto questo e abbiamo cambiato qualcosa.',
+                'Unboxing: cosa trovi davvero dentro il pacco.',
+            ],
+            'viral_formats' => ['before_after', 'educational_carousel', 'tutorial_list', 'response_to_question', 'storytime_reel'],
         ],
 
         // ─── EDUCATION & INFOPRODUCTS ────────────────────────────────────────
@@ -234,6 +300,15 @@ class IndustryPresetService
                 'secondary_goal' => 'Community Growth',
                 'content_mix'    => ['educational' => 0.4, 'authority' => 0.3, 'social_proof' => 0.3],
             ],
+            'viral_hooks' => [
+                'X cose che mi avrebbe aiutato sapere prima di [milestone].',
+                'Il metodo che uso con ogni nuovo allievo e che cambia tutto.',
+                'Perché il metodo classico di [apprendimento] non basta più.',
+                'Ho insegnato [topic] per anni. Questo è l\'errore più comune.',
+                'Come passare da [stato A] a [stato B] senza perdere tempo.',
+                'Il risultato di questo allievo dopo X settimane di lavoro.',
+            ],
+            'viral_formats' => ['tutorial_list', 'educational_carousel', 'storytime_reel', 'myth_busting', 'before_after'],
         ],
 
         // ─── PROFESSIONAL SERVICES ───────────────────────────────────────────
@@ -267,6 +342,141 @@ class IndustryPresetService
                 'secondary_goal' => 'Retention e Referral',
                 'content_mix'    => ['thought_leadership' => 0.4, 'case_study' => 0.3, 'team' => 0.3],
             ],
+            'viral_hooks' => [
+                'Il consiglio che avrei voluto ricevere quando ho iniziato in [settore].',
+                'X domande da fare prima di scegliere [tipo di professionista].',
+                'Quello che i colleghi non dicono ad alta voce su [tema].',
+                'Come abbiamo risolto [problema tipico] per un cliente in X giorni.',
+                'L\'errore che costa di più e che si poteva evitare.',
+                'Il cliente pensava di avere un problema di X. Era tutt\'altro.',
+            ],
+            'viral_formats' => ['unpopular_opinion', 'tutorial_list', 'educational_carousel', 'response_to_question', 'storytime_reel'],
+        ],
+
+        // ─── IMMOBILIARE ─────────────────────────────────────────────────────
+        'realestate' => [
+            'pillars' => [
+                'Tour Proprietà',
+                'Consigli per Comprare Casa',
+                'Il Mercato Immobiliare Oggi',
+                'Storie di Clienti Soddisfatti',
+                'Prima Casa: Guida Pratica',
+                'Il Dietro le Quinte delle Trattative',
+            ],
+            'rubrics' => [
+                ['name' => 'Property Tour',     'weight' => 0.35, 'focus' => 'video e foto delle proprietà'],
+                ['name' => 'Educativo',          'weight' => 0.25, 'focus' => 'consigli pratici per acquirenti'],
+                ['name' => 'Social Proof',       'weight' => 0.20, 'focus' => 'testimonianze clienti, trattative chiuse'],
+                ['name' => 'Mercato & Trend',    'weight' => 0.20, 'focus' => 'aggiornamenti zona, valutazioni'],
+            ],
+            'cta_rules' => [
+                'primary_cta'   => 'Richiedi una valutazione gratuita',
+                'secondary_cta' => 'Scopri le proprietà disponibili',
+                'link_cta'      => 'Tutti gli immobili nel link in bio',
+                'avoid'         => ['affare imperdibile', 'prezzi stracciati', 'ultima occasione'],
+            ],
+            'brand_voice' => [
+                'tone'   => 'professionale, diretto, umano',
+                'values' => ['fiducia', 'trasparenza', 'risultati', 'competenza locale'],
+            ],
+            'analysis_framework' => [
+                'primary_goal'   => 'Lead Generation + Brand Awareness',
+                'secondary_goal' => 'Social Proof e Referral',
+                'content_mix'    => ['property' => 0.4, 'educational' => 0.35, 'social_proof' => 0.25],
+            ],
+            'viral_hooks' => [
+                'Tour di questa proprietà che abbiamo venduto in X giorni.',
+                'X errori che fanno perdere soldi quando si vende casa.',
+                'Il cliente pensava di vendere a X. L\'abbiamo venduta a Y.',
+                'Come valutare un\'offerta immobiliare senza farsi ingannare.',
+                'Il quartiere che sta crescendo più velocemente in questo momento.',
+                'Prima casa: le X cose che nessuno ti dice in anticipo.',
+            ],
+            'viral_formats' => ['before_after', 'day_in_life', 'storytime_reel', 'educational_carousel', 'tutorial_list'],
+        ],
+
+        // ─── TURISMO & HOSPITALITY ───────────────────────────────────────────
+        'tourism' => [
+            'pillars' => [
+                'Esperienze e Luoghi',
+                'Consigli di Viaggio',
+                'Dietro le Quinte della Struttura',
+                'Testimonianze degli Ospiti',
+                'Gastronomia e Territorio',
+                'Stagioni e Festività',
+            ],
+            'rubrics' => [
+                ['name' => 'Destination Visual',  'weight' => 0.40, 'focus' => 'paesaggi, struttura, esperienze'],
+                ['name' => 'Consigli Pratici',     'weight' => 0.25, 'focus' => 'guide, itinerari, tips'],
+                ['name' => 'Social Proof',         'weight' => 0.20, 'focus' => 'recensioni, ospiti felici'],
+                ['name' => 'Promo Stagionale',     'weight' => 0.15, 'focus' => 'offerte, pacchetti, disponibilità'],
+            ],
+            'cta_rules' => [
+                'primary_cta'   => 'Prenota il tuo soggiorno',
+                'secondary_cta' => 'Scopri le disponibilità',
+                'link_cta'      => 'Prenota direttamente dal link in bio',
+                'avoid'         => ['offerta shock', 'last minute disperato'],
+            ],
+            'brand_voice' => [
+                'tone'   => 'ispirante, accogliente, autentico',
+                'values' => ['esperienza', 'autenticità', 'accoglienza', 'territorio'],
+            ],
+            'analysis_framework' => [
+                'primary_goal'   => 'Prenotazioni + Brand Awareness',
+                'secondary_goal' => 'Community e Fidelizzazione',
+                'content_mix'    => ['visual' => 0.5, 'educational' => 0.3, 'promo' => 0.2],
+            ],
+            'viral_hooks' => [
+                'Il posto che i turisti non trovano sulle guide ma i locali amano.',
+                'X motivi per cui [destinazione] vale davvero il viaggio.',
+                'Cosa succede nella nostra struttura prima che gli ospiti arrivino.',
+                'L\'esperienza che i nostri ospiti non si aspettavano.',
+                'Il piatto locale che non si trova nei ristoranti per turisti.',
+                'Tour della [struttura/destinazione] prima dell\'alta stagione.',
+            ],
+            'viral_formats' => ['day_in_life', 'storytime_reel', 'before_after', 'tutorial_list'],
+        ],
+
+        // ─── BEAUTY & WELLNESS ───────────────────────────────────────────────
+        'beauty' => [
+            'pillars' => [
+                'Tutorial e Tecniche',
+                'Prima e Dopo',
+                'Consigli per la Cura Personale',
+                'Prodotti e Ingredienti',
+                'Il Team e i Servizi',
+                'Tendenze Stagionali',
+            ],
+            'rubrics' => [
+                ['name' => 'Tutorial Visual',   'weight' => 0.35, 'focus' => 'step-by-step, tecniche, risultati'],
+                ['name' => 'Before & After',    'weight' => 0.25, 'focus' => 'trasformazioni reali'],
+                ['name' => 'Educational',       'weight' => 0.20, 'focus' => 'consigli, ingredienti, routine'],
+                ['name' => 'Social Proof',      'weight' => 0.20, 'focus' => 'clienti soddisfatti, recensioni'],
+            ],
+            'cta_rules' => [
+                'primary_cta'   => 'Prenota il tuo appuntamento',
+                'secondary_cta' => 'Scopri i nostri trattamenti',
+                'link_cta'      => 'Prenota dal link in bio',
+                'avoid'         => ['garantiamo risultati', 'effetto immediato', 'rivoluzionario'],
+            ],
+            'brand_voice' => [
+                'tone'   => 'caldo, ispirazionale, competente',
+                'values' => ['bellezza', 'cura', 'autenticità', 'professionalità'],
+            ],
+            'analysis_framework' => [
+                'primary_goal'   => 'Prenotazioni + Retention',
+                'secondary_goal' => 'Brand Awareness',
+                'content_mix'    => ['tutorial' => 0.4, 'social_proof' => 0.35, 'educational' => 0.25],
+            ],
+            'viral_hooks' => [
+                'Il risultato di questa [trattamento] dopo X settimane.',
+                'Come faccio [tecnica] che mi chiedete ogni settimana.',
+                'X errori nella routine di [cura] che stanno peggiorando il risultato.',
+                'Prima e dopo: questa cliente non credeva fosse possibile.',
+                'L\'ingrediente che trovi in quasi tutti i prodotti ma che in pochi conoscono.',
+                'Quello che vedo ogni giorno e che la maggior parte sbaglia con [cura].',
+            ],
+            'viral_formats' => ['before_after', 'tutorial_list', 'storytime_reel', 'educational_carousel'],
         ],
     ];
 
