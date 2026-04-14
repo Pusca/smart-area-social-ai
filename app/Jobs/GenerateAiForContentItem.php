@@ -1436,6 +1436,23 @@ SVG;
                                 brandDecision: $brandDecision,
                                 videoOptions: $videoOptions
                             );
+                        } elseif ($fallbackProvider === 'google_veo') {
+                            $result = $this->generateVideoWithGoogleVeo(
+                                googleVeo: $googleVeo,
+                                item: $item,
+                                briefRaw: $briefRaw,
+                                fallbackPrompt: $prompt,
+                                videoPrompt: $this->buildGoogleVeoExecutionPrompt($videoPrompt, $item, $meta, $assetVariables),
+                                referenceAbs: is_string($referenceAbs) ? $referenceAbs : null,
+                                referencePath: is_string($referencePath) ? $referencePath : null,
+                                referencePaths: $referencePaths,
+                                referenceReason: $referenceReason . '_google_veo_fallback_after_kling_failure',
+                                compositionMeta: $compositionMeta,
+                                brandDecision: $brandDecision,
+                                videoOptions: $videoOptions,
+                                generationReferenceAbsPool: $generationReferenceAbsPool,
+                                imageReferencePathPool: $imageReferencePathPool
+                            );
                         } else {
                             $result = $this->generateVideoWithOpenAi(
                                 openAi: $openAi,
@@ -4890,6 +4907,8 @@ SVG;
             || str_contains($message, 'temporarily unavailable')
             || str_contains($message, 'gateway timeout')
             || str_contains($message, 'processing')
+            || str_contains($message, 'blocked by our moderation system')
+            || str_contains($message, 'moderation system')
             || $this->isTransientNetworkError($error);
     }
 
