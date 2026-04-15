@@ -2,15 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BrandAsset;
 use App\Models\TenantProfile;
+use App\Services\Onboarding\QuickstartOnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class OnboardingController extends Controller
 {
+    public function __construct(
+        private readonly QuickstartOnboardingService $quickstartService
+    ) {
+    }
+
     /**
      * Mostra il wizard di onboarding per il primo accesso.
      */
@@ -46,10 +55,10 @@ class OnboardingController extends Controller
         TenantProfile::query()->updateOrCreate(
             ['tenant_id' => $user->tenant_id],
             [
-                'business_name'        => $data['brand_name'],
-                'industry'             => $data['industry'],
-                'default_tone'         => $data['tone'],
-                'onboarding_started_at'=> Carbon::now(),
+                'business_name'         => $data['brand_name'],
+                'industry'              => $data['industry'],
+                'default_tone'          => $data['tone'],
+                'onboarding_started_at' => Carbon::now(),
             ]
         );
 
@@ -79,17 +88,73 @@ class OnboardingController extends Controller
     }
 
     /**
-     * Passo 3: connessione social — gestito lato frontend con link OAuth.
-     * Questo endpoint registra solo il "skip" o il completamento del passo.
+     * Passo 3: carica logo e immagini di riferimento come BrandAsset.
+     */
+    public function uploadAssets(Request $request): JsonResponse
+    {
+        $request->validate([
+            'logo'     => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:8192',
+            'images'   => 'nullable|array|max:8',
+            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:10240',
+        ]);
+
+        $user     = $request->user();
+        $tenantId = (int) $user->tenant_id;
+        $baseDir  = 'brand-assets/' . $tenantId;
+        $count    = 0;
+
+        if ($request->hasFile('logo')) {
+            /** @var UploadedFile $file */
+            $file = $request->file('logo');
+            $path = $file->store($baseDir . '/logo', 'public');
+
+            BrandAsset::query()->create([
+                'tenant_id'       => $tenantId,
+                'content_plan_id' => null,
+                'kind'            => 'logo',
+                'path'            => $path,
+                'original_name'   => $file->getClientOriginalName(),
+                'size'            => $file->getSize(),
+                'mime'            => $file->getMimeType(),
+            ]);
+
+            $count++;
+        }
+
+        foreach ((array) $request->file('images', []) as $file) {
+            if (!$file instanceof UploadedFile) {
+                continue;
+            }
+
+            $path = $file->store($baseDir . '/images', 'public');
+
+            BrandAsset::query()->create([
+                'tenant_id'       => $tenantId,
+                'content_plan_id' => null,
+                'kind'            => 'image',
+                'path'            => $path,
+                'original_name'   => $file->getClientOriginalName(),
+                'size'            => $file->getSize(),
+                'mime'            => $file->getMimeType(),
+            ]);
+
+            $count++;
+        }
+
+        return response()->json(['ok' => true, 'stored' => $count]);
+    }
+
+    /**
+     * Passo 4 — skip social (mantenuto per compatibilità).
      */
     public function skipSocial(Request $request): JsonResponse
     {
-        // Nessuna azione server-side necessaria: il frontend avanza al passo 4.
         return response()->json(['ok' => true]);
     }
 
     /**
-     * Completa l'onboarding e segna il profilo come configurato.
+     * Completa l'onboarding, genera la demo quickstart (2 img NanoBanana + 1 video Veo 3.1)
+     * e reindirizza alla pagina di progresso generazione.
      */
     public function complete(Request $request): JsonResponse
     {
@@ -99,9 +164,22 @@ class OnboardingController extends Controller
             ->where('tenant_id', $user->tenant_id)
             ->update(['onboarding_completed_at' => Carbon::now()]);
 
-        return response()->json([
-            'ok'           => true,
-            'redirect_url' => route('wizard.start'),
-        ]);
+        try {
+            $result = $this->quickstartService->regenerateQuickstart($user);
+
+            return response()->json([
+                'ok'           => true,
+                'redirect_url' => route('plans.generating', [
+                    'contentPlan' => $result['plan']->id,
+                    'context'     => 'quickstart',
+                ]),
+            ]);
+        } catch (\Throwable $e) {
+            // Quickstart fallito (es. nessuna immagine) → vai al dashboard
+            return response()->json([
+                'ok'           => true,
+                'redirect_url' => route('dashboard'),
+            ]);
+        }
     }
 }

@@ -49,6 +49,7 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->gro
     Route::post('/onboarding/brand', [OnboardingController::class, 'saveBrand'])->name('onboarding.brand');
     Route::post('/onboarding/audience', [OnboardingController::class, 'saveAudience'])->name('onboarding.audience');
     Route::post('/onboarding/skip-social', [OnboardingController::class, 'skipSocial'])->name('onboarding.skip-social');
+    Route::post('/onboarding/assets', [OnboardingController::class, 'uploadAssets'])->name('onboarding.assets');
     Route::post('/onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
 });
 

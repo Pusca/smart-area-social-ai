@@ -109,6 +109,8 @@ class QuickstartOnboardingService
                     'demo_label' => 'Prova iniziale rigenerabile',
                     'demo_note' => 'Questo piano serve a mostrare il potenziale dell app e puo essere eliminato o rigenerato.',
                     'generated_from' => 'brand_quickstart',
+                    'image_provider' => 'nanobanana',
+                    'video_provider' => 'google_veo',
                 ],
                 'strategy' => $strategy,
             ]);
@@ -148,6 +150,15 @@ class QuickstartOnboardingService
                     'regenerable' => true,
                     'deletable' => true,
                 ];
+
+                // Forza provider per ogni item: reel → Veo 3.1, post → NanoBanana
+                $format = (string) ($item->format ?? 'post');
+                if ($format === 'reel' || $format === 'video') {
+                    $meta['video_provider'] = 'google_veo';
+                } else {
+                    $meta['image_provider'] = 'nanobanana';
+                }
+
                 $item->ai_meta = $meta;
                 $item->save();
             }
