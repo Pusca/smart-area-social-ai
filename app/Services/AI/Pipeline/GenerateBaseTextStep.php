@@ -6,6 +6,7 @@ use App\Jobs\GenerateAiForContentItem;
 use App\Services\AI\ContentAlignmentService;
 use App\Services\AI\ContentAngleEngine;
 use App\Services\AI\VideoScenePlanner;
+use App\Services\AlterEgoConsistencyService;
 use App\Services\GenerationAuditService;
 use App\Services\GenerationMetricsService;
 use App\Services\OpenAiService;
@@ -23,7 +24,8 @@ class GenerateBaseTextStep
         private readonly VideoScenePlanner $videoScenePlanner,
         private readonly ContentOverlayEngine $contentOverlayEngine,
         private readonly GenerationAuditService $generationAudit,
-        private readonly GenerationMetricsService $generationMetrics
+        private readonly GenerationMetricsService $generationMetrics,
+        private readonly AlterEgoConsistencyService $alterEgoConsistency
     ) {
     }
 
@@ -335,6 +337,15 @@ class GenerateBaseTextStep
                     (string) $item->platform
                 );
 
+            // ── Alter Ego Consistency Score (non-bloccante) ───────────────────
+            $alterEgoConsistencyResult = [];
+            if (!empty($alterEgo) && !empty(trim((string) ($gen['caption'] ?? '')))) {
+                $alterEgoConsistencyResult = $this->alterEgoConsistency->score(
+                    trim((string) ($gen['caption'] ?? '')),
+                    $alterEgo
+                );
+            }
+
             $nextMeta = array_merge($meta, [
                 'text_similarity_score'     => round($bestScore, 4),
                 'text_alignment_score'      => round($bestAlignmentScore, 4),
@@ -350,6 +361,9 @@ class GenerateBaseTextStep
 
                 // Aspect ratio consigliato per il placement di questo format+platform.
                 'placement_aspect_ratio' => $placementRatio,
+
+                // Punteggio di aderenza all'alter ego (vuoto se non attivo o se il check ha fallito).
+                'alter_ego_consistency' => $alterEgoConsistencyResult ?: null,
             ]);
 
             $generatedVideoPrompt = trim((string) ($gen['video_prompt'] ?? ''));

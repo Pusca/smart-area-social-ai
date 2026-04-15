@@ -123,6 +123,29 @@
                         </div>
                     </div>
 
+                    {{-- Platform adaptations --}}
+                    <details class="overflow-hidden rounded-2xl border border-app">
+                        <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            <span>Adattamenti per piattaforma <span class="ml-1 text-xs font-normal text-gray-400">(opzionale)</span></span>
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </summary>
+                        <div class="border-t border-app p-4 space-y-3">
+                            <p class="text-xs text-gray-500">Se la voce cambia leggermente su LinkedIn rispetto a Instagram, specificalo qui. Lascia vuoto se la voce è uniforme.</p>
+                            <template x-for="platform in platformAdaptPlatforms" :key="platform.key">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600" x-text="platform.label"></label>
+                                    <input
+                                        type="text"
+                                        @input="form.platform_adaptations[platform.key] = { modifier: $event.target.value }"
+                                        :value="form.platform_adaptations[platform.key]?.modifier || ''"
+                                        :placeholder="platform.placeholder"
+                                        class="mt-1 block w-full rounded-xl border border-app bg-app/30 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none"
+                                    />
+                                </div>
+                            </template>
+                        </div>
+                    </details>
+
                     {{-- Frasi firma --}}
                     <div>
                         <label class="block text-sm font-semibold text-gray-700">Frasi caratteristiche <span class="text-xs font-normal text-gray-400">(opzionale)</span></label>
@@ -267,10 +290,23 @@
                         </div>
                     </div>
 
-                    {{-- Training samples --}}
+                    {{-- Training samples + Analizza voce --}}
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700">Campioni di scrittura <span class="text-xs font-normal text-gray-400">(opzionale ma consigliato)</span></label>
-                        <p class="text-xs text-gray-400">Incolla testi reali — post, articoli, email. L'AI impara il ritmo e le scelte lessicali.</p>
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700">Campioni di scrittura <span class="text-xs font-normal text-gray-400">(consigliato)</span></label>
+                                <p class="text-xs text-gray-400">Incolla 1-3 testi reali. L'AI ne estrae voce, temi e frasi caratteristiche.</p>
+                            </div>
+                            <button
+                                type="button"
+                                @click="analyzeVoice"
+                                :disabled="analyzingVoice || form.training_samples.filter(s => s.trim().length > 29).length === 0"
+                                class="shrink-0 inline-flex items-center gap-1.5 rounded-2xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-40"
+                            >
+                                <svg x-show="analyzingVoice" class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                                <span x-text="analyzingVoice ? 'Analisi...' : 'Analizza la mia voce'"></span>
+                            </button>
+                        </div>
                         <div class="mt-2 space-y-2">
                             <template x-for="(sample, i) in form.training_samples" :key="i">
                                 <div class="relative">
@@ -300,6 +336,30 @@
                                 Aggiungi campione
                             </button>
                         </div>
+                        {{-- Risultato analisi voce --}}
+                        <div x-show="voiceExtractResult" x-cloak class="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm">
+                            <p class="font-semibold text-indigo-900">Voce estratta — rivedi e applica</p>
+                            <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                <div><span class="text-gray-500">Tono:</span> <span class="font-medium" x-text="toneLabel(voiceExtractResult?.tone)"></span></div>
+                                <div><span class="text-gray-500">Stile frasi:</span> <span class="font-medium" x-text="sentenceStyleLabel(voiceExtractResult?.sentence_style)"></span></div>
+                                <div><span class="text-gray-500">Vocabolario:</span> <span class="font-medium" x-text="vocabLabel(voiceExtractResult?.vocabulary_level)"></span></div>
+                                <div><span class="text-gray-500">Pubblico:</span> <span class="font-medium" x-text="audienceRoleLabel(voiceExtractResult?.audience_role)"></span></div>
+                            </div>
+                            <template x-if="voiceExtractResult?.signature_phrases?.length">
+                                <p class="mt-2 text-xs text-indigo-700"><strong>Frasi:</strong> <span x-text="voiceExtractResult.signature_phrases.join(' · ')"></span></p>
+                            </template>
+                            <template x-if="voiceExtractResult?.unique_perspective">
+                                <p class="mt-1 text-xs text-indigo-700"><strong>Prospettiva:</strong> <span x-text="voiceExtractResult.unique_perspective"></span></p>
+                            </template>
+                            <button
+                                type="button"
+                                @click="applyVoiceExtract"
+                                class="mt-3 rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                            >
+                                Applica ai campi del wizard
+                            </button>
+                        </div>
+                        <div x-show="voiceExtractError" x-cloak class="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700" x-text="voiceExtractError"></div>
                     </div>
                 </div>
 
@@ -410,8 +470,20 @@ function alterEgoWizard() {
             audience_role: '',
             cta_style: 'soft',
             training_samples: [''],
+            platform_adaptations: {},
             is_default: false,
         },
+
+        analyzingVoice: false,
+        voiceExtractResult: null,
+        voiceExtractError: '',
+
+        platformAdaptPlatforms: [
+            { key: 'linkedin',  label: 'LinkedIn',  placeholder: 'Es. Più formale, linguaggio professionale, niente emoji' },
+            { key: 'instagram', label: 'Instagram', placeholder: 'Es. Tono narrativo, emoji misurati, call to action soft' },
+            { key: 'tiktok',    label: 'TikTok',    placeholder: 'Es. Energico, frasi corte, hook immediato' },
+            { key: 'facebook',  label: 'Facebook',  placeholder: 'Es. Narrativo, domanda finale per coinvolgere' },
+        ],
 
         archetypes: [
             { key: 'thought_leader', icon: '🎯', label: 'Thought Leader',  description: 'Guida e sfida il settore' },
@@ -501,6 +573,48 @@ function alterEgoWizard() {
             return (this.audienceRoles.find(r => r.key === key) || {}).label || key;
         },
 
+        async analyzeVoice() {
+            const samples = this.form.training_samples.filter(s => s.trim().length > 29);
+            if (samples.length === 0) return;
+
+            this.analyzingVoice    = true;
+            this.voiceExtractResult = null;
+            this.voiceExtractError  = '';
+
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            try {
+                const res = await fetch('{{ route('alter-ego.extract-voice') }}', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf },
+                    body: JSON.stringify({ samples }),
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    this.voiceExtractError = json.error || `Errore ${res.status}`;
+                } else {
+                    this.voiceExtractResult = json.profile || null;
+                }
+            } catch {
+                this.voiceExtractError = 'Connessione non riuscita.';
+            } finally {
+                this.analyzingVoice = false;
+            }
+        },
+
+        applyVoiceExtract() {
+            if (!this.voiceExtractResult) return;
+            const p = this.voiceExtractResult;
+            if (p.tone)               this.form.tone               = p.tone;
+            if (p.sentence_style)     this.form.sentence_style     = p.sentence_style;
+            if (p.vocabulary_level)   this.form.vocabulary_level   = p.vocabulary_level;
+            if (p.audience_role)      this.form.audience_role      = p.audience_role;
+            if (p.signature_phrases?.length)  this.form.signature_phrases  = p.signature_phrases;
+            if (p.topics_owned?.length)       this.form.topics_owned       = p.topics_owned;
+            if (p.unique_perspective) this.form.unique_perspective = p.unique_perspective;
+            this.voiceExtractResult = null;
+        },
+
         async submit() {
             this.saving = true;
             this.errorMsg = '';
@@ -508,6 +622,10 @@ function alterEgoWizard() {
             const payload = {
                 ...this.form,
                 training_samples: this.form.training_samples.filter(s => s.trim() !== ''),
+                platform_adaptations: Object.fromEntries(
+                    Object.entries(this.form.platform_adaptations)
+                        .filter(([, v]) => v?.modifier?.trim())
+                ),
             };
 
             const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';

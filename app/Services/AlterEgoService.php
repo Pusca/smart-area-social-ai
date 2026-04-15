@@ -26,6 +26,26 @@ class AlterEgoService
     }
 
     /**
+     * Restituisce il persona prompt adattato per una piattaforma specifica.
+     * Se non esiste un adattamento, ritorna il prompt base.
+     */
+    public function buildPlatformAdaptedPrompt(AlterEgo $alterEgo, string $platform): string
+    {
+        $base        = $this->compiledPersonaPrompt($alterEgo);
+        $adaptations = (array) ($alterEgo->platform_adaptations ?? []);
+        $platform    = strtolower(trim($platform));
+        $modifier    = trim((string) data_get($adaptations, "{$platform}.modifier", ''));
+
+        if ($modifier === '') {
+            return $base;
+        }
+
+        return $base
+            . "\n\nADATTAMENTO PIATTAFORMA — " . strtoupper($platform) . "\n"
+            . $modifier;
+    }
+
+    /**
      * Rigenera e salva il persona_prompt_cache, incrementa la versione.
      */
     public function recompile(AlterEgo $alterEgo): void

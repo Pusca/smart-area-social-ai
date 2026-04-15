@@ -170,6 +170,7 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         Route::get('/', [AlterEgoController::class, 'index'])->name('index');
         Route::get('/create', [AlterEgoController::class, 'create'])->name('create');
         Route::post('/wizard/step', [AlterEgoController::class, 'storeStep'])->name('wizard.step');
+        Route::post('/extract-voice', [AlterEgoController::class, 'extractVoice'])->name('extract-voice');
         Route::post('/', [AlterEgoController::class, 'store'])->name('store');
         Route::get('/{alterEgo}/edit', [AlterEgoController::class, 'edit'])->name('edit');
         Route::put('/{alterEgo}', [AlterEgoController::class, 'update'])->name('update');

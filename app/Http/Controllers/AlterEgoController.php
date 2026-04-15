@@ -4,15 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Models\AlterEgo;
 use App\Services\AlterEgoService;
+use App\Services\OpenAiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Throwable;
 
 class AlterEgoController extends Controller
 {
-    public function __construct(private readonly AlterEgoService $alterEgoService)
-    {
+    public function __construct(
+        private readonly AlterEgoService $alterEgoService,
+        private readonly OpenAiService $openAi
+    ) {
     }
 
     public function index(Request $request): View
@@ -72,9 +76,10 @@ class AlterEgoController extends Controller
             'unique_perspective' => 'nullable|string|max:800',
             'audience_role'      => 'nullable|string|in:teacher,peer,mentor,challenger,entertainer',
             'cta_style'          => 'nullable|string|in:soft,direct,domanda,nessuna',
-            'training_samples'   => 'nullable|array|max:5',
-            'training_samples.*' => 'string|max:3000',
-            'is_default'         => 'boolean',
+            'training_samples'      => 'nullable|array|max:5',
+            'training_samples.*'    => 'string|max:3000',
+            'platform_adaptations'  => 'nullable|array',
+            'is_default'            => 'boolean',
         ]);
 
         if (!empty($data['is_default'])) {
@@ -133,9 +138,10 @@ class AlterEgoController extends Controller
             'unique_perspective' => 'nullable|string|max:800',
             'audience_role'      => 'nullable|string|in:teacher,peer,mentor,challenger,entertainer',
             'cta_style'          => 'nullable|string|in:soft,direct,domanda,nessuna',
-            'training_samples'   => 'nullable|array|max:5',
-            'training_samples.*' => 'string|max:3000',
-            'is_default'         => 'boolean',
+            'training_samples'     => 'nullable|array|max:5',
+            'training_samples.*'   => 'string|max:3000',
+            'platform_adaptations' => 'nullable|array',
+            'is_default'           => 'boolean',
         ]);
 
         if (!empty($data['is_default'])) {
@@ -172,6 +178,30 @@ class AlterEgoController extends Controller
         $alterEgo->update(['is_default' => true]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Analizza campioni di testo e restituisce un profilo di voce strutturato.
+     * Endpoint chiamato dal wizard "Analizza la mia voce".
+     */
+    public function extractVoice(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'samples'   => 'required|array|min:1|max:5',
+            'samples.*' => 'required|string|min:30|max:3000',
+        ]);
+
+        try {
+            $profile = $this->openAi->extractVoiceFromSamples($data['samples']);
+
+            if (empty($profile)) {
+                return response()->json(['error' => 'Impossibile estrarre un profilo di voce dai testi forniti.'], 422);
+            }
+
+            return response()->json(['ok' => true, 'profile' => $profile]);
+        } catch (Throwable $e) {
+            return response()->json(['error' => 'Analisi non riuscita: ' . $e->getMessage()], 500);
+        }
     }
 
     private function authorizeAlterEgo(Request $request, AlterEgo $alterEgo): void

@@ -150,7 +150,10 @@ class BuildGenerationContextStep
 
         // ── Alter Ego ──────────────────────────────────────────────────────────
         // Priorità: alter_ego_id sull'item → id in ai_meta → default del tenant.
-        $alterEgoContext = $this->resolveAlterEgoContext($item, $meta);
+        // La piattaforma è ricavata dall'item (es. "instagram") per scegliere
+        // il prompt adattato corretto.
+        $primaryPlatform = strtolower(explode(',', (string) ($item->platform ?? ''))[0]);
+        $alterEgoContext = $this->resolveAlterEgoContext($item, $meta, $primaryPlatform);
 
         $state->run = $run;
         $state->run = $this->generationAudit->syncRun($state->run, [
@@ -189,11 +192,13 @@ class BuildGenerationContextStep
     /**
      * Carica il contesto alter ego per questa generazione.
      * Priorità: alter_ego_id sulla colonna item > ai_meta['alter_ego_id'] > default tenant.
+     * Il persona_prompt restituito è adattato per la piattaforma target, se esiste
+     * un adattamento configurato.
      *
      * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
-    private function resolveAlterEgoContext(ContentItem $item, array $meta): array
+    private function resolveAlterEgoContext(ContentItem $item, array $meta, string $platform = ''): array
     {
         $alterEgoId = (int) ($item->alter_ego_id ?? 0) ?: (int) data_get($meta, 'alter_ego_id', 0);
 
@@ -215,6 +220,11 @@ class BuildGenerationContextStep
             $alterEgo->refresh();
         }
 
+        // Usa prompt adattato per la piattaforma se disponibile
+        $personaPrompt = $platform !== ''
+            ? $this->alterEgoService->buildPlatformAdaptedPrompt($alterEgo, $platform)
+            : (string) ($alterEgo->persona_prompt_cache ?? '');
+
         return [
             'id'                 => $alterEgo->id,
             'name'               => $alterEgo->name,
@@ -228,7 +238,9 @@ class BuildGenerationContextStep
             'unique_perspective' => $alterEgo->unique_perspective,
             'audience_role'      => $alterEgo->audience_role,
             'cta_style'          => $alterEgo->cta_style,
-            'persona_prompt'     => (string) ($alterEgo->persona_prompt_cache ?? ''),
+            'platform_adapted'   => $platform !== '',
+            'platform'           => $platform,
+            'persona_prompt'     => $personaPrompt,
         ];
     }
 }

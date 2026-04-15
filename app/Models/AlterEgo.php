@@ -23,6 +23,7 @@ class AlterEgo extends Model
         'audience_role',
         'cta_style',
         'training_samples',
+        'platform_adaptations',
         'persona_prompt_cache',
         'persona_prompt_version',
         'is_active',
@@ -30,13 +31,14 @@ class AlterEgo extends Model
     ];
 
     protected $casts = [
-        'signature_phrases' => 'array',
-        'topics_owned'      => 'array',
-        'topics_avoided'    => 'array',
-        'content_pillars'   => 'array',
-        'training_samples'  => 'array',
-        'is_active'         => 'boolean',
-        'is_default'        => 'boolean',
+        'signature_phrases'    => 'array',
+        'topics_owned'         => 'array',
+        'topics_avoided'       => 'array',
+        'content_pillars'      => 'array',
+        'training_samples'     => 'array',
+        'platform_adaptations' => 'array',
+        'is_active'            => 'boolean',
+        'is_default'           => 'boolean',
     ];
 
     public function tenant(): BelongsTo

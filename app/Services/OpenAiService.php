@@ -1423,4 +1423,189 @@ class OpenAiService
             default => false,
         };
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ALTER EGO — CONSISTENCY SCORE
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Valuta quanto una caption aderisce al persona dell'alter ego.
+     *
+     * Ritorna array con: score (0-100), feedback, tone_score, vocabulary_score, style_score.
+     * Usa un modello fast (gpt-4.1-mini) per tenere latenza e costo bassi.
+     *
+     * @return array<string, mixed>
+     */
+    public function scoreAlterEgoConsistency(string $caption, string $personaPrompt): array
+    {
+        $model   = 'gpt-4.1-mini';
+        $timeout = 20;
+        $url     = $this->url('/v1/responses');
+
+        $instructions = "Sei un critico di content marketing specializzato in personal branding.\n"
+            . "Ricevi la descrizione di una persona comunicativa (PERSONA) e una caption social (CAPTION).\n"
+            . "Valuta quanto la caption rispecchia voce, tono, stile e temi della persona.\n"
+            . "Restituisci SOLO JSON valido con:\n"
+            . "- score (integer 0-100): aderenza complessiva\n"
+            . "- tone_score (integer 0-100): aderenza del tono\n"
+            . "- vocabulary_score (integer 0-100): aderenza del vocabolario\n"
+            . "- style_score (integer 0-100): aderenza della struttura frasi\n"
+            . "- feedback (string max 160 chars): una frase concisa su cosa funziona o cosa migliorare\n"
+            . "Niente markdown. Niente code fences. Solo JSON.";
+
+        $userMessage = "PERSONA:\n{$personaPrompt}\n\nCAPTION:\n{$caption}";
+
+        $schema = [
+            'type'       => 'json_schema',
+            'json_schema' => [
+                'name'   => 'alter_ego_consistency',
+                'strict' => true,
+                'schema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'score'            => ['type' => 'integer'],
+                        'tone_score'       => ['type' => 'integer'],
+                        'vocabulary_score' => ['type' => 'integer'],
+                        'style_score'      => ['type' => 'integer'],
+                        'feedback'         => ['type' => 'string'],
+                    ],
+                    'required'             => ['score', 'tone_score', 'vocabulary_score', 'style_score', 'feedback'],
+                    'additionalProperties' => false,
+                ],
+            ],
+        ];
+
+        $res = $this->request($timeout, true)
+            ->post($url, [
+                'model' => $model,
+                'input' => [
+                    ['role' => 'system', 'content' => $instructions],
+                    ['role' => 'user',   'content' => $userMessage],
+                ],
+                'text' => ['format' => $schema],
+            ]);
+
+        if (!$res->successful()) {
+            throw new RuntimeException("scoreAlterEgoConsistency HTTP {$res->status()}");
+        }
+
+        $text = $this->extractResponsesText($res->json() ?: []);
+        $data = $this->safeJsonParse($text);
+
+        if (!is_array($data)) {
+            return [];
+        }
+
+        return [
+            'score'            => max(0, min(100, (int) ($data['score']            ?? 0))),
+            'tone_score'       => max(0, min(100, (int) ($data['tone_score']       ?? 0))),
+            'vocabulary_score' => max(0, min(100, (int) ($data['vocabulary_score'] ?? 0))),
+            'style_score'      => max(0, min(100, (int) ($data['style_score']      ?? 0))),
+            'feedback'         => Str::limit(trim((string) ($data['feedback'] ?? '')), 200, ''),
+        ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ALTER EGO — VOICE EXTRACTION FROM SAMPLES
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Analizza testi campione e restituisce un profilo di voce strutturato.
+     * Usato dal wizard "Analizza la mia voce" per pre-compilare i campi alter ego.
+     *
+     * @param  array<int, string>  $samples
+     * @return array<string, mixed>
+     */
+    public function extractVoiceFromSamples(array $samples): array
+    {
+        $samples = array_values(array_filter(array_map(
+            fn ($s) => trim((string) $s),
+            $samples
+        ), fn ($s) => $s !== ''));
+
+        if (empty($samples)) {
+            return [];
+        }
+
+        $model   = 'gpt-4.1-mini';
+        $timeout = 30;
+        $url     = $this->url('/v1/responses');
+
+        $instructions = "Sei un esperto di personal branding e analisi del tono comunicativo.\n"
+            . "Analizza i testi forniti e identifica la voce narrativa dell'autore.\n"
+            . "Restituisci SOLO JSON valido con:\n"
+            . "- tone (string): uno tra autorevole | diretto | empatico | ironico | formale | colloquiale\n"
+            . "- sentence_style (string): uno tra brevi_incisive | narrative | domande_retoriche\n"
+            . "- vocabulary_level (string): uno tra tecnico | accessibile | misto\n"
+            . "- signature_phrases (array of string): max 5 frasi o costruzioni tipiche dell'autore\n"
+            . "- topics_owned (array of string): max 8 temi ricorrenti su cui l'autore è autorevole\n"
+            . "- unique_perspective (string max 250 chars): cosa rende unico questo comunicatore\n"
+            . "- audience_role (string): uno tra teacher | peer | mentor | challenger | entertainer\n"
+            . "Niente markdown. Niente code fences. Solo JSON.";
+
+        $combinedText = implode("\n\n---\n\n", $samples);
+        $userMessage  = "TESTI DA ANALIZZARE:\n\n{$combinedText}";
+
+        $schema = [
+            'type'       => 'json_schema',
+            'json_schema' => [
+                'name'   => 'alter_ego_voice_profile',
+                'strict' => true,
+                'schema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'tone'               => ['type' => 'string'],
+                        'sentence_style'     => ['type' => 'string'],
+                        'vocabulary_level'   => ['type' => 'string'],
+                        'signature_phrases'  => ['type' => 'array', 'items' => ['type' => 'string']],
+                        'topics_owned'       => ['type' => 'array', 'items' => ['type' => 'string']],
+                        'unique_perspective' => ['type' => 'string'],
+                        'audience_role'      => ['type' => 'string'],
+                    ],
+                    'required' => [
+                        'tone', 'sentence_style', 'vocabulary_level',
+                        'signature_phrases', 'topics_owned',
+                        'unique_perspective', 'audience_role',
+                    ],
+                    'additionalProperties' => false,
+                ],
+            ],
+        ];
+
+        $res = $this->request($timeout, true)
+            ->post($url, [
+                'model' => $model,
+                'input' => [
+                    ['role' => 'system', 'content' => $instructions],
+                    ['role' => 'user',   'content' => $userMessage],
+                ],
+                'text' => ['format' => $schema],
+            ]);
+
+        if (!$res->successful()) {
+            throw new RuntimeException("extractVoiceFromSamples HTTP {$res->status()}");
+        }
+
+        $text = $this->extractResponsesText($res->json() ?: []);
+        $data = $this->safeJsonParse($text);
+
+        if (!is_array($data)) {
+            return [];
+        }
+
+        $validTones    = ['autorevole', 'diretto', 'empatico', 'ironico', 'formale', 'colloquiale'];
+        $validStyles   = ['brevi_incisive', 'narrative', 'domande_retoriche'];
+        $validVocab    = ['tecnico', 'accessibile', 'misto'];
+        $validAudience = ['teacher', 'peer', 'mentor', 'challenger', 'entertainer'];
+
+        return [
+            'tone'               => in_array($data['tone'] ?? '', $validTones, true) ? $data['tone'] : '',
+            'sentence_style'     => in_array($data['sentence_style'] ?? '', $validStyles, true) ? $data['sentence_style'] : '',
+            'vocabulary_level'   => in_array($data['vocabulary_level'] ?? '', $validVocab, true) ? $data['vocabulary_level'] : 'misto',
+            'signature_phrases'  => array_values(array_filter(array_map('strval', (array) ($data['signature_phrases'] ?? [])))),
+            'topics_owned'       => array_values(array_filter(array_map('strval', (array) ($data['topics_owned'] ?? [])))),
+            'unique_perspective' => Str::limit(trim((string) ($data['unique_perspective'] ?? '')), 800, ''),
+            'audience_role'      => in_array($data['audience_role'] ?? '', $validAudience, true) ? $data['audience_role'] : '',
+        ];
+    }
 }

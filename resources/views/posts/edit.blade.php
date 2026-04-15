@@ -67,6 +67,7 @@
     $activeFeedbackRequest = data_get($contentItem->ai_meta, 'feedback_loop.active_request');
     $lastAppliedFeedback = data_get($contentItem->ai_meta, 'feedback_loop.last_applied');
     $shouldOpenFeedbackModal = old('sentiment') === 'dislike' || $errors->has('category') || $errors->has('reason');
+    $alterEgoConsistency = is_array(data_get($contentItem->ai_meta, 'alter_ego_consistency')) ? (array) data_get($contentItem->ai_meta, 'alter_ego_consistency') : [];
     $qualityScorecard = is_array(data_get($contentItem->ai_meta, 'quality_scorecard')) ? (array) data_get($contentItem->ai_meta, 'quality_scorecard') : [];
     $qualityScoreSources = is_array(data_get($qualityScorecard, 'score_sources')) ? (array) data_get($qualityScorecard, 'score_sources') : [];
     $qualityStatus = (string) ($qualityScorecard['publish_readiness_status'] ?? '');
@@ -214,6 +215,58 @@
             </p>
         @endif
     </div>
+
+    @if(!empty($alterEgoConsistency))
+    @php
+        use App\Services\AlterEgoConsistencyService;
+        $aeScore    = (int) ($alterEgoConsistency['score'] ?? 0);
+        $aeBadge    = AlterEgoConsistencyService::scoreBadgeClass($aeScore);
+        $aeLabel    = AlterEgoConsistencyService::scoreLabel($aeScore);
+        $aeName     = (string) ($alterEgoConsistency['alter_ego_name'] ?? '');
+        $aeFeedback = (string) ($alterEgoConsistency['feedback'] ?? '');
+    @endphp
+    <div class="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50">
+                    <svg class="h-5 w-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-gray-900">Alter Ego{{ $aeName ? ': ' . $aeName : '' }}</p>
+                    @if($aeFeedback)
+                        <p class="mt-0.5 text-xs text-gray-500">{{ $aeFeedback }}</p>
+                    @endif
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="text-right">
+                    <p class="text-2xl font-bold text-gray-950">{{ $aeScore }}<span class="text-sm font-normal text-gray-400">/100</span></p>
+                    <p class="text-xs text-gray-500">Aderenza voce</p>
+                </div>
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $aeBadge }}">{{ $aeLabel }}</span>
+            </div>
+        </div>
+        @php
+            $aeAspects = [
+                'tone_score'       => 'Tono',
+                'vocabulary_score' => 'Vocabolario',
+                'style_score'      => 'Stile frasi',
+            ];
+        @endphp
+        <div class="mt-4 grid grid-cols-3 gap-2">
+            @foreach($aeAspects as $key => $label)
+                @php $val = (int) ($alterEgoConsistency[$key] ?? 0); @endphp
+                <div class="rounded-xl border border-indigo-50 bg-indigo-50/50 px-3 py-2 text-center">
+                    <p class="text-xs text-gray-500">{{ $label }}</p>
+                    <p class="mt-0.5 text-sm font-bold text-indigo-700">{{ $val }}%</p>
+                    <div class="mt-1 h-1 overflow-hidden rounded-full bg-indigo-100">
+                        <div class="h-full rounded-full bg-indigo-400" style="width: {{ $val }}%"></div>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </div>
+    @endif
 
     @if(!empty($qualityScorecard))
         <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
