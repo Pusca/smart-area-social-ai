@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"throw new\\\\|throw\\\\|error\\\\|Error\" /c/dev/smart-area-social-ai/app/Jobs/*.php)",
+      "Bash(xargs ls:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"dropIfExists\\\\|drop\\(\" /c/dev/smart-area-social-ai/database/migrations/*.php)",
+      "Bash(ls -lt /c/dev/smart-area-social-ai/app/Http/Controllers/*.php)",
+      "Bash(grep -v \"^\\\\s*//\")",
+      "Bash(php artisan:*)",
+      "Bash(php -r \"require 'config/generation.php'; require 'config/provider_capabilities.php'; require 'config/kling.php'; echo 'OK';\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

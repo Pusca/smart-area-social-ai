@@ -171,8 +171,10 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         Route::get('/create', [AlterEgoController::class, 'create'])->name('create');
         Route::post('/wizard/step', [AlterEgoController::class, 'storeStep'])->name('wizard.step');
         Route::post('/extract-voice', [AlterEgoController::class, 'extractVoice'])->name('extract-voice');
+        Route::post('/marketplace/import', [AlterEgoController::class, 'importTemplate'])->name('marketplace.import');
         Route::post('/', [AlterEgoController::class, 'store'])->name('store');
         Route::get('/{alterEgo}/edit', [AlterEgoController::class, 'edit'])->name('edit');
+        Route::get('/{alterEgo}/analytics', [AlterEgoController::class, 'analytics'])->name('analytics');
         Route::put('/{alterEgo}', [AlterEgoController::class, 'update'])->name('update');
         Route::delete('/{alterEgo}', [AlterEgoController::class, 'destroy'])->name('destroy');
         Route::post('/{alterEgo}/default', [AlterEgoController::class, 'setDefault'])->name('set-default');

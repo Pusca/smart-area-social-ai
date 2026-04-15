@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\AlterEgo;
+use App\Services\AlterEgoAnalyticsService;
 use App\Services\AlterEgoService;
 use App\Services\OpenAiService;
+use App\Support\AlterEgoMarketplace;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,7 +17,8 @@ class AlterEgoController extends Controller
 {
     public function __construct(
         private readonly AlterEgoService $alterEgoService,
-        private readonly OpenAiService $openAi
+        private readonly OpenAiService $openAi,
+        private readonly AlterEgoAnalyticsService $analytics
     ) {
     }
 
@@ -29,12 +32,49 @@ class AlterEgoController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return view('alter-ego.index', compact('alterEgos'));
+        $stats     = $this->analytics->summaryForIds($alterEgos->pluck('id')->map(fn ($id) => (int) $id)->all());
+        $templates = AlterEgoMarketplace::templates();
+
+        return view('alter-ego.index', compact('alterEgos', 'stats', 'templates'));
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
-        return view('alter-ego.create');
+        // Legge il draft da sessione (usato anche dal marketplace import)
+        $prefill = (array) ($request->session()->get('alter_ego_wizard_draft', []));
+
+        return view('alter-ego.create', compact('prefill'));
+    }
+
+    public function analytics(Request $request, AlterEgo $alterEgo): View
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+        $stats = $this->analytics->statsForAlterEgo($alterEgo);
+
+        return view('alter-ego.analytics', compact('alterEgo', 'stats'));
+    }
+
+    /**
+     * Importa un template dalla libreria: carica i dati in sessione
+     * e reindirizza al wizard create già pre-compilato.
+     */
+    public function importTemplate(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'template_id' => 'required|string|max:80',
+        ]);
+
+        $template = AlterEgoMarketplace::findById($data['template_id']);
+
+        if ($template === null) {
+            return redirect()->route('alter-ego.index')
+                ->with('error', 'Template non trovato.');
+        }
+
+        $request->session()->put('alter_ego_wizard_draft', $template['data']);
+
+        return redirect()->route('alter-ego.create')
+            ->with('info', "Template \"{$template['label']}\" caricato. Personalizza i campi e salva.");
     }
 
     /**

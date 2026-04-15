@@ -1,9 +1,6 @@
 @extends('layouts.app')
 
 @section('content')
-@php
-    use App\Services\AlterEgoService;
-@endphp
 
 <section class="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6">
 
@@ -43,7 +40,7 @@
                 class="mt-1.5 block w-full rounded-2xl border border-app bg-app/30 px-4 py-2.5 text-sm text-gray-950 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20">
                 @foreach(['thought_leader','educator','storyteller','entertainer','provocateur','connector'] as $key)
                     <option value="{{ $key }}" @selected(old('archetype', $alterEgo->archetype) === $key)>
-                        {{ AlterEgoService::archetypeLabel($key) }}
+                        {{ \App\Services\AlterEgoService::archetypeLabel($key) }}
                     </option>
                 @endforeach
             </select>
@@ -57,7 +54,7 @@
                     class="mt-1.5 block w-full rounded-2xl border border-app bg-app/30 px-4 py-2.5 text-sm text-gray-950 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20">
                     @foreach(['autorevole','diretto','empatico','ironico','formale','colloquiale'] as $key)
                         <option value="{{ $key }}" @selected(old('tone', $alterEgo->tone) === $key)>
-                            {{ AlterEgoService::toneLabel($key) }}
+                            {{ \App\Services\AlterEgoService::toneLabel($key) }}
                         </option>
                     @endforeach
                 </select>
@@ -69,7 +66,7 @@
                     class="mt-1.5 block w-full rounded-2xl border border-app bg-app/30 px-4 py-2.5 text-sm text-gray-950 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20">
                     @foreach(['brevi_incisive','narrative','domande_retoriche'] as $key)
                         <option value="{{ $key }}" @selected(old('sentence_style', $alterEgo->sentence_style) === $key)>
-                            {{ AlterEgoService::sentenceStyleLabel($key) }}
+                            {{ \App\Services\AlterEgoService::sentenceStyleLabel($key) }}
                         </option>
                     @endforeach
                 </select>
@@ -81,7 +78,7 @@
                     class="mt-1.5 block w-full rounded-2xl border border-app bg-app/30 px-4 py-2.5 text-sm text-gray-950 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20">
                     @foreach(['tecnico','accessibile','misto'] as $key)
                         <option value="{{ $key }}" @selected(old('vocabulary_level', $alterEgo->vocabulary_level) === $key)>
-                            {{ AlterEgoService::vocabularyLabel($key) }}
+                            {{ \App\Services\AlterEgoService::vocabularyLabel($key) }}
                         </option>
                     @endforeach
                 </select>
@@ -155,7 +152,7 @@
                     <option value="">— Nessuno —</option>
                     @foreach(['teacher','peer','mentor','challenger','entertainer'] as $key)
                         <option value="{{ $key }}" @selected(old('audience_role', $alterEgo->audience_role) === $key)>
-                            {{ AlterEgoService::audienceRoleLabel($key) }}
+                            {{ \App\Services\AlterEgoService::audienceRoleLabel($key) }}
                         </option>
                     @endforeach
                 </select>
@@ -167,7 +164,7 @@
                     class="mt-1.5 block w-full rounded-2xl border border-app bg-app/30 px-4 py-2.5 text-sm text-gray-950 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20">
                     @foreach(['soft','direct','domanda','nessuna'] as $key)
                         <option value="{{ $key }}" @selected(old('cta_style', $alterEgo->cta_style) === $key)>
-                            {{ AlterEgoService::ctaStyleLabel($key) }}
+                            {{ \App\Services\AlterEgoService::ctaStyleLabel($key) }}
                         </option>
                     @endforeach
                 </select>

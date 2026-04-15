@@ -2,7 +2,6 @@
 
 @section('content')
 @php
-    use App\Services\AlterEgoService;
     $archetypeLabels = [
         'thought_leader' => 'Thought Leader',
         'educator'       => 'Educatore',
@@ -38,6 +37,11 @@
     @if(session('success'))
         <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             {{ session('success') }}
+        </div>
+    @endif
+    @if(session('info'))
+        <div class="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+            {{ session('info') }}
         </div>
     @endif
 
@@ -83,7 +87,7 @@
                             </div>
                             <h3 class="mt-2 text-base font-semibold text-gray-950">{{ $ego->name }}</h3>
                             @if($ego->tone)
-                                <p class="mt-0.5 text-xs text-gray-500">{{ AlterEgoService::toneLabel($ego->tone) }} · {{ AlterEgoService::vocabularyLabel($ego->vocabulary_level ?? 'misto') }}</p>
+                                <p class="mt-0.5 text-xs text-gray-500">{{ \App\Services\AlterEgoService::toneLabel($ego->tone) }} · {{ \App\Services\AlterEgoService::vocabularyLabel($ego->vocabulary_level ?? 'misto') }}</p>
                             @endif
                         </div>
                     </div>
@@ -103,11 +107,36 @@
                         <p class="mt-3 line-clamp-2 text-xs text-gray-500">{{ $ego->unique_perspective }}</p>
                     @endif
 
+                    {{-- Stats mini --}}
+                    @php
+                        $egoStats    = $stats[$ego->id] ?? ['post_count' => 0, 'avg_score' => null];
+                        $egoPostCnt  = (int) $egoStats['post_count'];
+                        $egoAvgScore = $egoStats['avg_score'];
+                    @endphp
+                    @if($egoPostCnt > 0)
+                    <div class="mt-3 flex items-center gap-3 text-xs text-gray-500">
+                        <span>{{ $egoPostCnt }} post</span>
+                        @if($egoAvgScore !== null)
+                            @php $scoreBadge = \App\Services\AlterEgoConsistencyService::scoreBadgeClass($egoAvgScore); @endphp
+                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold {{ $scoreBadge }}">
+                                aderenza {{ $egoAvgScore }}/100
+                            </span>
+                        @endif
+                    </div>
+                    @endif
+
                     {{-- Azioni --}}
                     <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-app pt-4">
                         <a href="{{ route('alter-ego.edit', $ego) }}" class="inline-flex items-center rounded-xl border border-app bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-brand hover:text-brand">
                             Modifica
                         </a>
+
+                        @if($egoPostCnt > 0)
+                        <a href="{{ route('alter-ego.analytics', $ego) }}" class="inline-flex items-center gap-1 rounded-xl border border-app bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-indigo-300 hover:text-indigo-600">
+                            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                            Analytics
+                        </a>
+                        @endif
 
                         @unless($ego->is_default)
                             <button
@@ -132,6 +161,60 @@
             @endforeach
         </div>
     @endif
+
+    {{-- Libreria Template --}}
+    <div>
+        <div class="mb-3 flex items-baseline justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-gray-950">Libreria template</h2>
+                <p class="text-xs text-gray-500 mt-0.5">Parti da un profilo predefinito e personalizzalo in pochi minuti.</p>
+            </div>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            @php
+                $tplColors = [
+                    'thought_leader' => 'bg-indigo-100 text-indigo-700',
+                    'educator'       => 'bg-emerald-100 text-emerald-700',
+                    'storyteller'    => 'bg-amber-100 text-amber-700',
+                    'entertainer'    => 'bg-pink-100 text-pink-700',
+                    'provocateur'    => 'bg-rose-100 text-rose-700',
+                    'connector'      => 'bg-cyan-100 text-cyan-700',
+                ];
+                $tplArchLabels = [
+                    'thought_leader' => 'Thought Leader',
+                    'educator'       => 'Educatore',
+                    'storyteller'    => 'Storyteller',
+                    'entertainer'    => 'Entertainer',
+                    'provocateur'    => 'Provocatore',
+                    'connector'      => 'Connector',
+                ];
+            @endphp
+            @foreach($templates as $tpl)
+            @php
+                $tplColor = $tplColors[$tpl['archetype_key']] ?? 'bg-gray-100 text-gray-700';
+                $tplArch  = $tplArchLabels[$tpl['archetype_key']] ?? ucfirst($tpl['archetype_key']);
+            @endphp
+            <div class="rounded-2xl border border-app bg-app/30 p-4 flex flex-col gap-3">
+                <div>
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold {{ $tplColor }}">{{ $tplArch }}</span>
+                        <span class="text-[10px] text-gray-400">{{ $tpl['industry'] }}</span>
+                    </div>
+                    <p class="text-sm font-semibold text-gray-900">{{ $tpl['label'] }}</p>
+                    <p class="mt-0.5 text-xs text-gray-500">{{ $tpl['description'] }}</p>
+                    <p class="mt-2 text-xs italic text-gray-400">{{ $tpl['preview'] }}</p>
+                </div>
+                <form method="POST" action="{{ route('alter-ego.marketplace.import') }}" class="mt-auto">
+                    @csrf
+                    <input type="hidden" name="template_id" value="{{ $tpl['id'] }}">
+                    <button type="submit" class="w-full rounded-xl border border-app bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-indigo-300 hover:text-indigo-600">
+                        Usa template
+                    </button>
+                </form>
+            </div>
+            @endforeach
+        </div>
+    </div>
 
     {{-- Spiegazione feature --}}
     <div class="rounded-[28px] border border-app bg-app/30 p-5">

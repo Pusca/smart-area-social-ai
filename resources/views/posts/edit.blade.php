@@ -218,10 +218,9 @@
 
     @if(!empty($alterEgoConsistency))
     @php
-        use App\Services\AlterEgoConsistencyService;
         $aeScore    = (int) ($alterEgoConsistency['score'] ?? 0);
-        $aeBadge    = AlterEgoConsistencyService::scoreBadgeClass($aeScore);
-        $aeLabel    = AlterEgoConsistencyService::scoreLabel($aeScore);
+        $aeBadge    = \App\Services\AlterEgoConsistencyService::scoreBadgeClass($aeScore);
+        $aeLabel    = \App\Services\AlterEgoConsistencyService::scoreLabel($aeScore);
         $aeName     = (string) ($alterEgoConsistency['alter_ego_name'] ?? '');
         $aeFeedback = (string) ($alterEgoConsistency['feedback'] ?? '');
     @endphp

@@ -450,7 +450,10 @@
 </div>
 
 <script>
+const _alterEgoPrefill = @json($prefill ?? []);
+
 function alterEgoWizard() {
+    const _pf = _alterEgoPrefill;
     return {
         step: 1,
         saving: false,
@@ -458,20 +461,20 @@ function alterEgoWizard() {
         stepLabels: ['Identità', 'Voce', 'Temi', 'Campioni', 'Attiva'],
 
         form: {
-            name: '',
-            archetype: '',
-            tone: '',
-            sentence_style: '',
-            vocabulary_level: 'misto',
-            signature_phrases: [],
-            topics_owned: [],
-            topics_avoided: [],
-            unique_perspective: '',
-            audience_role: '',
-            cta_style: 'soft',
-            training_samples: [''],
-            platform_adaptations: {},
-            is_default: false,
+            name:                 _pf.name                || '',
+            archetype:            _pf.archetype           || '',
+            tone:                 _pf.tone                || '',
+            sentence_style:       _pf.sentence_style      || '',
+            vocabulary_level:     _pf.vocabulary_level    || 'misto',
+            signature_phrases:    Array.isArray(_pf.signature_phrases) ? _pf.signature_phrases : [],
+            topics_owned:         Array.isArray(_pf.topics_owned)      ? _pf.topics_owned      : [],
+            topics_avoided:       Array.isArray(_pf.topics_avoided)    ? _pf.topics_avoided    : [],
+            unique_perspective:   _pf.unique_perspective  || '',
+            audience_role:        _pf.audience_role       || '',
+            cta_style:            _pf.cta_style           || 'soft',
+            training_samples:     Array.isArray(_pf.training_samples) && _pf.training_samples.length ? _pf.training_samples : [''],
+            platform_adaptations: (_pf.platform_adaptations && typeof _pf.platform_adaptations === 'object') ? _pf.platform_adaptations : {},
+            is_default:           !!_pf.is_default,
         },
 
         analyzingVoice: false,
