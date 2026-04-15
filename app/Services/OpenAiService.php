@@ -110,6 +110,7 @@ class OpenAiService
             . "Se asset_identity.consistency_mode e strict, privilegia editing e variazioni controllate; se e balanced, varia scena e styling ma non il soggetto; se e creative, resta coerente ma concedi piu liberta compositiva.\n"
             . "Quando la correzione riguarda il visual, migliora soprattutto prompt immagine e coerenza visuale, preservando il resto se gia valido.\n"
             . "Quando la correzione riguarda copy o tono, migliora soprattutto caption, CTA e angolo narrativo, preservando il visual se gia coerente.\n"
+            . "Se alter_ego e presente e non vuoto, tratta alter_ego.persona_prompt come vincolo assoluto di voce, tono e stile narrativo: ogni caption, CTA e prompt visuale deve riflettere quella persona come se stesse scrivendo direttamente. Archetipo, tono, frasi caratteristiche e temi di proprieta hanno priorita su qualsiasi stile di default del brand.\n"
             . "Tutto cio che generi e pensato per post social: non brochure, non sito corporate, non stock generico.\n"
             . "Usa social_publication_context per capire ruolo del contenuto nel feed, nella serie e nell insieme delle pubblicazioni.\n"
             . "Se content_strategy_blueprint e presente, trattalo come guida editoriale forte per hook, angle, proof e CTA.\n"

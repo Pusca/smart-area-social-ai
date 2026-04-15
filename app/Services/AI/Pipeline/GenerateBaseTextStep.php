@@ -43,6 +43,7 @@ class GenerateBaseTextStep
         $assetVariables = (array) $state->get('asset_variables', []);
         $assetIdentity = (array) $state->get('asset_identity', []);
         $identityPreflight = (array) $state->get('identity_preflight', data_get($meta, 'identity_guard.preflight', []));
+        $alterEgo = (array) $state->get('alter_ego', data_get($meta, 'alter_ego', []));
         $briefSeed = (string) $state->get('brief_seed', '');
         $recentCaptions = (array) $state->get('recent_captions', []);
         $planTitles = (array) $state->get('plan_titles', []);
@@ -167,6 +168,7 @@ class GenerateBaseTextStep
                 'identity_guard' => [
                     'preflight' => $identityPreflight,
                 ],
+                'alter_ego' => $alterEgo,
                 'repetition_rules' => [
                     'avoid_list' => array_values(array_unique(array_filter(array_merge(
                         (array) data_get($itemBrain, 'avoid_list', []),

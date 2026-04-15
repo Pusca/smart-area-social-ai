@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Models\AlterEgo;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
@@ -167,8 +168,14 @@ class ContentItemController extends Controller
         $referenceImages = $this->loadBrandReferenceImages($tenantId);
         $assetVariables = $this->assetVariableService->catalogForTenant($tenantId);
         $createPreset = $this->normalizeCreatePreset((string) $request->query('preset', ''));
+        $alterEgos = AlterEgo::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('name')
+            ->get(['id', 'name', 'archetype', 'is_default']);
 
-        return view('posts.create', compact('profile', 'referenceImages', 'assetVariables', 'createPreset'));
+        return view('posts.create', compact('profile', 'referenceImages', 'assetVariables', 'createPreset', 'alterEgos'));
     }
 
     public function createReel(Request $request)
@@ -291,6 +298,7 @@ class ContentItemController extends Controller
             'overlay_timing_start_ms' => 'nullable|integer|min:0|max:300000',
             'overlay_timing_end_ms' => 'nullable|integer|min:0|max:300000',
             'overlay_emphasis_words' => 'nullable|string|max:220',
+            'alter_ego_id' => 'nullable|integer',
         ]);
 
         $platforms = $this->extractPlatforms($request, $data);
@@ -425,10 +433,13 @@ class ContentItemController extends Controller
             microtime(true),
         ]);
 
+        $alterEgoId = (int) ($data['alter_ego_id'] ?? 0) ?: null;
+
         $item = new ContentItem();
         $item->tenant_id = $tenantId;
         $item->content_plan_id = (int) $plan->id;
         $item->created_by = (int) $user->id;
+        $item->alter_ego_id = $alterEgoId;
 
         $item->platform = $platformValue;
         $item->format = $format;
@@ -490,6 +501,7 @@ class ContentItemController extends Controller
             ],
             'manual_brief' => $brief,
             'image_preference' => $imagePreference,
+            'alter_ego_id' => $alterEgoId,
             'created_at' => now()->toDateTimeString(),
         ];
         $overlayPack = $this->contentOverlayEngine->build([

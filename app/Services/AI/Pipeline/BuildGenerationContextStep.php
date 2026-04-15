@@ -3,7 +3,9 @@
 namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Models\AlterEgo;
 use App\Models\ContentItem;
+use App\Services\AlterEgoService;
 use App\Services\Editorial\CreativeBriefCompiler;
 use App\Services\Editorial\TrendBriefService;
 use App\Services\AI\TenantContentIntelligenceService;
@@ -20,7 +22,8 @@ class BuildGenerationContextStep
         private readonly GenerationAuditService $generationAudit,
         private readonly TrendBriefService $trendBriefService,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
-        private readonly CreativeBriefCompiler $creativeBriefCompiler
+        private readonly CreativeBriefCompiler $creativeBriefCompiler,
+        private readonly AlterEgoService $alterEgoService
     ) {
     }
 
@@ -145,6 +148,10 @@ class BuildGenerationContextStep
             ->values()
             ->all();
 
+        // ── Alter Ego ──────────────────────────────────────────────────────────
+        // Priorità: alter_ego_id sull'item → id in ai_meta → default del tenant.
+        $alterEgoContext = $this->resolveAlterEgoContext($item, $meta);
+
         $state->run = $run;
         $state->run = $this->generationAudit->syncRun($state->run, [
             'creative_brief' => $creativeBrief,
@@ -153,6 +160,9 @@ class BuildGenerationContextStep
         $state->meta['tenant_learning'] = $tenantLearning;
         $state->meta['trend_brief'] = $trendBrief;
         $state->meta['creative_brief'] = $creativeBrief;
+        if (!empty($alterEgoContext)) {
+            $state->meta['alter_ego'] = $alterEgoContext;
+        }
         $state->put('strategy', $strategy)
             ->put('item_brain', $itemBrain)
             ->put('tenant_profile', $tenantProfile)
@@ -167,11 +177,58 @@ class BuildGenerationContextStep
             ->put('tenant_intelligence', $tenantIntelligence)
             ->put('recent_captions', $recentCaptions)
             ->put('plan_titles', $planTitles)
-            ->put('plan_captions', $planCaptions);
+            ->put('plan_captions', $planCaptions)
+            ->put('alter_ego', $alterEgoContext);
 
         $state->syncMetaToItem();
         $item->save();
 
         return $state;
+    }
+
+    /**
+     * Carica il contesto alter ego per questa generazione.
+     * Priorità: alter_ego_id sulla colonna item > ai_meta['alter_ego_id'] > default tenant.
+     *
+     * @param  array<string, mixed>  $meta
+     * @return array<string, mixed>
+     */
+    private function resolveAlterEgoContext(ContentItem $item, array $meta): array
+    {
+        $alterEgoId = (int) ($item->alter_ego_id ?? 0) ?: (int) data_get($meta, 'alter_ego_id', 0);
+
+        $query = AlterEgo::query()
+            ->where('tenant_id', (int) $item->tenant_id)
+            ->where('is_active', true);
+
+        $alterEgo = $alterEgoId > 0
+            ? (clone $query)->find($alterEgoId)
+            : (clone $query)->where('is_default', true)->first();
+
+        if ($alterEgo === null) {
+            return [];
+        }
+
+        // Assicura cache compilata
+        if (empty($alterEgo->persona_prompt_cache)) {
+            $this->alterEgoService->recompile($alterEgo);
+            $alterEgo->refresh();
+        }
+
+        return [
+            'id'                 => $alterEgo->id,
+            'name'               => $alterEgo->name,
+            'archetype'          => $alterEgo->archetype,
+            'tone'               => $alterEgo->tone,
+            'sentence_style'     => $alterEgo->sentence_style,
+            'vocabulary_level'   => $alterEgo->vocabulary_level,
+            'signature_phrases'  => $alterEgo->signature_phrases ?? [],
+            'topics_owned'       => $alterEgo->topics_owned ?? [],
+            'topics_avoided'     => $alterEgo->topics_avoided ?? [],
+            'unique_perspective' => $alterEgo->unique_perspective,
+            'audience_role'      => $alterEgo->audience_role,
+            'cta_style'          => $alterEgo->cta_style,
+            'persona_prompt'     => (string) ($alterEgo->persona_prompt_cache ?? ''),
+        ];
     }
 }

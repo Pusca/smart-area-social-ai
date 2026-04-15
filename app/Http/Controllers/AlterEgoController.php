@@ -1,0 +1,181 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\AlterEgo;
+use App\Services\AlterEgoService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class AlterEgoController extends Controller
+{
+    public function __construct(private readonly AlterEgoService $alterEgoService)
+    {
+    }
+
+    public function index(Request $request): View
+    {
+        $tenantId  = (int) $request->user()->tenant_id;
+        $alterEgos = AlterEgo::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->orderByDesc('created_at')
+            ->get();
+
+        return view('alter-ego.index', compact('alterEgos'));
+    }
+
+    public function create(): View
+    {
+        return view('alter-ego.create');
+    }
+
+    /**
+     * Salva un singolo passo del wizard (JSON).
+     * Usato dal wizard Alpine per la persistenza progressiva in sessione.
+     * Ritorna sempre ok=true — la validazione reale è al momento del salvataggio finale.
+     */
+    public function storeStep(Request $request): JsonResponse
+    {
+        $step = (int) $request->input('step', 0);
+        $data = (array) $request->input('data', []);
+
+        $sessionKey = 'alter_ego_wizard_draft';
+        $draft      = (array) ($request->session()->get($sessionKey, []));
+        $draft      = array_merge($draft, $data);
+
+        $request->session()->put($sessionKey, $draft);
+
+        return response()->json(['ok' => true, 'step' => $step]);
+    }
+
+    public function store(Request $request): JsonResponse|RedirectResponse
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+
+        $data = $request->validate([
+            'name'               => 'required|string|max:150',
+            'archetype'          => 'required|string|in:thought_leader,educator,storyteller,entertainer,provocateur,connector',
+            'tone'               => 'required|string|in:autorevole,diretto,empatico,ironico,formale,colloquiale',
+            'sentence_style'     => 'required|string|in:brevi_incisive,narrative,domande_retoriche',
+            'vocabulary_level'   => 'required|string|in:tecnico,accessibile,misto',
+            'signature_phrases'  => 'nullable|array|max:8',
+            'signature_phrases.*'=> 'string|max:200',
+            'topics_owned'       => 'nullable|array|max:20',
+            'topics_owned.*'     => 'string|max:100',
+            'topics_avoided'     => 'nullable|array|max:20',
+            'topics_avoided.*'   => 'string|max:100',
+            'content_pillars'    => 'nullable|array|max:5',
+            'unique_perspective' => 'nullable|string|max:800',
+            'audience_role'      => 'nullable|string|in:teacher,peer,mentor,challenger,entertainer',
+            'cta_style'          => 'nullable|string|in:soft,direct,domanda,nessuna',
+            'training_samples'   => 'nullable|array|max:5',
+            'training_samples.*' => 'string|max:3000',
+            'is_default'         => 'boolean',
+        ]);
+
+        if (!empty($data['is_default'])) {
+            AlterEgo::query()
+                ->where('tenant_id', $tenantId)
+                ->update(['is_default' => false]);
+        }
+
+        $alterEgo = AlterEgo::create(array_merge($data, [
+            'tenant_id' => $tenantId,
+            'is_active' => true,
+        ]));
+
+        $this->alterEgoService->recompile($alterEgo);
+
+        // Pulisce il draft di sessione dopo salvataggio riuscito
+        $request->session()->forget('alter_ego_wizard_draft');
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'ok'           => true,
+                'id'           => $alterEgo->id,
+                'redirect_url' => route('alter-ego.index'),
+            ]);
+        }
+
+        return redirect()->route('alter-ego.index')
+            ->with('success', "Alter ego \"{$alterEgo->name}\" creato con successo.");
+    }
+
+    public function edit(Request $request, AlterEgo $alterEgo): View
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+
+        return view('alter-ego.edit', compact('alterEgo'));
+    }
+
+    public function update(Request $request, AlterEgo $alterEgo): RedirectResponse
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+        $tenantId = (int) $request->user()->tenant_id;
+
+        $data = $request->validate([
+            'name'               => 'required|string|max:150',
+            'archetype'          => 'required|string|in:thought_leader,educator,storyteller,entertainer,provocateur,connector',
+            'tone'               => 'required|string|in:autorevole,diretto,empatico,ironico,formale,colloquiale',
+            'sentence_style'     => 'required|string|in:brevi_incisive,narrative,domande_retoriche',
+            'vocabulary_level'   => 'required|string|in:tecnico,accessibile,misto',
+            'signature_phrases'  => 'nullable|array|max:8',
+            'signature_phrases.*'=> 'string|max:200',
+            'topics_owned'       => 'nullable|array|max:20',
+            'topics_owned.*'     => 'string|max:100',
+            'topics_avoided'     => 'nullable|array|max:20',
+            'topics_avoided.*'   => 'string|max:100',
+            'content_pillars'    => 'nullable|array|max:5',
+            'unique_perspective' => 'nullable|string|max:800',
+            'audience_role'      => 'nullable|string|in:teacher,peer,mentor,challenger,entertainer',
+            'cta_style'          => 'nullable|string|in:soft,direct,domanda,nessuna',
+            'training_samples'   => 'nullable|array|max:5',
+            'training_samples.*' => 'string|max:3000',
+            'is_default'         => 'boolean',
+        ]);
+
+        if (!empty($data['is_default'])) {
+            AlterEgo::query()
+                ->where('tenant_id', $tenantId)
+                ->where('id', '!=', $alterEgo->id)
+                ->update(['is_default' => false]);
+        }
+
+        $alterEgo->fill($data);
+        $alterEgo->save();
+        $this->alterEgoService->recompile($alterEgo);
+
+        return redirect()->route('alter-ego.index')
+            ->with('success', "Alter ego \"{$alterEgo->name}\" aggiornato.");
+    }
+
+    public function destroy(Request $request, AlterEgo $alterEgo): RedirectResponse
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+        $name = $alterEgo->name;
+        $alterEgo->delete();
+
+        return redirect()->route('alter-ego.index')
+            ->with('success', "Alter ego \"{$name}\" eliminato.");
+    }
+
+    public function setDefault(Request $request, AlterEgo $alterEgo): JsonResponse
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+        $tenantId = (int) $request->user()->tenant_id;
+
+        AlterEgo::query()->where('tenant_id', $tenantId)->update(['is_default' => false]);
+        $alterEgo->update(['is_default' => true]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function authorizeAlterEgo(Request $request, AlterEgo $alterEgo): void
+    {
+        abort_if((int) $alterEgo->tenant_id !== (int) $request->user()->tenant_id, 403);
+    }
+}

@@ -17,6 +17,7 @@ use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\TenantProfileController;
 use App\Http\Controllers\AdminWorkspaceController;
 use App\Http\Controllers\AgencyBrandSwitchController;
+use App\Http\Controllers\AlterEgoController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\LinkedInSocialController;
 use App\Http\Controllers\TikTokSocialController;
@@ -162,6 +163,18 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         Route::post('/designs/{canvaDesign}/link', [CanvaIntegrationController::class, 'linkManualDesign'])->name('designs.link');
         Route::post('/designs/{canvaDesign}/export', [CanvaIntegrationController::class, 'export'])->name('designs.export');
         Route::post('/exports/{canvaExportJob}/refresh', [CanvaIntegrationController::class, 'refreshExportStatus'])->name('exports.refresh');
+    });
+
+    // ── Alter Ego Digitale ────────────────────────────────────────────────────
+    Route::prefix('alter-ego')->name('alter-ego.')->group(function (): void {
+        Route::get('/', [AlterEgoController::class, 'index'])->name('index');
+        Route::get('/create', [AlterEgoController::class, 'create'])->name('create');
+        Route::post('/wizard/step', [AlterEgoController::class, 'storeStep'])->name('wizard.step');
+        Route::post('/', [AlterEgoController::class, 'store'])->name('store');
+        Route::get('/{alterEgo}/edit', [AlterEgoController::class, 'edit'])->name('edit');
+        Route::put('/{alterEgo}', [AlterEgoController::class, 'update'])->name('update');
+        Route::delete('/{alterEgo}', [AlterEgoController::class, 'destroy'])->name('destroy');
+        Route::post('/{alterEgo}/default', [AlterEgoController::class, 'setDefault'])->name('set-default');
     });
 
     Route::get('/push/public-key', [PushController::class, 'publicKey'])->name('push.publicKey');

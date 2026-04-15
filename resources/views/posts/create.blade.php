@@ -483,6 +483,31 @@
                     @endif
                 </div>
 
+                {{-- Alter Ego --}}
+                @php $alterEgos = $alterEgos ?? collect(); $defaultAlterEgoId = (int) old('alter_ego_id', 0); @endphp
+                @if($alterEgos->isNotEmpty())
+                <div class="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-900">Alter Ego</p>
+                            <p class="text-xs text-gray-500">La voce narrativa applicata a questo contenuto.</p>
+                        </div>
+                        <a href="{{ route('alter-ego.create') }}" class="shrink-0 text-xs font-semibold text-indigo-600 hover:text-indigo-800">+ Nuovo</a>
+                    </div>
+                    <select name="alter_ego_id" id="alter_ego_id"
+                        class="mt-3 block w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                        <option value="">— Nessun alter ego —</option>
+                        @foreach($alterEgos as $ego)
+                            <option value="{{ $ego->id }}"
+                                @selected($defaultAlterEgoId === $ego->id || (!$defaultAlterEgoId && $ego->is_default))
+                            >
+                                {{ $ego->name }}{{ $ego->is_default ? ' (default)' : '' }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                @endif
+
                 <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <h2 class="text-lg font-semibold text-gray-900">Brief di generazione</h2>
                     <p class="mt-1 text-sm text-gray-600">Scrivi cosa vuoi ottenere. Questo testo verra usato come input AI (non come caption finale).</p>

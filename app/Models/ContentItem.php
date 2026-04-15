@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
+
 class ContentItem extends Model
 {
     protected $table = 'content_items';
@@ -30,6 +31,11 @@ class ContentItem extends Model
     public function plan(): BelongsTo
     {
         return $this->belongsTo(ContentPlan::class, 'content_plan_id');
+    }
+
+    public function alterEgo(): BelongsTo
+    {
+        return $this->belongsTo(AlterEgo::class);
     }
 
     public function publications(): HasMany
