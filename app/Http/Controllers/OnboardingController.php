@@ -46,7 +46,7 @@ class OnboardingController extends Controller
         TenantProfile::query()->updateOrCreate(
             ['tenant_id' => $user->tenant_id],
             [
-                'brand_name'           => $data['brand_name'],
+                'business_name'        => $data['brand_name'],
                 'industry'             => $data['industry'],
                 'default_tone'         => $data['tone'],
                 'onboarding_started_at'=> Carbon::now(),
