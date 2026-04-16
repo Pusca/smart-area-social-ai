@@ -244,6 +244,82 @@ class AlterEgoController extends Controller
         }
     }
 
+    /**
+     * Carica uno o più file media (foto, audio, video) e li aggiunge
+     * all'alter ego. Accetta `type` = photos | audio | video.
+     */
+    public function uploadMedia(Request $request, AlterEgo $alterEgo): JsonResponse
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+
+        $request->validate([
+            'type'    => 'required|string|in:photos,audio,video',
+            'files'   => 'required|array|min:1|max:12',
+            'files.*' => 'required|file|max:51200', // 50 MB per file
+        ]);
+
+        $type    = (string) $request->input('type');
+        $baseDir = 'alter-ego/' . $alterEgo->id . '/' . $type;
+
+        [$field, $mime] = match ($type) {
+            'photos' => ['visual_references', 'image/*'],
+            'audio'  => ['audio_references', 'audio/*'],
+            'video'  => ['video_references', 'video/*'],
+        };
+
+        $existing = array_values(array_filter((array) ($alterEgo->$field ?? [])));
+        $added    = [];
+
+        foreach ((array) $request->file('files', []) as $file) {
+            if (!$file instanceof \Illuminate\Http\UploadedFile) {
+                continue;
+            }
+            $path      = $file->store($baseDir, 'public');
+            $existing[] = (string) $path;
+            $added[]    = (string) $path;
+        }
+
+        $alterEgo->$field = array_values(array_unique($existing));
+        $alterEgo->save();
+
+        $urls = array_map(
+            fn ($p) => \Storage::disk('public')->url($p),
+            $added
+        );
+
+        return response()->json(['ok' => true, 'paths' => $added, 'urls' => $urls]);
+    }
+
+    /**
+     * Rimuove un singolo file media dall'alter ego.
+     * Body JSON: { type, path }
+     */
+    public function destroyMedia(Request $request, AlterEgo $alterEgo): JsonResponse
+    {
+        $this->authorizeAlterEgo($request, $alterEgo);
+
+        $data = $request->validate([
+            'type' => 'required|string|in:photos,audio,video',
+            'path' => 'required|string|max:500',
+        ]);
+
+        $field    = match ($data['type']) {
+            'photos' => 'visual_references',
+            'audio'  => 'audio_references',
+            'video'  => 'video_references',
+        };
+        $path     = (string) $data['path'];
+        $existing = array_values(array_filter((array) ($alterEgo->$field ?? [])));
+
+        if (in_array($path, $existing, true)) {
+            \Storage::disk('public')->delete($path);
+            $alterEgo->$field = array_values(array_filter($existing, fn ($p) => $p !== $path));
+            $alterEgo->save();
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
     private function authorizeAlterEgo(Request $request, AlterEgo $alterEgo): void
     {
         abort_if((int) $alterEgo->tenant_id !== (int) $request->user()->tenant_id, 403);

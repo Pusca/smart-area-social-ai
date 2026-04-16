@@ -179,6 +179,8 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         Route::put('/{alterEgo}', [AlterEgoController::class, 'update'])->name('update');
         Route::delete('/{alterEgo}', [AlterEgoController::class, 'destroy'])->name('destroy');
         Route::post('/{alterEgo}/default', [AlterEgoController::class, 'setDefault'])->name('set-default');
+        Route::post('/{alterEgo}/media', [AlterEgoController::class, 'uploadMedia'])->name('media.upload');
+        Route::delete('/{alterEgo}/media', [AlterEgoController::class, 'destroyMedia'])->name('media.destroy');
     });
 
     Route::get('/push/public-key', [PushController::class, 'publicKey'])->name('push.publicKey');

@@ -29,9 +29,6 @@
                         Libreria
                     </x-nav-link>
 
-                    <x-nav-link :href="route('alter-ego.index')" :active="request()->routeIs('alter-ego.*')">
-                        Alter Ego
-                    </x-nav-link>
                 </div>
             </div>
 
@@ -100,10 +97,6 @@
 
             <x-responsive-nav-link :href="route('posts.index')" :active="request()->routeIs('posts.index') || request()->routeIs('posts.edit') || request()->routeIs('posts.generating') || request()->routeIs('posts.generation.*') || request()->routeIs('content-items.*')">
                 Libreria
-            </x-responsive-nav-link>
-
-            <x-responsive-nav-link :href="route('alter-ego.index')" :active="request()->routeIs('alter-ego.*')">
-                Alter Ego
             </x-responsive-nav-link>
 
         </div>

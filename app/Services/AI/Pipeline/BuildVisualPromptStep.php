@@ -23,6 +23,11 @@ class BuildVisualPromptStep
         $assetVariables = (array) $state->get('asset_variables', []);
         $assetIdentity = (array) $state->get('asset_identity', []);
         $assetScoring = (array) $state->get('asset_scoring', (array) data_get($meta, 'asset_scoring', []));
+        $alterEgo = (array) $state->get('alter_ego', []);
+        $alterEgoVisualRefs = array_values(array_filter(array_map(
+            'strval',
+            (array) data_get($alterEgo, 'visual_references', [])
+        )));
 
         $prompt = trim((string) ($item->ai_image_prompt ?? ''));
         $brandImageSources = $job->resolveBrandImageSources($strategy, $meta, (int) $item->tenant_id);
@@ -42,6 +47,15 @@ class BuildVisualPromptStep
         )));
         if (is_string($selectedBrandImage) && $selectedBrandImage !== '' && !in_array($selectedBrandImage, $selectedBrandImagePaths, true)) {
             array_unshift($selectedBrandImagePaths, $selectedBrandImage);
+        }
+
+        // Quando l'alter ego ha foto di riferimento, le aggiungiamo in testa alla
+        // lista dei reference path così diventano la fonte visiva prioritaria per
+        // la generazione e garantiscono coerenza con l'aspetto della persona reale.
+        if (!empty($alterEgoVisualRefs)) {
+            $selectedBrandImagePaths = array_values(array_unique(
+                array_merge($alterEgoVisualRefs, $selectedBrandImagePaths)
+            ));
         }
 
         $selectedBrandImagePaths = $job->filterReferenceImagePaths(array_values(array_unique($selectedBrandImagePaths)));
@@ -84,6 +98,16 @@ class BuildVisualPromptStep
             );
             $socialPublicationHint = $job->socialGraphicSystemInstruction($item, $itemBrain);
 
+            $alterEgoName = (string) data_get($alterEgo, 'name', '');
+            $alterEgoPersonaHint = '';
+            if ($alterEgoName !== '' && !empty($alterEgoVisualRefs)) {
+                $alterEgoPersonaHint = "PERSONA REALE DI RIFERIMENTO: le foto fornite ritraggono {$alterEgoName}, la persona reale che rappresenta questo brand. "
+                    . "Il contenuto visivo DEVE presentare questa persona in modo riconoscibile e coerente: stessa fisionomia, stesso stile, stessa energia. "
+                    . "Usa le foto di riferimento per replicare il look della persona, non inventarne uno nuovo. ";
+            } elseif ($alterEgoName !== '') {
+                $alterEgoPersonaHint = "La voce narrativa è quella di {$alterEgoName}: mantieni coerenza stilistica e tono visivo con questa persona. ";
+            }
+
             $prompt = "Crea un'immagine social premium pronta per Instagram feed per {$brandName}. "
                 . "Settore: {$industry}. "
                 . "Direzione visiva: {$visualRules}. "
@@ -102,6 +126,7 @@ class BuildVisualPromptStep
                 . ($locationEnvelopeHint !== '' ? $locationEnvelopeHint . ' ' : '')
                 . ($feedbackVisualHint !== '' ? $feedbackVisualHint . ' ' : '')
                 . ($socialPublicationHint !== '' ? $socialPublicationHint . ' ' : '')
+                . ($alterEgoPersonaHint !== '' ? $alterEgoPersonaHint : '')
                 . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
                 . ($selectedBrandImage ? "Usa i riferimenti brand come guida di stile, palette e identita visiva, ma crea una composizione fotografica COMPLETAMENTE NUOVA e ORIGINALE: nuova inquadratura, nuova luce, nuova scena. NON copiare ne riprodurre l'immagine di riferimento. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                 . "REGOLA ASSOLUTA E INVIOLABILE: NON includere nell'immagine nessun testo, lettera, numero, parola, scritta, titolo, slogan, caption, watermark, logo finto o qualsiasi segno tipografico. L'immagine deve contenere SOLO elementi visivi puri: persone, oggetti, scene, sfondi, luci, colori, forme. Zero testo. "

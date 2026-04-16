@@ -22,6 +22,148 @@
         </div>
     @endif
 
+    {{-- ── Identità Visiva ──────────────────────────────────────────────────── --}}
+    <div
+        x-data="alterEgoMedia(
+            @js(array_values(array_filter((array) ($alterEgo->visual_references ?? [])))),
+            @js(array_values(array_filter((array) ($alterEgo->audio_references ?? [])))),
+            @js(array_values(array_filter((array) ($alterEgo->video_references ?? [])))),
+            '{{ route('alter-ego.media.upload', $alterEgo) }}',
+            '{{ route('alter-ego.media.destroy', $alterEgo) }}',
+            '{{ csrf_token() }}'
+        )"
+        class="overflow-hidden rounded-[28px] border border-app bg-white shadow-sm"
+    >
+        <div class="border-b border-app bg-gradient-to-r from-indigo-50 to-cyan-50 px-6 py-4">
+            <div class="flex items-center gap-2">
+                <svg class="h-5 w-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <h2 class="text-base font-semibold text-gray-900">Identità visiva</h2>
+            </div>
+            <p class="mt-0.5 text-sm text-gray-500">Carica foto, audio e video della persona. L'AI userà questi file come riferimento per mantenere l'aspetto sempre coerente in ogni contenuto generato.</p>
+        </div>
+
+        <div class="space-y-6 p-6">
+
+            {{-- ── FOTO ── --}}
+            <div>
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">Foto di riferimento</p>
+                        <p class="text-xs text-gray-500">Almeno 3–5 foto recenti, buona luce, volto ben visibile. Più foto carichi, più stabile sarà la coerenza visiva.</p>
+                    </div>
+                    <label class="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
+                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Aggiungi foto
+                        <input type="file" accept="image/*" multiple class="hidden" @change="upload($event.target.files, 'photos'); $event.target.value=''">
+                    </label>
+                </div>
+
+                {{-- Griglia foto --}}
+                <div class="mt-3">
+                    <template x-if="photos.length === 0">
+                        <label class="flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center transition hover:border-indigo-400 hover:bg-indigo-50/30">
+                            <svg class="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            <p class="mt-2 text-sm font-medium text-gray-600">Trascina le foto qui o clicca per selezionarle</p>
+                            <p class="mt-1 text-xs text-gray-400">JPG, PNG, WEBP — max 50 MB ciascuna</p>
+                            <input type="file" accept="image/*" multiple class="hidden" @change="upload($event.target.files, 'photos'); $event.target.value=''">
+                        </label>
+                    </template>
+                    <div class="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                        <template x-for="(item, i) in photos" :key="item.path">
+                            <div class="group relative aspect-square overflow-hidden rounded-xl border border-app bg-gray-100">
+                                <img :src="item.url" :alt="`Foto ${i+1}`" class="h-full w-full object-cover">
+                                <button
+                                    type="button"
+                                    @click="remove(item.path, 'photos')"
+                                    class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100 hover:bg-red-600"
+                                    title="Rimuovi"
+                                >
+                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            {{-- ── AUDIO ── --}}
+            <div>
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">Campioni audio <span class="font-normal text-gray-400">(opzionale)</span></p>
+                        <p class="text-xs text-gray-500">Voce della persona, 20–60 secondi. Usato per calibrare voce e cadenza narrativa.</p>
+                    </div>
+                    <label class="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition">
+                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Aggiungi audio
+                        <input type="file" accept="audio/*" multiple class="hidden" @change="upload($event.target.files, 'audio'); $event.target.value=''">
+                    </label>
+                </div>
+                <div class="mt-3 space-y-1.5">
+                    <template x-for="(item, i) in audios" :key="item.path">
+                        <div class="flex items-center gap-3 rounded-xl border border-app bg-gray-50 px-3 py-2">
+                            <svg class="h-4 w-4 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                            <audio :src="item.url" controls class="h-7 flex-1 min-w-0"></audio>
+                            <button type="button" @click="remove(item.path, 'audio')" class="shrink-0 text-gray-400 hover:text-red-500 transition" title="Rimuovi">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </template>
+                    <template x-if="audios.length === 0">
+                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 hover:border-indigo-300 hover:bg-indigo-50/20 transition">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            <span class="text-sm text-gray-500">Nessun audio — clicca per aggiungere</span>
+                            <input type="file" accept="audio/*" multiple class="hidden" @change="upload($event.target.files, 'audio'); $event.target.value=''">
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            {{-- ── VIDEO ── --}}
+            <div>
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">Campioni video <span class="font-normal text-gray-400">(opzionale)</span></p>
+                        <p class="text-xs text-gray-500">Clip brevi (10–30 sec) della persona in situazioni comunicative reali.</p>
+                    </div>
+                    <label class="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition">
+                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Aggiungi video
+                        <input type="file" accept="video/*" multiple class="hidden" @change="upload($event.target.files, 'video'); $event.target.value=''">
+                    </label>
+                </div>
+                <div class="mt-3 space-y-1.5">
+                    <template x-for="(item, i) in videos" :key="item.path">
+                        <div class="flex items-center gap-3 rounded-xl border border-app bg-gray-50 px-3 py-2">
+                            <svg class="h-4 w-4 shrink-0 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 10l4.553-2.069A1 1 0 0121 8.879V15.12a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            <video :src="item.url" controls class="h-16 flex-1 min-w-0 rounded-lg object-cover"></video>
+                            <button type="button" @click="remove(item.path, 'video')" class="shrink-0 text-gray-400 hover:text-red-500 transition" title="Rimuovi">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </template>
+                    <template x-if="videos.length === 0">
+                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 hover:border-cyan-300 hover:bg-cyan-50/20 transition">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            <span class="text-sm text-gray-500">Nessun video — clicca per aggiungere</span>
+                            <input type="file" accept="video/*" multiple class="hidden" @change="upload($event.target.files, 'video'); $event.target.value=''">
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            {{-- Stato upload --}}
+            <div x-show="uploading" x-cloak class="flex items-center gap-2 rounded-xl bg-indigo-50 px-4 py-2.5 text-sm text-indigo-700">
+                <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                Caricamento in corso...
+            </div>
+            <div x-show="uploadError" x-cloak class="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700" x-text="uploadError"></div>
+
+        </div>
+    </div>
+
     <form method="POST" action="{{ route('alter-ego.update', $alterEgo) }}" class="space-y-5">
         @csrf
         @method('PUT')
@@ -213,6 +355,64 @@ function tagInput(initial, fieldName) {
             const val = (e.target.value || '').trim().replace(/,$/, '');
             if (val && !this.tags.includes(val)) this.tags.push(val);
             e.target.value = '';
+        },
+    };
+}
+
+function alterEgoMedia(initialPhotos, initialAudios, initialVideos, uploadUrl, destroyUrl, csrfToken) {
+    const toItems = (paths) => paths.map(p => ({
+        path: p,
+        url: '/storage/' + p,
+    }));
+    return {
+        photos:      toItems(initialPhotos),
+        audios:      toItems(initialAudios),
+        videos:      toItems(initialVideos),
+        uploading:   false,
+        uploadError: '',
+
+        async upload(files, type) {
+            if (!files || files.length === 0) return;
+            this.uploading   = true;
+            this.uploadError = '';
+            const fd = new FormData();
+            fd.append('type', type);
+            for (const f of files) fd.append('files[]', f);
+            try {
+                const res = await fetch(uploadUrl, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
+                    body: fd,
+                });
+                const json = await res.json();
+                if (!res.ok || !json.ok) throw new Error(json.message || 'Errore caricamento');
+                const newItems = (json.paths || []).map((p, i) => ({ path: p, url: json.urls[i] || '/storage/' + p }));
+                if (type === 'photos')      this.photos = [...this.photos, ...newItems];
+                else if (type === 'audio')  this.audios = [...this.audios, ...newItems];
+                else if (type === 'video')  this.videos = [...this.videos, ...newItems];
+            } catch (e) {
+                this.uploadError = e.message || 'Caricamento non riuscito.';
+            } finally {
+                this.uploading = false;
+            }
+        },
+
+        async remove(path, type) {
+            this.uploadError = '';
+            try {
+                const res = await fetch(destroyUrl, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type, path }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.ok) throw new Error(json.message || 'Errore eliminazione');
+                if (type === 'photos')      this.photos = this.photos.filter(i => i.path !== path);
+                else if (type === 'audio')  this.audios = this.audios.filter(i => i.path !== path);
+                else if (type === 'video')  this.videos = this.videos.filter(i => i.path !== path);
+            } catch (e) {
+                this.uploadError = e.message || 'Eliminazione non riuscita.';
+            }
         },
     };
 }

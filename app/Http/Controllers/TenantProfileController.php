@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AlterEgo;
 use App\Models\AssetVariable;
 use App\Models\BrandAsset;
 use App\Models\ContentPlan;
@@ -143,6 +144,13 @@ class TenantProfileController extends Controller
         $quickstartDismissed = (bool) ($profile?->quickstart_dismissed_at);
         $shouldShowQuickstart = !$quickstartDismissed && ($isOnboardingPending || !$profile?->quickstart_generated_at || $demoPlan !== null);
 
+        $alterEgos = AlterEgo::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->orderByDesc('created_at')
+            ->get(['id', 'name', 'archetype', 'is_default', 'visual_references']);
+
         return view('wizard.brand', compact(
             'profile',
             'assets',
@@ -155,7 +163,8 @@ class TenantProfileController extends Controller
             'isOnboardingPending',
             'quickstartDismissed',
             'shouldShowQuickstart',
-            'brandWarnings'
+            'brandWarnings',
+            'alterEgos'
         ));
     }
 

@@ -225,6 +225,11 @@ class BuildGenerationContextStep
             ? $this->alterEgoService->buildPlatformAdaptedPrompt($alterEgo, $platform)
             : (string) ($alterEgo->persona_prompt_cache ?? '');
 
+        $visualRefs = array_values(array_filter(array_map(
+            'strval',
+            (array) ($alterEgo->visual_references ?? [])
+        )));
+
         return [
             'id'                 => $alterEgo->id,
             'name'               => $alterEgo->name,
@@ -241,6 +246,7 @@ class BuildGenerationContextStep
             'platform_adapted'   => $platform !== '',
             'platform'           => $platform,
             'persona_prompt'     => $personaPrompt,
+            'visual_references'  => $visualRefs,
         ];
     }
 }
