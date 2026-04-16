@@ -153,12 +153,17 @@ class QuickstartOnboardingService
 
                 // Forza provider per ogni item: reel → Veo 3.1, post → NanoBanana.
                 // video_no_fallback: true impedisce il silent downgrade a OpenAI se Veo fallisce.
+                // video_duration_seconds_requested: 8 evita il percorso "extended video" (che richiede
+                //   più clip e FFmpeg) poiché Veo accetta solo [4, 6, 8] secondi per clip.
+                // image_no_fallback: true impedisce il downgrade da NanoBanana a OpenAI per le immagini.
                 $format = (string) ($item->format ?? 'post');
                 if ($format === 'reel' || $format === 'video') {
                     $meta['video_provider'] = 'google_veo';
                     $meta['video_no_fallback'] = true;
+                    $meta['video_duration_seconds_requested'] = 8;
                 } else {
                     $meta['image_provider'] = 'nanobanana';
+                    $meta['image_no_fallback'] = true;
                 }
 
                 $item->ai_meta = $meta;

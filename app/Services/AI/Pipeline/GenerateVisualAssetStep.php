@@ -238,6 +238,7 @@ class GenerateVisualAssetStep
                     $item->save();
                 }
             } else {
+                $allowImageFallback = !(bool) data_get($item->ai_meta, 'image_no_fallback', false);
                 for ($imgAttempt = 0; $imgAttempt < 2; $imgAttempt++) {
                     $attemptPrompt = $prompt;
                     if ($imgAttempt > 0) {
@@ -291,7 +292,8 @@ class GenerateVisualAssetStep
                                 prompt: $attemptPrompt,
                                 editPaths: $editPaths,
                                 openAi: $this->openAi,
-                                nanoBanana: $this->nanoBanana
+                                nanoBanana: $this->nanoBanana,
+                                allowFallback: $allowImageFallback
                             );
                             if (!empty($selectedBrandImageAbsList)) {
                                 $imageSourceMode = count($selectedBrandImageAbsList) > 1 ? 'brand_multi_image_edit' : 'brand_image_edit';
@@ -308,7 +310,8 @@ class GenerateVisualAssetStep
                                 provider: $job->resolveImageProvider((array) ($item->ai_meta ?? [])),
                                 prompt: $attemptPrompt,
                                 openAi: $this->openAi,
-                                nanoBanana: $this->nanoBanana
+                                nanoBanana: $this->nanoBanana,
+                                allowFallback: $allowImageFallback
                             );
                             $imageSourceMode = 'text_to_image';
                             $brandSourcesUsed = [];
@@ -325,7 +328,8 @@ class GenerateVisualAssetStep
                             provider: $job->resolveImageProvider((array) ($item->ai_meta ?? [])),
                             prompt: $attemptPrompt,
                             openAi: $this->openAi,
-                            nanoBanana: $this->nanoBanana
+                            nanoBanana: $this->nanoBanana,
+                            allowFallback: $allowImageFallback
                         );
                         $imageSourceMode = 'text_to_image';
                         $brandSourcesUsed = [];

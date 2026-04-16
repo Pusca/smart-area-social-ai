@@ -3315,7 +3315,8 @@ SVG;
         string $provider,
         string $prompt,
         OpenAiService $openAi,
-        NanoBananaService $nanoBanana
+        NanoBananaService $nanoBanana,
+        bool $allowFallback = true
     ): array {
         if ($provider === 'openai') {
             return $openAi->generateImageBase64($prompt);
@@ -3324,7 +3325,7 @@ SVG;
         try {
             return $nanoBanana->generateImageBase64($prompt);
         } catch (Throwable $e) {
-            if (!$this->shouldFallbackFromNanoBananaToOpenAi($e)) {
+            if (!$allowFallback || !$this->shouldFallbackFromNanoBananaToOpenAi($e)) {
                 throw $e;
             }
 
@@ -3345,7 +3346,8 @@ SVG;
         string $prompt,
         array $editPaths,
         OpenAiService $openAi,
-        NanoBananaService $nanoBanana
+        NanoBananaService $nanoBanana,
+        bool $allowFallback = true
     ): array {
         if ($provider === 'openai') {
             return $openAi->generateImageEditBase64($prompt, $editPaths);
@@ -3354,7 +3356,7 @@ SVG;
         try {
             return $nanoBanana->generateImageEditBase64($prompt, $editPaths);
         } catch (Throwable $e) {
-            if (!$this->shouldFallbackFromNanoBananaToOpenAi($e)) {
+            if (!$allowFallback || !$this->shouldFallbackFromNanoBananaToOpenAi($e)) {
                 throw $e;
             }
 
