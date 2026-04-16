@@ -2205,12 +2205,12 @@
 </section>
 
 {{-- ── Alter Ego Digitale ─────────────────────────────────────────────────── --}}
-@php
+<?php
     $alterEgos = $alterEgos ?? collect();
     if (!($alterEgos instanceof \Illuminate\Support\Collection)) {
         $alterEgos = collect($alterEgos);
     }
-@endphp
+?>
 <div id="alter-ego-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -2244,10 +2244,10 @@
     @else
         <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             @foreach($alterEgos as $ae)
-            @php
+            <?php
                 $aePhotos = array_values(array_filter((array) ($ae->visual_references ?? [])));
                 $aeFirstPhoto = $aePhotos[0] ?? null;
-            @endphp
+            ?>
             <div class="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3.5 transition hover:border-indigo-200 hover:bg-indigo-50/30">
                 {{-- Avatar: prima foto o placeholder --}}
                 @if($aeFirstPhoto && \Illuminate\Support\Facades\Storage::disk('public')->exists($aeFirstPhoto))
