@@ -151,10 +151,12 @@ class QuickstartOnboardingService
                     'deletable' => true,
                 ];
 
-                // Forza provider per ogni item: reel → Veo 3.1, post → NanoBanana
+                // Forza provider per ogni item: reel → Veo 3.1, post → NanoBanana.
+                // video_no_fallback: true impedisce il silent downgrade a OpenAI se Veo fallisce.
                 $format = (string) ($item->format ?? 'post');
                 if ($format === 'reel' || $format === 'video') {
                     $meta['video_provider'] = 'google_veo';
+                    $meta['video_no_fallback'] = true;
                 } else {
                     $meta['image_provider'] = 'nanobanana';
                 }

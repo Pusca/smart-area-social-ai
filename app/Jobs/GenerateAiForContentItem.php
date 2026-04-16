@@ -3139,6 +3139,11 @@ SVG;
 
     public function canAttemptSecondaryVideoFallback(array $meta, string $provider): bool
     {
+        // Explicit no-fallback flag: provider failure is surfaced as error, no silent degradation.
+        if ((bool) data_get($meta, 'video_no_fallback', false)) {
+            return false;
+        }
+
         if ($this->shouldAllowCrossProviderVideoFallback($meta)) {
             return true;
         }
@@ -3286,7 +3291,11 @@ SVG;
         $source = trim((string) data_get($meta, 'source', ''));
         $mode = trim((string) data_get($meta, 'plan.mode', ''));
 
-        if (!in_array($source, ['manual_single_content'], true) && $mode !== 'single_manual') {
+        $allowsProviderOverride = in_array($source, ['manual_single_content', 'onboarding_quickstart_demo'], true)
+            || $mode === 'single_manual'
+            || $mode === 'onboarding_quickstart_demo';
+
+        if (!$allowsProviderOverride) {
             return $this->capabilityRegistry()->defaultProvider('image');
         }
 
@@ -3389,6 +3398,7 @@ SVG;
             $this->feedbackDrivenImageInstruction($activeFeedbackRequest, $selectedBrandImagePaths, $assetVariables),
             ImagePromptRealismGuard::instruction($forcePhotorealism, $locationEnvelopeProtected, $hasExplicitHumanReferences),
             'Il risultato deve sembrare un contenuto editoriale premium pensato per Instagram, non una demo tecnica.',
+            'PRIORITA MASSIMA — REGOLA FINALE: ZERO testo nell\'immagine. Nessuna lettera, parola, numero, scritta, titolo, watermark, overlay tipografico o logo renderizzato. Solo elementi visivi puri.',
         ];
 
         return trim(implode(' ', array_filter($parts, fn ($part) => is_string($part) && trim($part) !== '')));
@@ -3424,9 +3434,9 @@ SVG;
         if ($connectionHint !== '') {
             $parts[] = "Ruolo nel piano: {$connectionHint}";
         }
-        if ($overlayBrief !== '') {
-            $parts[] = "Predisponi il layout per overlay tipografico senza farlo renderizzare dal modello: {$overlayBrief}.";
-        }
+        // overlayBrief NON viene incluso nel prompt immagine: chiedere "predisponi layout overlay"
+        // confonde i modelli image-gen (Gemini/DALL-E) che tendono a renderizzare testo nell'immagine.
+        // Il brief overlay è usato solo nel contesto testo/video dove ha senso semantico.
         if ($trendBridge !== '') {
             $parts[] = "Se usi meccaniche trend, applicale cosi: {$trendBridge}.";
         }
