@@ -402,28 +402,34 @@ class OpenAiService
      */
     public function createVideoJob(string $prompt, ?string $inputReferenceAbsolutePath = null, array $options = []): array
     {
-        $model = strtolower(trim((string) ($options['model'] ?? config('openai.video_model') ?: 'sora-2')));
-        if (!str_starts_with($model, 'sora-2')) {
-            $model = strtolower(trim((string) (config('openai.video_model') ?: 'sora-2')));
-            if (!str_starts_with($model, 'sora-2')) {
-                $model = 'sora-2';
+        $model = strtolower(trim((string) ($options['model'] ?? config('openai.video_model') ?: 'sora-1.0-turbo')));
+        if (!str_starts_with($model, 'sora-')) {
+            $model = strtolower(trim((string) (config('openai.video_model') ?: 'sora-1.0-turbo')));
+            if (!str_starts_with($model, 'sora-')) {
+                $model = 'sora-1.0-turbo';
             }
         }
-        $seconds = (string) ($options['seconds'] ?? config('openai.video_seconds') ?: '8');
+        $nSeconds = (int) ($options['seconds'] ?? config('openai.video_seconds') ?: 8);
+        $nSeconds = max(1, $nSeconds);
         $size = (string) ($options['size'] ?? config('openai.video_size') ?: '720x1280');
         $timeout = (int) (config('openai.timeout_video_create') ?: config('openai.timeout') ?: 60);
-        $url = $this->url('/v1/videos');
+        // OpenAI Sora API: https://api.openai.com/v1/video/generations
+        $url = $this->url('/v1/video/generations');
         $payload = [
             'model' => $model,
             'prompt' => $prompt,
-            'seconds' => $seconds,
+            'n_seconds' => $nSeconds,
             'size' => $size,
         ];
 
         try {
             if (is_string($inputReferenceAbsolutePath) && $inputReferenceAbsolutePath !== '' && is_file($inputReferenceAbsolutePath)) {
-                $payload['input_reference'] = [
-                    'image_url' => $this->toVideoInputReferenceDataUri($inputReferenceAbsolutePath),
+                // Image-to-video: primo frame come riferimento visivo
+                $payload['frames'] = [
+                    [
+                        'image_url' => ['url' => $this->toVideoInputReferenceDataUri($inputReferenceAbsolutePath)],
+                        'frame_position' => 'first',
+                    ],
                 ];
             }
 
@@ -487,7 +493,7 @@ class OpenAiService
         }
 
         $timeout = (int) (config('openai.timeout_video_poll') ?: config('openai.timeout') ?: 60);
-        $url = $this->url('/v1/videos/' . rawurlencode($videoId));
+        $url = $this->url('/v1/video/generations/' . rawurlencode($videoId));
         $res = $this->request($timeout, true)->get($url);
 
         if (!$res->successful()) {
@@ -589,55 +595,66 @@ class OpenAiService
         }
 
         $timeout = (int) (config('openai.timeout_video_download') ?: config('openai.timeout_images') ?: 120);
-        $url = $this->url('/v1/videos/' . rawurlencode($videoId) . '/' . rawurlencode($variant));
-        $req = Http::withToken($this->apiKey())
-            ->timeout($timeout)
-            ->connectTimeout((int) (config('openai.connect_timeout') ?: 15));
+
+        // OpenAI Sora API: il video URL è nel campo data[0].url della generation completata.
+        // Non esiste un endpoint separato /v1/video/generations/{id}/content.
+        // Recuperiamo la generation per estrarre il CDN URL.
+        $genUrl = $this->url('/v1/video/generations/' . rawurlencode($videoId));
+        $genRes = $this->request((int) (config('openai.timeout_video_poll') ?: 60), true)->get($genUrl);
+        if (!$genRes->successful()) {
+            throw new RuntimeException("OpenAI video {$variant} retrieve error ({$genRes->status()}) URL={$genUrl} BODY=" . $genRes->body());
+        }
+
+        $gen = $genRes->json();
+        if (!is_array($gen)) {
+            throw new RuntimeException("OpenAI video {$variant} invalid generation payload.");
+        }
+
+        // Cerca URL nel campo data (array di video objects)
+        $downloadUrl = '';
+        $data = $gen['data'] ?? [];
+        if (is_array($data) && !empty($data)) {
+            $first = $data[0] ?? [];
+            if (is_array($first)) {
+                if ($variant === 'thumbnail') {
+                    $downloadUrl = trim((string) ($first['thumbnail_url'] ?? $first['url'] ?? ''));
+                } else {
+                    $downloadUrl = trim((string) ($first['url'] ?? ''));
+                }
+            }
+        }
+        // Fallback: campo url diretto nella risposta
+        if ($downloadUrl === '') {
+            $downloadUrl = trim((string) ($gen['url'] ?? ''));
+        }
+
+        if ($downloadUrl === '') {
+            throw new RuntimeException("OpenAI video {$variant} — URL di download non trovato nella generation response.");
+        }
 
         $proxy = trim((string) (config('openai.proxy') ?: env('OPENAI_PROXY') ?: ''));
         $forceIpv4 = (bool) (config('openai.force_ipv4') ?: env('OPENAI_FORCE_IPV4') ?: false);
-        $options = [];
+        $curlOptions = [];
         if ($proxy !== '') {
-            $options['proxy'] = $proxy;
+            $curlOptions['proxy'] = $proxy;
         }
         if ($forceIpv4 && defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {
-            $options['curl'] = [
-                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-            ];
-        }
-        if (!empty($options)) {
-            $req = $req->withOptions($options);
+            $curlOptions['curl'] = [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4];
         }
 
-        $res = $req->get($url);
+        $req = Http::timeout($timeout)->connectTimeout((int) (config('openai.connect_timeout') ?: 15));
+        if (!empty($curlOptions)) {
+            $req = $req->withOptions($curlOptions);
+        }
 
+        $res = $req->get($downloadUrl);
         if (!$res->successful()) {
-            throw new RuntimeException("OpenAI video {$variant} download error ({$res->status()}) URL={$url} BODY=" . $res->body());
-        }
-
-        $contentType = strtolower((string) ($res->header('Content-Type') ?? ''));
-        if (str_contains($contentType, 'application/json')) {
-            $data = $res->json();
-            if (is_array($data)) {
-                $downloadUrl = trim((string) ($data['url'] ?? ''));
-                if ($downloadUrl !== '') {
-                    $down = Http::timeout($timeout)->get($downloadUrl);
-                    if (!$down->successful()) {
-                        throw new RuntimeException("OpenAI video {$variant} download url failed ({$down->status()}) URL={$downloadUrl}");
-                    }
-                    $body2 = $down->body();
-                    if ($body2 === '') {
-                        throw new RuntimeException("OpenAI video {$variant} empty body from download url.");
-                    }
-                    return $body2;
-                }
-            }
-            throw new RuntimeException("OpenAI video {$variant} returned JSON without downloadable url.");
+            throw new RuntimeException("OpenAI video {$variant} download failed ({$res->status()}) URL={$downloadUrl}");
         }
 
         $body = $res->body();
         if (!is_string($body) || $body === '') {
-            throw new RuntimeException("OpenAI video {$variant} empty body.");
+            throw new RuntimeException("OpenAI video {$variant} empty body from CDN URL.");
         }
 
         return $body;

@@ -70,7 +70,7 @@ return [
                     'strict_asset_mode' => false,
                     'fallbacks' => ['google_veo', 'kling'],
                     'model_config' => 'openai.video_model',
-                    'model_prefixes' => ['sora-2'],
+                    'model_prefixes' => ['sora-'],
                     'duration_rule' => [
                         'mode' => 'enum',
                         'values' => [4, 8, 12],

@@ -11,7 +11,7 @@ return [
     'fine_tuning_base_model' => env('OPENAI_FINE_TUNING_BASE_MODEL', env('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')),
     'vision_model' => env('OPENAI_VISION_MODEL', env('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')),
     'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-1'),
-    'video_model' => env('OPENAI_VIDEO_MODEL', 'sora-2'),
+    'video_model' => env('OPENAI_VIDEO_MODEL', 'sora-1.0-turbo'),
     'speech_model' => env('OPENAI_SPEECH_MODEL', 'gpt-4o-mini-tts'),
     'speech_voice' => env('OPENAI_SPEECH_VOICE', 'alloy'),
     'speech_max_chars' => (int) env('OPENAI_SPEECH_MAX_CHARS', 1000),
