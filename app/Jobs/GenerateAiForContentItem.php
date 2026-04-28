@@ -4995,7 +4995,10 @@ SVG;
             return false;
         }
 
-        return str_contains($message, 'openai video create error (500)')
+        return str_contains($message, 'openai video create error (404)')
+            || str_contains($message, 'openai video retrieve error (404)')
+            || str_contains($message, 'status code 404')
+            || str_contains($message, 'openai video create error (500)')
             || str_contains($message, 'openai video retrieve error (500)')
             || str_contains($message, 'openai video create error (502)')
             || str_contains($message, 'openai video retrieve error (502)')
