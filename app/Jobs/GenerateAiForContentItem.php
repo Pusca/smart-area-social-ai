@@ -9,6 +9,7 @@ use App\Services\AI\AiProviderMatrixService;
 use App\Services\AssetIdentityService;
 use App\Services\AssetVariableService;
 use App\Services\AI\ContentAlignmentService;
+use App\Services\AI\ContentGenerationOrchestrator;
 use App\Services\AI\GenerationQualityScorecardService;
 use App\Services\AI\GenerationVersionRegistry;
 use App\Services\AI\Pipeline\BuildGenerationContextStep;
@@ -77,32 +78,20 @@ class GenerateAiForContentItem implements ShouldQueue
             : Str::uuid()->toString();
     }
 
-    public function handle(
-        BuildGenerationContextStep $buildGenerationContext,
-        ResolveProviderMatrixStep $resolveProviderMatrix,
-        GenerateBaseTextStep $generateBaseText,
-        BuildVisualPromptStep $buildVisualPrompt,
-        GenerateVisualAssetStep $generateVisualAsset,
-        PersistGenerationOutputsStep $persistGenerationOutputs,
-        WorkspaceNotificationService $workspaceNotifications,
-        GenerationAuditService $generationAudit,
-        GenerationMetricsService $generationMetrics,
-        GenerationQualityScorecardService $qualityScorecard
-    ): void
+    public function handle(ContentGenerationOrchestrator $orchestrator): void
     {
-        $item = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
+        $item   = ContentItem::query()->with('plan')->findOrFail($this->contentItemId);
         $status = strtolower(trim((string) ($item->ai_status ?? '')));
+
         if (!in_array($status, ['queued', 'pending'], true)) {
             Log::info('GenerateAiForContentItem skipped because content item is no longer active', [
                 'content_item_id' => $item->id,
-                'run_key' => $this->runKey,
-                'ai_status' => $status,
+                'run_key'         => $this->runKey,
+                'ai_status'       => $status,
             ]);
 
             return;
         }
-
-        $lockKey = $this->processingLockKey();
 
         /**
          * Cache::lock() è compatibile con Redis (lock distribuito) e database driver (dev).
@@ -111,114 +100,20 @@ class GenerateAiForContentItem implements ShouldQueue
          * Timeout: max(1800, job_timeout + 300) per garantire che il lock superi
          * sempre la durata massima del job.
          */
-        $lock = Cache::lock($lockKey, max(1800, $this->timeout + 300));
+        $lock = Cache::lock($this->processingLockKey(), max(1800, $this->timeout + 300));
 
         if (!$lock->get()) {
             Log::info('GenerateAiForContentItem skipped because another runner already owns the content item lock', [
                 'content_item_id' => $item->id,
-                'run_key' => $this->runKey,
-                'ai_status' => $status,
+                'run_key'         => $this->runKey,
+                'ai_status'       => $status,
             ]);
 
             return;
         }
 
-        $this->touchGenerationRuntime($item, 'booting', 'Avvio generazione', 6, [
-            'runner' => app()->runningInConsole() ? 'console' : 'web',
-        ]);
-
-        $state = GenerationPipelineState::fromItem(
-            $item,
-            (bool) config('generation.strict_asset_mode', true)
-        );
-
         try {
-            $this->touchGenerationRuntime($item, 'context', 'Analisi strategia e brand', 18);
-            $state = $buildGenerationContext->handle($this, $state);
-            $item = $state->item;
-
-            $this->touchGenerationRuntime($item, 'providers', 'Scelta provider e modello', 28);
-            $state = $resolveProviderMatrix->handle($this, $state);
-            $item = $state->item;
-
-            if ($this->isDemoMode()) {
-                $demoAttempt = $generationAudit->startAttempt($state->run, 'demo_preset', [
-                    'type' => 'system',
-                    'stage' => 'demo_preset',
-                    'provider_requested' => 'local_demo',
-                    'provider_effective' => 'local_demo',
-                    'model_requested' => 'demo_preset_v1',
-                    'model_effective' => 'demo_preset_v1',
-                    'input_summary' => [
-                        'format' => (string) $item->format,
-                        'platform' => (string) $item->platform,
-                    ],
-                ]);
-
-                $this->applyDemoPreset(
-                    $item,
-                    (array) $state->get('tenant_profile', []),
-                    (array) $state->get('item_brain', []),
-                    $state->meta
-                );
-
-                $generationAudit->completeAttempt($demoAttempt, [
-                    'status' => 'succeeded',
-                    'output_summary' => $this->buildRunResultSummary($item),
-                    'tenant_id' => (int) $item->tenant_id,
-                    'final_provider' => 'local_demo',
-                    'failure_mode' => null,
-                ]);
-
-                $runMetrics = $generationMetrics->buildRunMetrics($item, $state->run);
-                $state->run = $generationAudit->completeRun($state->run, [
-                    'status' => 'succeeded',
-                    'effective_output' => $this->buildRunEffectiveOutput($item),
-                    'result_summary' => $this->buildRunResultSummary($item),
-                    'overlay_meta' => (array) data_get($item->ai_meta, 'overlay_meta', []),
-                    'storyboard_meta' => (array) data_get($item->ai_meta, 'storyboard_meta', []),
-                    'version_meta' => $this->generationVersionMeta(
-                        is_array($item->ai_meta) ? $item->ai_meta : []
-                    ),
-                ] + $runMetrics);
-                $scorecard = $qualityScorecard->buildForContentItem($item, $state->run);
-                $state->run = $generationAudit->syncRun($state->run, [
-                    'quality_scorecard' => $scorecard,
-                ]);
-                $qualityScorecard->storeOnContentItem($item, $scorecard, $state->run);
-                $this->updateGenerationAuditMeta($item, $state->run?->id, 'succeeded', [
-                    'completed_at' => now()->toDateTimeString(),
-                    'quality_scorecard_status' => (string) ($scorecard['publish_readiness_status'] ?? ''),
-                ]);
-                $this->markGenerationRuntimeFinished($item, 'done', 'Contenuto pronto');
-                $item->save();
-                $this->notifyAiSuccess($item, $workspaceNotifications);
-
-                return;
-            }
-
-            $this->touchGenerationRuntime($item, 'text', 'Scrittura copy e struttura', 42);
-            $state = $generateBaseText->handle($this, $state);
-            $item = $state->item;
-
-            $this->touchGenerationRuntime($item, 'prompt', 'Preparazione direzione visuale', 58);
-            $state = $buildVisualPrompt->handle($this, $state);
-            $item = $state->item;
-
-            $this->touchGenerationRuntime($item, 'visual', 'Generazione visual', 76);
-            $state = $generateVisualAsset->handle($this, $state);
-            $item = $state->item;
-
-            $this->touchGenerationRuntime($item, 'finalizing', 'Salvataggio output finale', 92);
-            $persistGenerationOutputs->handle($this, $state);
-
-            $item->refresh();
-            $this->markGenerationRuntimeFinished(
-                $item,
-                (string) ($item->ai_status ?: 'done'),
-                $item->ai_status === 'done' ? 'Contenuto pronto' : 'Serve una verifica'
-            );
-            $item->save();
+            $orchestrator->run($this, $item);
         } finally {
             // Rilascia il lock distribuito in ogni caso: successo, eccezione o timeout.
             // release() è no-op se il lock è già scaduto — nessun rischio di eccezione.
