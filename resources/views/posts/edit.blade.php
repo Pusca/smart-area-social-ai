@@ -27,33 +27,20 @@
     $publicationInfo = \App\Support\UiStatus::publication((string) $contentItem->status);
     $publicationOptions = \App\Support\UiStatus::publicationOptions();
 
-    $videoProviderOptions = [
-        'openai' => 'Sora + GPT (OpenAI)',
-        'runway' => 'Runway',
-        'google_veo' => 'Google Veo 3.1 (direct)',
-        'kling' => 'Kling (coerenza persona)',
-    ];
-    $imageProviderOptions = [
-        'nanobanana' => 'Nano Banana (consigliato)',
-        'openai' => 'GPT Image (OpenAI)',
-    ];
-    $videoProviderValue = old('video_provider', (string) data_get($contentItem->ai_meta, 'video_provider', config('generation.video_provider_default', 'openai')));
+    $videoProviderOptions = \App\Support\VideoProviderResolver::configuredWithLabels();
+    $imageProviderOptions = \App\Support\ImageProviderResolver::configuredWithLabels();
+    $videoProviderValue = old('video_provider', (string) data_get($contentItem->ai_meta, 'video_provider', \App\Support\VideoProviderResolver::default()));
     if (!array_key_exists($videoProviderValue, $videoProviderOptions)) {
-        $videoProviderValue = 'openai';
+        $videoProviderValue = array_key_first($videoProviderOptions) ?? \App\Support\VideoProviderResolver::default();
     }
-    $imageProviderValue = old('image_provider', (string) data_get($contentItem->ai_meta, 'image_provider', config('generation.image_provider_default', 'nanobanana')));
+    $imageProviderValue = old('image_provider', (string) data_get($contentItem->ai_meta, 'image_provider', \App\Support\ImageProviderResolver::default()));
     if (!array_key_exists($imageProviderValue, $imageProviderOptions)) {
-        $imageProviderValue = 'nanobanana';
+        $imageProviderValue = array_key_first($imageProviderOptions) ?? \App\Support\ImageProviderResolver::default();
     }
     $videoProviderRequested = (string) data_get($contentItem->ai_meta, 'video_generation.provider_requested', data_get($contentItem->ai_meta, 'video_provider_requested', $videoProviderValue));
     $videoProviderLastUsed = (string) data_get($contentItem->ai_meta, 'video_provider_last_used', $videoProviderValue);
     $videoProviderEffective = (string) data_get($contentItem->ai_meta, 'video_generation.provider_effective', data_get($contentItem->ai_meta, 'video_generation.provider', $videoProviderLastUsed));
-    $videoProviderLabels = [
-        'openai' => 'Sora + GPT',
-        'runway' => 'Runway',
-        'google_veo' => 'Google Veo 3.1',
-        'kling' => 'Kling',
-    ];
+    $videoProviderLabels = $videoProviderOptions;
     $videoProviderFallback = data_get($contentItem->ai_meta, 'video_generation.provider_fallback');
     $videoDurationSeconds = (int) old('video_duration_seconds_requested', (int) data_get($contentItem->ai_meta, 'requested_video_duration_seconds', strtolower(trim((string) $contentItem->format)) === 'reel' ? 20 : 0));
     $isVideoFormat = in_array(strtolower(trim((string) $contentItem->format)), ['reel', 'story'], true);

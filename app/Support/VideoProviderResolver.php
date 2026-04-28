@@ -34,6 +34,41 @@ class VideoProviderResolver
         return 'in:' . implode(',', self::allowed());
     }
 
+    /**
+     * @return array<int, string>  Solo i provider con API key configurata.
+     */
+    public static function configured(): array
+    {
+        return array_values(array_filter(
+            self::allowed(),
+            fn ($p) => self::registry()->isConfigured($p, 'video')
+        ));
+    }
+
+    /**
+     * @return array<string, string>  ['provider_key' => 'Label'] per i soli provider configurati.
+     */
+    public static function configuredWithLabels(): array
+    {
+        $labels = [
+            'kling'      => 'Kling v3 (coerenza persona)',
+            'google_veo' => 'Google Veo 3.1',
+            'runway'     => 'Runway Gen 4.5',
+            'openai'     => 'Sora 2 (OpenAI)',
+        ];
+
+        $result = [];
+        foreach (self::configured() as $provider) {
+            $result[$provider] = $labels[$provider] ?? ucfirst($provider);
+        }
+
+        if (empty($result)) {
+            $result[self::default()] = $labels[self::default()] ?? ucfirst(self::default());
+        }
+
+        return $result;
+    }
+
     private static function registry(): ProviderCapabilityRegistry
     {
         return app(ProviderCapabilityRegistry::class);

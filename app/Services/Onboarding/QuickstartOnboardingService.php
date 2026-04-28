@@ -40,7 +40,9 @@ class QuickstartOnboardingService
         User $user,
         array $data,
         ?UploadedFile $logo = null,
-        array $images = []
+        array $images = [],
+        string $imageProvider = '',
+        string $videoProvider = ''
     ): array {
         $tenantId = (int) $user->tenant_id;
 
@@ -55,7 +57,10 @@ class QuickstartOnboardingService
             throw new \RuntimeException('Per creare la prova iniziale serve almeno 1 immagine reale di riferimento.');
         }
 
-        $result = DB::transaction(function () use ($user, $data, $logo, $images, $existingProfile, $tenantId) {
+        $resolvedImageProvider = $imageProvider !== '' ? $imageProvider : 'nanobanana';
+        $resolvedVideoProvider = $videoProvider !== '' ? $videoProvider : 'google_veo';
+
+        $result = DB::transaction(function () use ($user, $data, $logo, $images, $existingProfile, $tenantId, $resolvedImageProvider, $resolvedVideoProvider) {
             $profile = TenantProfile::query()->updateOrCreate(
                 ['tenant_id' => $tenantId],
                 $this->profilePayload($data, $existingProfile)
@@ -109,8 +114,8 @@ class QuickstartOnboardingService
                     'demo_label' => 'Prova iniziale rigenerabile',
                     'demo_note' => 'Questo piano serve a mostrare il potenziale dell app e puo essere eliminato o rigenerato.',
                     'generated_from' => 'brand_quickstart',
-                    'image_provider' => 'nanobanana',
-                    'video_provider' => 'google_veo',
+                    'image_provider' => $resolvedImageProvider,
+                    'video_provider' => $resolvedVideoProvider,
                 ],
                 'strategy' => $strategy,
             ]);
@@ -158,12 +163,12 @@ class QuickstartOnboardingService
                 // image_no_fallback: true impedisce il downgrade da NanoBanana a OpenAI per le immagini.
                 $format = (string) ($item->format ?? 'post');
                 if ($format === 'reel' || $format === 'video') {
-                    $meta['video_provider'] = 'google_veo';
-                    $meta['video_no_fallback'] = true;
+                    $meta['video_provider'] = $resolvedVideoProvider;
+                    $meta['video_no_fallback'] = false;
                     $meta['video_duration_seconds_requested'] = 8;
                 } else {
-                    $meta['image_provider'] = 'nanobanana';
-                    $meta['image_no_fallback'] = true;
+                    $meta['image_provider'] = $resolvedImageProvider;
+                    $meta['image_no_fallback'] = false;
                 }
 
                 $item->ai_meta = $meta;

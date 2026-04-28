@@ -38,8 +38,7 @@ class TenantProfileController extends Controller
         private readonly GuidedAssetVariableService $guidedAssetVariableService,
         private readonly QuickstartOnboardingService $quickstartOnboardingService,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
-        private readonly TenantQuotaService $tenantQuotaService,
-        private readonly BrandScraperService $brandScraper
+        private readonly TenantQuotaService $tenantQuotaService
     ) {
     }
 
@@ -52,13 +51,13 @@ class TenantProfileController extends Controller
      *
      * Risponde sempre con 200; l'errore è nel payload JSON (campo `error`).
      */
-    public function scrapeUrl(Request $request): JsonResponse
+    public function scrapeUrl(Request $request, BrandScraperService $brandScraper): JsonResponse
     {
         $data = $request->validate([
             'url' => ['required', 'string', 'max:500'],
         ]);
 
-        $result = $this->brandScraper->scrapeFromUrl($data['url']);
+        $result = $brandScraper->scrapeFromUrl($data['url']);
 
         return response()->json($result);
     }
@@ -151,6 +150,9 @@ class TenantProfileController extends Controller
             ->orderByDesc('created_at')
             ->get(['id', 'name', 'archetype', 'is_default', 'visual_references']);
 
+        $imageProviderOptions = \App\Support\ImageProviderResolver::configuredWithLabels();
+        $videoProviderOptions = \App\Support\VideoProviderResolver::configuredWithLabels();
+
         return view('wizard.brand', compact(
             'profile',
             'assets',
@@ -164,7 +166,9 @@ class TenantProfileController extends Controller
             'quickstartDismissed',
             'shouldShowQuickstart',
             'brandWarnings',
-            'alterEgos'
+            'alterEgos',
+            'imageProviderOptions',
+            'videoProviderOptions'
         ));
     }
 
@@ -224,6 +228,8 @@ class TenantProfileController extends Controller
             'quickstart_variable_name' => 'nullable|string|max:120',
             'quickstart_variable_kind' => 'nullable|string|in:person,location,product,custom',
             'quickstart_variable_description' => 'nullable|string|max:255',
+            'image_provider' => ['nullable', \App\Support\ImageProviderResolver::inRule()],
+            'video_provider' => ['nullable', \App\Support\VideoProviderResolver::inRule()],
         ], [
             'logo.max' => 'Il logo non puo superare 8 MB.',
             'logo.mimes' => 'Il logo deve essere PNG, JPG, JPEG, WebP o SVG.',
@@ -249,7 +255,9 @@ class TenantProfileController extends Controller
                 user: $request->user(),
                 data: $data,
                 logo: $request->file('logo'),
-                images: (array) $request->file('images', [])
+                images: (array) $request->file('images', []),
+                imageProvider: \App\Support\ImageProviderResolver::normalize((string) ($data['image_provider'] ?? '')),
+                videoProvider: \App\Support\VideoProviderResolver::normalize((string) ($data['video_provider'] ?? ''))
             );
 
             $count = count($result['created_items'] ?? []);

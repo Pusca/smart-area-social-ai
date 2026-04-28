@@ -648,6 +648,48 @@
                             </div>
                         </div>
 
+                        <?php
+                            $qsImageProviders = is_array($imageProviderOptions ?? null) && !empty($imageProviderOptions)
+                                ? $imageProviderOptions
+                                : \App\Support\ImageProviderResolver::configuredWithLabels();
+                            $qsVideoProviders = is_array($videoProviderOptions ?? null) && !empty($videoProviderOptions)
+                                ? $videoProviderOptions
+                                : \App\Support\VideoProviderResolver::configuredWithLabels();
+                            $qsDefaultImage = array_key_first($qsImageProviders) ?? \App\Support\ImageProviderResolver::default();
+                            $qsDefaultVideo = array_key_first($qsVideoProviders) ?? \App\Support\VideoProviderResolver::default();
+                        ?>
+                        @if(count($qsImageProviders) > 1 || count($qsVideoProviders) > 1)
+                        <div class="grid gap-3 border-t border-gray-100 pt-3 sm:grid-cols-2">
+                            @if(count($qsImageProviders) > 1)
+                            <div>
+                                <label for="qs_image_provider" class="{{ $labelClass }}">Motore immagini</label>
+                                <select id="qs_image_provider" name="image_provider" class="{{ $inputClass }}">
+                                    @foreach($qsImageProviders as $pk => $pl)
+                                        <option value="{{ $pk }}" @selected($qsDefaultImage === $pk)>{{ $pl }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            @else
+                            <input type="hidden" name="image_provider" value="{{ $qsDefaultImage }}">
+                            @endif
+                            @if(count($qsVideoProviders) > 1)
+                            <div>
+                                <label for="qs_video_provider" class="{{ $labelClass }}">Motore video (reel)</label>
+                                <select id="qs_video_provider" name="video_provider" class="{{ $inputClass }}">
+                                    @foreach($qsVideoProviders as $pk => $pl)
+                                        <option value="{{ $pk }}" @selected($qsDefaultVideo === $pk)>{{ $pl }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            @else
+                            <input type="hidden" name="video_provider" value="{{ $qsDefaultVideo }}">
+                            @endif
+                        </div>
+                        @else
+                        <input type="hidden" name="image_provider" value="{{ $qsDefaultImage }}">
+                        <input type="hidden" name="video_provider" value="{{ $qsDefaultVideo }}">
+                        @endif
+
                         <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                             <p class="text-xs text-gray-500">La demo usa Instagram e Facebook, con 2 post immagine e 1 reel.</p>
                             <div class="flex flex-wrap items-center gap-2">

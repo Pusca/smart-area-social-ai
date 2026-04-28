@@ -71,8 +71,38 @@
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
                     @if($canGenerate)
-                        <form method="POST" action="{{ route('wizard.generate') }}" class="js-wizard-generation-submit">
+                        @php
+                            $wizardImageProviders = \App\Support\ImageProviderResolver::configuredWithLabels();
+                            $wizardVideoProviders = \App\Support\VideoProviderResolver::configuredWithLabels();
+                            $wizardDefaultImage  = array_key_first($wizardImageProviders) ?? \App\Support\ImageProviderResolver::default();
+                            $wizardDefaultVideo  = array_key_first($wizardVideoProviders) ?? \App\Support\VideoProviderResolver::default();
+                        @endphp
+                        <form method="POST" action="{{ route('wizard.generate') }}" class="js-wizard-generation-submit space-y-3">
                             @csrf
+                            @if(count($wizardImageProviders) > 1)
+                            <div>
+                                <label for="wiz_image_provider" class="mb-1 block text-xs font-semibold text-gray-600">Motore immagini</label>
+                                <select id="wiz_image_provider" name="image_provider" class="block w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300">
+                                    @foreach($wizardImageProviders as $key => $label)
+                                        <option value="{{ $key }}" @selected($wizardDefaultImage === $key)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            @else
+                            <input type="hidden" name="image_provider" value="{{ $wizardDefaultImage }}">
+                            @endif
+                            @if(count($wizardVideoProviders) > 1)
+                            <div>
+                                <label for="wiz_video_provider" class="mb-1 block text-xs font-semibold text-gray-600">Motore video (reel)</label>
+                                <select id="wiz_video_provider" name="video_provider" class="block w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-300">
+                                    @foreach($wizardVideoProviders as $key => $label)
+                                        <option value="{{ $key }}" @selected($wizardDefaultVideo === $key)>{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            @else
+                            <input type="hidden" name="video_provider" value="{{ $wizardDefaultVideo }}">
+                            @endif
                             <button type="submit" class="ui-btn-primary w-full justify-center">
                                 Genera piano AI
                             </button>

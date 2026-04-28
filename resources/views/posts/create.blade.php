@@ -22,16 +22,13 @@
     $createPreset = $createPreset === 'reel' ? 'reel' : 'default';
     $isReelPreset = $createPreset === 'reel';
 
-    $videoProviderOptions = [
-        'openai' => 'Sora + GPT (OpenAI)',
-        'runway' => $isReelPreset ? 'Runway image-to-video' : 'Runway',
-        'google_veo' => 'Google Veo 3.1 (direct)',
-        'kling' => 'Kling (coerenza persona)',
-    ];
-    $imageProviderOptions = [
-        'nanobanana' => 'Nano Banana (consigliato)',
-        'openai' => 'GPT Image (OpenAI)',
-    ];
+    // Provider options: passati dal controller (solo quelli con API key configurata)
+    $videoProviderOptions = is_array($videoProviderOptions ?? null) && !empty($videoProviderOptions)
+        ? $videoProviderOptions
+        : \App\Support\VideoProviderResolver::configuredWithLabels();
+    $imageProviderOptions = is_array($imageProviderOptions ?? null) && !empty($imageProviderOptions)
+        ? $imageProviderOptions
+        : \App\Support\ImageProviderResolver::configuredWithLabels();
 
     $reelCreateUrl = route('posts.reels.create');
     $defaultPlatforms = old('platforms', $profile?->default_platforms ?? ['instagram']);
@@ -44,15 +41,13 @@
         : ((is_array($profile?->default_formats ?? null) && !empty($profile->default_formats))
             ? (string) $profile->default_formats[0]
             : 'post'));
-    $defaultVideoProvider = old('video_provider', $isReelPreset
-        ? 'runway'
-        : (string) config('generation.video_provider_default', 'openai'));
+    $defaultVideoProvider = old('video_provider', \App\Support\VideoProviderResolver::default());
     if (!array_key_exists($defaultVideoProvider, $videoProviderOptions)) {
-        $defaultVideoProvider = 'openai';
+        $defaultVideoProvider = array_key_first($videoProviderOptions) ?? \App\Support\VideoProviderResolver::default();
     }
-    $defaultImageProvider = old('image_provider', (string) config('generation.image_provider_default', 'nanobanana'));
+    $defaultImageProvider = old('image_provider', \App\Support\ImageProviderResolver::default());
     if (!array_key_exists($defaultImageProvider, $imageProviderOptions)) {
-        $defaultImageProvider = 'nanobanana';
+        $defaultImageProvider = array_key_first($imageProviderOptions) ?? \App\Support\ImageProviderResolver::default();
     }
     $overlayPreferences = is_array($profile?->overlay_preferences ?? null) ? $profile->overlay_preferences : [];
     $overlayFonts = (array) config('overlays.fonts', []);

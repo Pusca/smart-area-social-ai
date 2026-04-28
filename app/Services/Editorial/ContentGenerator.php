@@ -7,6 +7,7 @@ use App\Models\ContentPlan;
 use App\Services\AI\ContentAngleEngine;
 use App\Services\Overlays\ContentOverlayEngine;
 use App\Support\ImageProviderResolver;
+use App\Support\VideoProviderResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -127,7 +128,12 @@ class ContentGenerator
                     ),
                     'ai_status' => 'queued',
                     'ai_meta' => array_replace_recursive($contentStrategyMeta, $overlayMeta, [
-                        'image_provider' => ImageProviderResolver::default(),
+                        'image_provider' => isset($context['image_provider']) && $context['image_provider'] !== ''
+                            ? ImageProviderResolver::normalize((string) $context['image_provider'])
+                            : ImageProviderResolver::default(),
+                        'video_provider' => isset($context['video_provider']) && $context['video_provider'] !== ''
+                            ? VideoProviderResolver::normalize((string) $context['video_provider'])
+                            : VideoProviderResolver::default(),
                         'tenant_profile' => $profileData,
                         'brand_assets' => $assets,
                         'asset_variables_catalog' => $assetVariables,

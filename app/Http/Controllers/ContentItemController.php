@@ -36,11 +36,9 @@ class ContentItemController extends Controller
         private readonly MemoryBuilderService $memoryBuilder,
         private readonly TenantContentIntelligenceService $tenantContentIntelligence,
         private readonly AiProviderMatrixService $aiProviderMatrixService,
-        private readonly CanvaBridgeService $canvaBridgeService,
         private readonly AssetIdentityService $assetIdentityService,
         private readonly EditorialStrategyService $editorialStrategyService,
         private readonly ContentOverlayEngine $contentOverlayEngine,
-        private readonly ContentMediaPreviewService $mediaPreviewService,
         private readonly GenerationRuntimeMonitor $generationRuntimeMonitor,
         private readonly AssetVariableService $assetVariableService,
         private readonly SocialPublishingService $socialPublishingService,
@@ -51,7 +49,7 @@ class ContentItemController extends Controller
     /**
      * LISTA "POSTS" (la tua pagina attuale) => resources/views/posts/index.blade.php
      */
-    public function index(Request $request)
+    public function index(Request $request, ContentMediaPreviewService $mediaPreviewService)
     {
         $user = $request->user();
 
@@ -65,7 +63,7 @@ class ContentItemController extends Controller
             ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString();
-        $this->mediaPreviewService->attachPreviewData($items->getCollection());
+        $mediaPreviewService->attachPreviewData($items->getCollection());
 
         $statusCounts = (clone $baseQuery)
             ->selectRaw('status, COUNT(*) as total')
@@ -141,7 +139,7 @@ class ContentItemController extends Controller
     /**
      * DETTAGLIO "CONTENT ITEM" (immagine grande) => resources/views/content-items/show.blade.php
      */
-    public function show(Request $request, ContentItem $contentItem)
+    public function show(Request $request, ContentItem $contentItem, CanvaBridgeService $canvaBridgeService)
     {
         $this->authorizeTenant($request, $contentItem);
 
@@ -154,7 +152,7 @@ class ContentItemController extends Controller
             'canvaDesigns' => $contentItem->canvaDesigns,
             'canvaLatestDesign' => $contentItem->canvaDesigns->first(),
             'canvaEnabled' => (bool) config('social_manager.features.canva_integration_v1', true),
-            'canvaConnected' => (bool) data_get($this->canvaBridgeService->connectionSummary((int) $contentItem->tenant_id), 'connected', false),
+            'canvaConnected' => (bool) data_get($canvaBridgeService->connectionSummary((int) $contentItem->tenant_id), 'connected', false),
         ]);
     }
 
@@ -175,7 +173,13 @@ class ContentItemController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'archetype', 'is_default']);
 
-        return view('posts.create', compact('profile', 'referenceImages', 'assetVariables', 'createPreset', 'alterEgos'));
+        $imageProviderOptions = ImageProviderResolver::configuredWithLabels();
+        $videoProviderOptions = VideoProviderResolver::configuredWithLabels();
+
+        return view('posts.create', compact(
+            'profile', 'referenceImages', 'assetVariables', 'createPreset', 'alterEgos',
+            'imageProviderOptions', 'videoProviderOptions'
+        ));
     }
 
     public function createReel(Request $request)

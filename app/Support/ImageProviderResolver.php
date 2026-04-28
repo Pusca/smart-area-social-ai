@@ -34,6 +34,39 @@ class ImageProviderResolver
         return 'in:' . implode(',', self::allowed());
     }
 
+    /**
+     * @return array<int, string>  Solo i provider con API key configurata.
+     */
+    public static function configured(): array
+    {
+        return array_values(array_filter(
+            self::allowed(),
+            fn ($p) => self::registry()->isConfigured($p, 'image')
+        ));
+    }
+
+    /**
+     * @return array<string, string>  ['provider_key' => 'Label'] per i soli provider configurati.
+     */
+    public static function configuredWithLabels(): array
+    {
+        $labels = [
+            'nanobanana' => 'Nano Banana (Gemini 2.5 — consigliato)',
+            'openai'     => 'GPT Image (OpenAI)',
+        ];
+
+        $result = [];
+        foreach (self::configured() as $provider) {
+            $result[$provider] = $labels[$provider] ?? ucfirst($provider);
+        }
+
+        if (empty($result)) {
+            $result[self::default()] = $labels[self::default()] ?? ucfirst(self::default());
+        }
+
+        return $result;
+    }
+
     private static function registry(): ProviderCapabilityRegistry
     {
         return app(ProviderCapabilityRegistry::class);

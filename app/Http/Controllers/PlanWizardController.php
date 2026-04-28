@@ -8,6 +8,8 @@ use App\Models\ContentPlan;
 use App\Models\TenantProfile;
 use App\Services\AI\GenerationRuntimeMonitor;
 use App\Services\AssetVariableService;
+use App\Support\ImageProviderResolver;
+use App\Support\VideoProviderResolver;
 use App\Services\Editorial\ContentGenerator;
 use App\Services\Editorial\ContentHistoryAnalyzer;
 use App\Services\Editorial\EditorialPlanBuilder;
@@ -456,6 +458,8 @@ class PlanWizardController extends Controller
                     'memory' => $memory,
                     'assets' => $assets,
                     'asset_variables' => $assetVariables,
+                    'image_provider' => ImageProviderResolver::normalize((string) $request->input('image_provider', '')),
+                    'video_provider' => VideoProviderResolver::normalize((string) $request->input('video_provider', '')),
                 ]);
             }
         } catch (\Throwable $e) {
