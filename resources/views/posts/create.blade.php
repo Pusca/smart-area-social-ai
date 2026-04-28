@@ -258,6 +258,21 @@
 
     <div class="grid gap-6 xl:grid-cols-3">
         <div class="space-y-6 xl:col-span-2">
+            {{-- Mode toggle --}}
+            <div class="flex items-center justify-between">
+                <div>
+                    <span id="mode-label-simple" class="text-sm font-semibold text-gray-900">Modalita semplice</span>
+                    <span id="mode-label-advanced" class="hidden text-sm font-semibold text-gray-900">Modalita avanzata</span>
+                    <p id="mode-desc-simple" class="text-xs text-gray-500">Solo i campi essenziali.</p>
+                    <p id="mode-desc-advanced" class="hidden text-xs text-gray-500">Tutti i controlli AI e di stile.</p>
+                </div>
+                <button type="button" id="mode-toggle-btn"
+                    class="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+                    <span id="mode-toggle-label">Passa ad avanzata</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 text-gray-400"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>
+                </button>
+            </div>
+
             <form id="single-content-form" method="POST" action="{{ route('posts.store') }}" class="space-y-6">
                 @csrf
 
@@ -300,8 +315,8 @@
                         </div>
                     </div>
 
-                    {{-- Impostazioni provider AI — collassabili --}}
-                    <details class="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50" id="provider-settings-details">
+                    {{-- Impostazioni provider AI — ADVANCED ONLY --}}
+                    <details class="advanced-only mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50" id="provider-settings-details">
                         <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100">
                             <span>Motori AI</span>
                             <span class="text-xs font-normal text-gray-500" id="provider-summary-label">Kling · NanoBanana</span>
@@ -340,7 +355,8 @@
                     </details>
                 </div>
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                {{-- Social target — ADVANCED ONLY --}}
+                <div class="advanced-only rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div class="flex items-center justify-between">
                         <h2 class="text-lg font-semibold text-gray-900">Social target</h2>
                         <span class="text-xs font-semibold text-gray-500">Selezione multipla</span>
@@ -416,7 +432,8 @@
                 <input type="hidden" name="consistency_mode" id="js-consistency-mode" value="{{ $selectedConsistencyMode }}">
                 <input type="hidden" name="seasonal_overlay" id="js-seasonal-overlay" value="{{ $seasonalOverlay }}">
 
-                <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                {{-- Asset variables — ADVANCED ONLY --}}
+                <div class="advanced-only rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <h2 class="text-lg font-semibold text-gray-900">Asset e identita brand</h2>
                         <span class="text-xs font-semibold text-gray-500">{{ count($assetVariables) }} disponibili</span>
@@ -478,10 +495,10 @@
                     @endif
                 </div>
 
-                {{-- Alter Ego --}}
+                {{-- Alter Ego — ADVANCED ONLY --}}
                 @php $alterEgos = $alterEgos ?? collect(); $defaultAlterEgoId = (int) old('alter_ego_id', 0); @endphp
                 @if($alterEgos->isNotEmpty())
-                <div class="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+                <div class="advanced-only rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
                     <div class="flex items-center justify-between gap-3">
                         <div>
                             <p class="text-sm font-semibold text-gray-900">Alter Ego</p>
@@ -527,7 +544,8 @@
                     </div>
                 </div>
 
-                <details class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" id="overlay-settings-details">
+                {{-- Overlay — ADVANCED ONLY --}}
+                <details class="advanced-only overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" id="overlay-settings-details">
                     <summary class="flex cursor-pointer list-none items-center justify-between p-6 hover:bg-gray-50">
                         <div>
                             <h2 class="text-lg font-semibold text-gray-900">Text overlays e typography</h2>
@@ -897,6 +915,41 @@
         if (videoProviderEl) videoProviderEl.addEventListener('change', updateProviderSummary);
         if (imageProviderEl) imageProviderEl.addEventListener('change', updateProviderSummary);
         updateProviderSummary();
+
+        // Simple / Advanced mode toggle
+        (function () {
+            const STORAGE_KEY = 'sa_create_mode';
+            const advancedEls = () => Array.from(document.querySelectorAll('.advanced-only'));
+            const toggleBtn   = document.getElementById('mode-toggle-btn');
+            const toggleLabel = document.getElementById('mode-toggle-label');
+            const labelSimple = document.getElementById('mode-label-simple');
+            const labelAdv    = document.getElementById('mode-label-advanced');
+            const descSimple  = document.getElementById('mode-desc-simple');
+            const descAdv     = document.getElementById('mode-desc-advanced');
+
+            let isAdvanced = localStorage.getItem(STORAGE_KEY) === 'advanced';
+
+            const apply = () => {
+                advancedEls().forEach(el => {
+                    el.style.display = isAdvanced ? '' : 'none';
+                });
+                if (toggleLabel) toggleLabel.textContent = isAdvanced ? 'Torna a semplice' : 'Passa ad avanzata';
+                if (labelSimple) labelSimple.classList.toggle('hidden', isAdvanced);
+                if (labelAdv)    labelAdv.classList.toggle('hidden', !isAdvanced);
+                if (descSimple)  descSimple.classList.toggle('hidden', isAdvanced);
+                if (descAdv)     descAdv.classList.toggle('hidden', !isAdvanced);
+            };
+
+            apply();
+
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', () => {
+                    isAdvanced = !isAdvanced;
+                    localStorage.setItem(STORAGE_KEY, isAdvanced ? 'advanced' : 'simple');
+                    apply();
+                });
+            }
+        })();
 
         if (createForm && window.HostupGenerationLoader) {
             const syncVideoProviderWithFormat = () => {
