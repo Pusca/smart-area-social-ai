@@ -92,6 +92,8 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         ->name('profile.brand.assets.destroy');
     Route::delete('/profile/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
         ->name('profile.brand.asset.destroy');
+    Route::patch('/profile/brand/assets/{asset}/description', [TenantProfileController::class, 'updateAssetDescription'])
+        ->name('profile.brand.asset.description.update');
 
     // Piano editoriale separato dal Brand Center.
     Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');

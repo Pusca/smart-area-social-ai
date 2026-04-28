@@ -1533,6 +1533,25 @@ class TenantProfileController extends Controller
 
         return $profile;
     }
+
+    public function updateAssetDescription(Request $request, BrandAsset $asset)
+    {
+        $user = $request->user();
+
+        if ((int) $asset->tenant_id !== (int) $user->tenant_id) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'ai_description' => 'nullable|string|max:500',
+        ]);
+
+        $asset->update([
+            'ai_description' => $this->normalizeInlineText((string) ($data['ai_description'] ?? '')),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
 }
 
 

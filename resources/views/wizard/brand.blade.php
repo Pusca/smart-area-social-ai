@@ -1356,30 +1356,9 @@
                                 <span class="text-xs text-gray-500">{{ $logos->count() }} file</span>
                             </summary>
                             <div class="border-t border-gray-200 px-4 py-4">
-                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                                 @forelse($logos as $a)
-                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
-                                        <div class="border-b border-gray-200 bg-gray-50 p-2">
-                                            <label class="flex items-center gap-2 text-xs text-gray-600">
-                                                <input type="checkbox" class="asset-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" value="{{ $a->id }}" data-destroy-url="{{ route('profile.brand.asset.destroy', $a->id) }}">
-                                                Seleziona
-                                            </label>
-                                        </div>
-
-                                        <div class="flex aspect-square items-center justify-center p-2">
-                                            <img src="{{ asset('storage/' . ltrim($a->path, '/')) }}" class="max-h-full max-w-full" alt="logo">
-                                        </div>
-
-                                        <div class="truncate px-2 py-1 text-[11px] text-gray-600">{{ $a->original_name ?? $a->path }}</div>
-
-                                        <div class="px-2 pb-2">
-                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questo logo?');">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
-                                            </form>
-                                        </div>
-                                    </article>
+                                    @include('wizard.partials.brand-asset-card', ['a' => $a, 'deleteConfirm' => 'Eliminare questo logo?', 'aspectClass' => 'aspect-square', 'objectFit' => 'contain'])
                                 @empty
                                     <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
                                         Nessun logo caricato.
@@ -1398,30 +1377,9 @@
                                 <span class="text-xs text-gray-500">{{ $images->count() }} file</span>
                             </summary>
                             <div class="border-t border-gray-200 px-4 py-4">
-                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                                 @forelse($images as $a)
-                                    <article class="overflow-hidden rounded-xl border border-gray-200 bg-white">
-                                        <div class="border-b border-gray-200 bg-gray-50 p-2">
-                                            <label class="flex items-center gap-2 text-xs text-gray-600">
-                                                <input type="checkbox" class="asset-checkbox rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" value="{{ $a->id }}" data-destroy-url="{{ route('profile.brand.asset.destroy', $a->id) }}">
-                                                Seleziona
-                                            </label>
-                                        </div>
-
-                                        <div class="aspect-square overflow-hidden">
-                                            <img src="{{ asset('storage/' . ltrim($a->path, '/')) }}" class="h-full w-full object-cover" alt="image">
-                                        </div>
-
-                                        <div class="truncate px-2 py-1 text-[11px] text-gray-600">{{ $a->original_name ?? $a->path }}</div>
-
-                                        <div class="px-2 pb-2">
-                                            <form method="POST" action="{{ route('profile.brand.asset.destroy', $a->id) }}" onsubmit="return confirm('Eliminare questa immagine?');">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="inline-flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Elimina</button>
-                                            </form>
-                                        </div>
-                                    </article>
+                                    @include('wizard.partials.brand-asset-card', ['a' => $a, 'deleteConfirm' => 'Eliminare questa immagine?', 'aspectClass' => 'aspect-video', 'objectFit' => 'cover'])
                                 @empty
                                     <div class="col-span-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-xs text-gray-600">
                                         Nessuna immagine caricata.
@@ -2646,6 +2604,54 @@
 
             updateButtons({ recording: false, hasAudio: !!voiceFileInput.files?.length });
         }
+    })();
+
+    // AI description inline save
+    (function () {
+        document.addEventListener('input', function (e) {
+            const textarea = e.target.closest('.ai-desc-textarea');
+            if (!textarea) return;
+            const block = textarea.closest('.ai-description-block');
+            if (!block) return;
+            const saveBtn = block.querySelector('.ai-desc-save');
+            if (!saveBtn) return;
+            saveBtn.classList.toggle('hidden', textarea.value.trim() === (textarea.dataset.original || '').trim());
+        });
+
+        document.addEventListener('click', function (e) {
+            const saveBtn = e.target.closest('.ai-desc-save');
+            if (!saveBtn) return;
+            const block = saveBtn.closest('.ai-description-block');
+            if (!block) return;
+            const textarea = block.querySelector('.ai-desc-textarea');
+            const statusEl = block.querySelector('.ai-desc-status');
+            const url = block.dataset.updateUrl;
+            if (!url || !textarea) return;
+
+            saveBtn.disabled = true;
+            fetch(url, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ ai_description: textarea.value }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok) {
+                    textarea.dataset.original = textarea.value;
+                    saveBtn.classList.add('hidden');
+                    if (statusEl) {
+                        statusEl.classList.remove('hidden');
+                        setTimeout(() => statusEl.classList.add('hidden'), 2000);
+                    }
+                }
+            })
+            .catch(() => {})
+            .finally(() => { saveBtn.disabled = false; });
+        });
     })();
 </script>
 @endsection

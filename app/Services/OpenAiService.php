@@ -1221,7 +1221,7 @@ class OpenAiService
         }
     }
 
-    protected function extractResponsesText(array $response): string
+    public function extractResponsesText(array $response): string
     {
         $out = $response['output'] ?? [];
         if (!is_array($out)) return '';

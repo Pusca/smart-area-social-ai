@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
+use App\Observers\BrandAssetObserver;
 use App\Policies\BrandAssetPolicy;
 use App\Policies\ContentItemPolicy;
 use App\Policies\ContentPlanPolicy;
@@ -27,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
             putenv("OPENSSL_CONF={$conf}");
         }
 
+        BrandAsset::observe(BrandAssetObserver::class);
         $this->registerPolicies();
         $this->registerCacheInvalidationHooks();
     }
