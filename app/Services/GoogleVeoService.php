@@ -355,6 +355,22 @@ class GoogleVeoService
                     throw new RuntimeException("Google Veo video generation failed: {$reason}");
                 }
 
+                // Check for RAI/content-safety filtering — done:true but no video produced.
+                $raiFilteredCount = (int) data_get($job, 'response.generateVideoResponse.raiMediaFilteredCount', 0);
+                $raiReasons = (array) data_get($job, 'response.generateVideoResponse.raiMediaFilteredReasons', []);
+                if ($raiFilteredCount > 0 || !empty($raiReasons)) {
+                    $reasonStr = !empty($raiReasons) ? implode(', ', $raiReasons) : 'unspecified';
+                    throw new RuntimeException("Google Veo video bloccato dal filtro di sicurezza: {$reasonStr}");
+                }
+
+                // Log full payload for diagnostics whenever done (useful if download later fails).
+                Log::debug('GoogleVeoService operation completed', [
+                    'operation_name' => $operationName,
+                    'top_level_keys' => array_keys($job),
+                    'response_keys' => array_keys((array) ($job['response'] ?? [])),
+                    'response_preview' => mb_substr(json_encode($job['response'] ?? []) ?: '', 0, 800),
+                ]);
+
                 return $job;
             }
 
@@ -394,12 +410,14 @@ class GoogleVeoService
         }
 
         if ($downloadUrl === '') {
+            $jsonDump = json_encode($jobPayload) ?: '';
             Log::warning('GoogleVeoService missing downloadable video URL', [
                 'top_level_keys' => array_keys($jobPayload),
                 'response_keys' => array_keys((array) ($jobPayload['response'] ?? [])),
                 'response_generateVideoResponse_keys' => array_keys((array) data_get($jobPayload, 'response.generateVideoResponse', [])),
                 'response_generatedSamples_0' => data_get($jobPayload, 'response.generatedSamples.0'),
                 'file_name_candidate' => $this->extractFileName($jobPayload),
+                'full_payload_preview' => mb_substr($jsonDump, 0, 3000),
             ]);
             throw new RuntimeException('Google Veo completed payload missing downloadable video URL.');
         }
@@ -686,9 +704,8 @@ class GoogleVeoService
             || str_contains($value, 'alt=media')
             || str_contains($value, '/files/')
             || str_contains($value, '/download/')
-            || str_contains($value, 'generativelanguage.googleapis.com')
-            || str_contains($value, 'aiplatform.googleapis.com')
-            || str_contains($value, 'storage.googleapis.com')
+            || str_contains($value, '.googleapis.com')
+            || str_contains($value, 'googleusercontent.com')
             || preg_match('/\.(mp4|mov|webm)(?:\?|$)/i', $value) === 1;
     }
 
