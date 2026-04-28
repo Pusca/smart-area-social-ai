@@ -378,15 +378,27 @@ class GoogleVeoService
                 $filePayload = $this->retrieveFile($fileName);
                 $downloadUrl = $this->extractDownloadUrl($filePayload);
                 if ($downloadUrl === '') {
-                    $downloadUrl = $this->fileUrl($fileName) . ':download';
+                    // Files API: il download richiede ?alt=media, NON :download
+                    $downloadUrl = $this->fileUrl($fileName) . '?alt=media';
                 }
             }
+        }
+
+        // Files API URL senza ?alt=media → aggiunge il parametro per ottenere i bytes
+        if ($downloadUrl !== ''
+            && str_contains($downloadUrl, '/files/')
+            && !str_contains($downloadUrl, 'alt=media')
+            && !str_contains($downloadUrl, ':download')
+        ) {
+            $downloadUrl .= (str_contains($downloadUrl, '?') ? '&' : '?') . 'alt=media';
         }
 
         if ($downloadUrl === '') {
             Log::warning('GoogleVeoService missing downloadable video URL', [
                 'top_level_keys' => array_keys($jobPayload),
                 'response_keys' => array_keys((array) ($jobPayload['response'] ?? [])),
+                'response_generateVideoResponse_keys' => array_keys((array) data_get($jobPayload, 'response.generateVideoResponse', [])),
+                'response_generatedSamples_0' => data_get($jobPayload, 'response.generatedSamples.0'),
                 'file_name_candidate' => $this->extractFileName($jobPayload),
             ]);
             throw new RuntimeException('Google Veo completed payload missing downloadable video URL.');
@@ -424,11 +436,34 @@ class GoogleVeoService
         return $data;
     }
 
-    private function downloadBinary(string $url, int $timeout): string
+    private function downloadBinary(string $url, int $timeout, bool $retried = false): string
     {
         $response = $this->request($timeout, false)->get($url);
         if (!$response->successful()) {
             throw new RuntimeException("Google Veo video download error ({$response->status()}) URL={$url} BODY=" . $response->body());
+        }
+
+        // Se la risposta è JSON invece di bytes, la Files API ha restituito metadata.
+        // Tentiamo il redirect al vero URL di download.
+        $contentType = strtolower((string) ($response->header('Content-Type') ?? ''));
+        if (str_contains($contentType, 'application/json')) {
+            $json = $response->json();
+            if (is_array($json) && !$retried) {
+                // Cerca un URL scaricabile nel payload JSON
+                $redirectUrl = $this->extractDownloadUrl($json);
+                if ($redirectUrl === '') {
+                    // Prova ad aggiungere ?alt=media se non già presente
+                    $altUrl = str_contains($url, '?') ? $url . '&alt=media' : $url . '?alt=media';
+                    if ($altUrl !== $url) {
+                        return $this->downloadBinary($altUrl, $timeout, retried: true);
+                    }
+                } else {
+                    $altRedirect = str_contains($redirectUrl, 'alt=media') ? $redirectUrl
+                        : (str_contains($redirectUrl, '?') ? $redirectUrl . '&alt=media' : $redirectUrl . '?alt=media');
+                    return $this->downloadBinary($altRedirect, $timeout, retried: true);
+                }
+            }
+            throw new RuntimeException("Google Veo video download returned JSON instead of binary URL={$url}");
         }
 
         $body = $response->body();
@@ -569,6 +604,21 @@ class GoogleVeoService
             'response.result.generateVideoResponse.generatedVideos.0.video.uri',
             'generatedVideos.0.video.uri',
             'generated_videos.0.video.uri',
+            // Veo 3.1 predictLongRunning: a volte omette il wrapper generateVideoResponse
+            'response.generatedSamples.0.video.uri',
+            'response.generatedSamples.0.video.downloadUri',
+            'response.generatedSamples.0.video.file.uri',
+            'response.generatedSamples.0.uri',
+            'response.generatedVideos.0.video.file.uri',
+            'response.videos.0.uri',
+            'response.videos.0.url',
+            'response.video.uri',
+            'response.video.url',
+            'videos.0.uri',
+            'videos.0.url',
+            'video.uri',
+            'video.url',
+            'url',
             'file.uri',
             'uri',
         ];
@@ -636,6 +686,9 @@ class GoogleVeoService
             || str_contains($value, 'alt=media')
             || str_contains($value, '/files/')
             || str_contains($value, '/download/')
+            || str_contains($value, 'generativelanguage.googleapis.com')
+            || str_contains($value, 'aiplatform.googleapis.com')
+            || str_contains($value, 'storage.googleapis.com')
             || preg_match('/\.(mp4|mov|webm)(?:\?|$)/i', $value) === 1;
     }
 
