@@ -2,6 +2,7 @@
 
 namespace App\Services\AI\Pipeline;
 
+use App\Data\ContentGenerationInput;
 use App\Models\ContentItem;
 use App\Models\GenerationRun;
 
@@ -16,7 +17,8 @@ class GenerationPipelineState
         public array $meta = [],
         public ?GenerationRun $run = null,
         public bool $strictAssetMode = true,
-        public array $data = []
+        public array $data = [],
+        public ?ContentGenerationInput $input = null,
     ) {
     }
 

@@ -8182,13 +8182,16 @@ SVG;
             ->whereNull('content_plan_id')
             ->orderByDesc('id')
             ->limit(48)
-            ->get(['id', 'kind', 'path', 'original_name', 'mime'])
+            ->get(['id', 'kind', 'path', 'original_name', 'mime', 'ai_description', 'ai_context', 'ai_tags'])
             ->map(fn ($asset) => [
-                'id' => (int) $asset->id,
-                'kind' => (string) $asset->kind,
-                'path' => (string) $asset->path,
-                'original_name' => (string) ($asset->original_name ?? ''),
-                'mime' => (string) ($asset->mime ?? ''),
+                'id'             => (int) $asset->id,
+                'kind'           => (string) $asset->kind,
+                'path'           => (string) $asset->path,
+                'original_name'  => (string) ($asset->original_name ?? ''),
+                'mime'           => (string) ($asset->mime ?? ''),
+                'ai_description' => (string) ($asset->ai_description ?? ''),
+                'ai_context'     => (string) ($asset->ai_context ?? ''),
+                'ai_tags'        => is_array($asset->ai_tags) ? $asset->ai_tags : [],
             ])
             ->values()
             ->all();

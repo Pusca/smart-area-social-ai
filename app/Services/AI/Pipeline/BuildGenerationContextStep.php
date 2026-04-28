@@ -2,6 +2,7 @@
 
 namespace App\Services\AI\Pipeline;
 
+use App\Data\ContentGenerationInput;
 use App\Jobs\GenerateAiForContentItem;
 use App\Models\AlterEgo;
 use App\Models\ContentItem;
@@ -182,6 +183,9 @@ class BuildGenerationContextStep
             ->put('plan_titles', $planTitles)
             ->put('plan_captions', $planCaptions)
             ->put('alter_ego', $alterEgoContext);
+
+        // ── Build typed DTO for downstream steps ───────────────────────────
+        $state->input = ContentGenerationInput::fromItemAndMeta($item, $state->meta, $state->strictAssetMode);
 
         $state->syncMetaToItem();
         $item->save();
