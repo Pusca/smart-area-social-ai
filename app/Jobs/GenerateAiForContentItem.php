@@ -3892,7 +3892,7 @@ SVG;
             'thumbnail_path' => $thumbPath,
             'reference_path' => $activeReferencePath,
             'reference_paths' => $activeReferencePaths,
-            'reference_reason' => $activeReferenceAbs !== '' ? $referenceReason : $referenceReason . '_text_only',
+            'reference_reason' => (is_string($referenceAbs) && trim($referenceAbs) !== '') ? $referenceReason : $referenceReason . '_text_only',
             'reference_validation' => null,
             'composition_reference' => $compositionMeta,
             'generation_attempts' => 1,
@@ -4827,6 +4827,11 @@ SVG;
 
     public function shouldFallbackFromGoogleVeoToSecondaryProvider(Throwable $error): bool
     {
+        // If no fallbacks are configured, never fallback — surface the real error.
+        if (empty($this->capabilityRegistry()->fallbackProviders('google_veo', 'video'))) {
+            return false;
+        }
+
         $message = strtolower(trim($error->getMessage()));
         if ($message === '') {
             return false;
@@ -4913,6 +4918,11 @@ SVG;
 
     public function shouldFallbackFromNanoBananaToOpenAi(Throwable $error): bool
     {
+        // If no fallbacks are configured, never fallback — surface the real error.
+        if (empty($this->capabilityRegistry()->fallbackProviders('nanobanana', 'image'))) {
+            return false;
+        }
+
         $message = strtolower(trim($error->getMessage()));
         if ($message === '') {
             return false;

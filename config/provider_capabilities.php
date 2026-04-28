@@ -53,7 +53,7 @@ return [
                 'image' => [
                     'reference_aware' => true,
                     'strict_asset_mode' => true,
-                    'fallbacks' => ['nanobanana'],
+                    'fallbacks' => [],
                     'model_config' => 'openai.image_model',
                     'sizes' => ['1024x1024', '1536x1024', '1024x1536'],
                     'aspect_ratios' => ['1:1', '3:2', '2:3'],
@@ -146,7 +146,7 @@ return [
                     'native_audio' => false,
                     'requires_mux' => true,
                     'strict_asset_mode' => true,
-                    'fallbacks' => ['openai', 'kling'],
+                    'fallbacks' => [],
                     'model_config' => 'google_veo.model',
                     'model_aliases' => [
                         'veo3.1' => 'veo-3.1-generate-preview',
@@ -216,7 +216,7 @@ return [
                 'image' => [
                     'reference_aware' => true,
                     'strict_asset_mode' => true,
-                    'fallbacks' => ['openai'],
+                    'fallbacks' => [],
                     'model_config' => 'nanobanana.image_model',
                     'sizes' => ['512px', '1K', '2K', '4K'],
                     'aspect_ratios' => ['1:1', '4:5', '9:16', '16:9'],

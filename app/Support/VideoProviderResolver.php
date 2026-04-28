@@ -51,10 +51,7 @@ class VideoProviderResolver
     public static function configuredWithLabels(): array
     {
         $labels = [
-            'kling'      => 'Kling v3 (coerenza persona)',
             'google_veo' => 'Google Veo 3.1',
-            'runway'     => 'Runway Gen 4.5',
-            'openai'     => 'Sora 2 (OpenAI)',
         ];
 
         $result = [];

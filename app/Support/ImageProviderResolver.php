@@ -51,8 +51,7 @@ class ImageProviderResolver
     public static function configuredWithLabels(): array
     {
         $labels = [
-            'nanobanana' => 'Nano Banana (Gemini 2.5 — consigliato)',
-            'openai'     => 'GPT Image (OpenAI)',
+            'nanobanana' => 'Gemini 2.5 Flash (Google)',
         ];
 
         $result = [];
