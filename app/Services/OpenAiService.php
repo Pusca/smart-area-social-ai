@@ -433,9 +433,23 @@ class OpenAiService
                 ];
             }
 
-            $res = $this->request($timeout, true)
-                ->retry(1, 400)
-                ->post($url, $payload);
+            // Retry automatico su errori transitori (502/503/504 gateway/cloudflare)
+            $res = null;
+            $transientStatuses = [429, 502, 503, 504];
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                if ($attempt > 0) {
+                    sleep(5 * $attempt); // 5s, poi 10s
+                }
+                $res = $this->request($timeout, true)->post($url, $payload);
+                if ($res->successful() || !in_array($res->status(), $transientStatuses)) {
+                    break;
+                }
+                Log::info('OpenAiService createVideoJob transient error, retrying', [
+                    'attempt' => $attempt + 1,
+                    'status' => $res->status(),
+                    'url' => $url,
+                ]);
+            }
 
             if (!$res->successful()) {
                 throw new RuntimeException("OpenAI video create error ({$res->status()}) URL={$url} BODY=" . $res->body());

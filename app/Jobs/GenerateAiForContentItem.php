@@ -4626,9 +4626,14 @@ SVG;
                         $job = $openAi->createVideoJob($attemptPrompt, $attemptReferenceAbs, $videoOptions);
                     } catch (Throwable $videoCreateError) {
                         $msg = strtolower($videoCreateError->getMessage());
+                        // Ritenta senza reference solo per errori specifici di validazione del reference
+                        // (inpaint / frames field errors). Errori transitori (5xx) rilanciati subito.
                         $needsNoRefRetry = str_contains($msg, 'inpaint image must match')
                             || str_contains($msg, 'inpaint')
-                            || str_contains($msg, 'input_reference');
+                            || str_contains($msg, 'input_reference')
+                            || str_contains($msg, 'frames.')
+                            || str_contains($msg, '"frames"')
+                            || str_contains($msg, 'frame_position');
 
                         if (!$needsNoRefRetry) {
                             throw $videoCreateError;
@@ -4984,9 +4989,9 @@ SVG;
             return false;
         }
 
+        // Errori di validazione reference: non fare fallback, l'utente deve correggere
         if (str_contains($message, 'inpaint image must match')
-            || str_contains($message, 'inpaint')
-            || str_contains($message, 'input_reference')) {
+            || str_contains($message, 'inpaint')) {
             return false;
         }
 
@@ -4998,11 +5003,13 @@ SVG;
             || str_contains($message, 'openai video retrieve error (503)')
             || str_contains($message, 'openai video create error (504)')
             || str_contains($message, 'openai video retrieve error (504)')
+            || str_contains($message, 'openai video create error (429)')
             || str_contains($message, 'server_error')
             || str_contains($message, 'server error')
             || str_contains($message, 'temporarily unavailable')
             || str_contains($message, 'gateway timeout')
             || str_contains($message, 'video generation timeout after')
+            || str_contains($message, 'url di download non trovato')
             || $this->isTransientNetworkError($error);
     }
 
