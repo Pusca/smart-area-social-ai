@@ -2964,22 +2964,24 @@ SVG;
             $parts[] = "Editorial series: {$series}.";
         }
         if (!empty($blueprint['hook'])) {
-            $parts[] = 'Opening hook to preserve: ' . trim((string) $blueprint['hook']) . '.';
+            $parts[] = 'Opening hook to preserve: ' . $this->sanitizeVideoPromptForVeo(trim((string) $blueprint['hook']), $assetVariables) . '.';
         }
         if (!empty($blueprint['continuity_lock'])) {
-            $parts[] = 'Continuity lock: ' . trim((string) $blueprint['continuity_lock']) . '.';
+            $parts[] = 'Continuity lock: ' . $this->sanitizeVideoPromptForVeo(trim((string) $blueprint['continuity_lock']), $assetVariables) . '.';
         }
         $sceneSummary = $this->summarizeStoryboardSceneChunk((array) data_get($storyboard, 'scene_list', []));
         if ($sceneSummary !== '') {
-            $parts[] = "Scene plan: {$sceneSummary}.";
+            $parts[] = 'Scene plan: ' . $this->sanitizeVideoPromptForVeo($sceneSummary, $assetVariables) . '.';
         }
         if ($this->hasPersonAssetVariable($assetVariables)) {
             $parts[] = 'If the brand person appears, keep the same real person identity from start to end.';
+            $parts[] = 'The subject is a custom brand persona represented by proprietary reference visuals — not a public figure or celebrity.';
         }
         $parts[] = $this->videoOutputLanguageInstruction($meta, (string) data_get($meta, 'manual_brief', ''), true);
 
-        $parts[] = 'Primary visual brief follows. Proper names and brand specifics may appear in Italian; preserve them faithfully.';
-        $parts[] = $videoPrompt;
+        $parts[] = 'Visual brief:';
+        // Strip person names from the prompt before sending to Veo — it blocks on real-person references.
+        $parts[] = $this->sanitizeVideoPromptForVeo($videoPrompt, $assetVariables);
 
         $limit = (int) (config('google_veo.max_prompt_chars') ?: 1600);
         $limit = max(600, min(2000, $limit));
@@ -4825,10 +4827,28 @@ SVG;
             || $this->isTransientNetworkError($error);
     }
 
+    public function isGoogleVeoPersonSafetyBlock(Throwable $error): bool
+    {
+        $message = strtolower(trim($error->getMessage()));
+
+        return str_contains($message, "real people's names")
+            || str_contains($message, 'real people')
+            || str_contains($message, 'celebrity reference')
+            || str_contains($message, 'likenesses')
+            || str_contains($message, 'filtro di sicurezza')
+            || str_contains($message, 'person_in_generation_not_allowed')
+            || str_contains($message, 'raifiltered');
+    }
+
     public function shouldFallbackFromGoogleVeoToSecondaryProvider(Throwable $error): bool
     {
         // If no fallbacks are configured, never fallback — surface the real error.
         if (empty($this->capabilityRegistry()->fallbackProviders('google_veo', 'video'))) {
+            return false;
+        }
+
+        // Person safety blocks are a content policy issue, not a provider failure.
+        if ($this->isGoogleVeoPersonSafetyBlock($error)) {
             return false;
         }
 
@@ -5141,6 +5161,59 @@ SVG;
         $sanitized = trim(preg_replace('/\s+/u', ' ', $sanitized) ?? $sanitized);
 
         return Str::limit($sanitized, 260, '');
+    }
+
+    /**
+     * Sanitize a video prompt for Google Veo — strips real person names so Veo's
+     * person-safety filter does not block the generation.
+     *
+     * Removes:
+     *  - Full names from assetVariables (e.g. "Maria Rossi" → "the brand person")
+     *  - Individual first/last name tokens extracted from multi-word full names
+     *  - Common Italian patterns that introduce a name: "di nome X", "si chiama X", "chiamata X"
+     *
+     * @param  array<string, mixed>  $assetVariables
+     */
+    public function sanitizeVideoPromptForVeo(string $prompt, array $assetVariables): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $prompt) ?? $prompt);
+        if ($text === '') {
+            return '';
+        }
+
+        $personNames = $this->personVariableNames($assetVariables);
+
+        // Strip introductory "di nome X", "chiamata X", "si chiama X", "named X" patterns first.
+        $nameIntroPatterns = [
+            '/\bdi\s+nome\s+[A-ZÀÈÉÌÒÙ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀÈÉÌÒÙ][a-zA-ZÀ-ÿ]+){0,2}/u',
+            '/\bchiamat[aoe]\s+[A-ZÀÈÉÌÒÙ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀÈÉÌÒÙ][a-zA-ZÀ-ÿ]+){0,2}/u',
+            '/\bsi\s+chiama\s+[A-ZÀÈÉÌÒÙ][a-zA-ZÀ-ÿ]+(?:\s+[A-ZÀÈÉÌÒÙ][a-zA-ZÀ-ÿ]+){0,2}/u',
+            '/\bnamed\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}/u',
+        ];
+        foreach ($nameIntroPatterns as $pattern) {
+            $text = (string) preg_replace($pattern, 'the brand person', $text);
+        }
+
+        // Strip full names and their individual components (first name, last name).
+        foreach ($personNames as $fullName) {
+            // Replace the full name first (most specific).
+            $text = (string) preg_replace('/\b' . preg_quote($fullName, '/') . '\b/ui', 'the brand person', $text);
+
+            // If the full name has multiple tokens, also strip them individually to
+            // catch cases where the LLM uses only first name or only last name.
+            $tokens = preg_split('/\s+/', $fullName) ?: [];
+            if (count($tokens) >= 2) {
+                foreach ($tokens as $token) {
+                    $token = trim($token);
+                    // Only strip tokens ≥4 chars to avoid stripping common Italian words.
+                    if (mb_strlen($token) >= 4) {
+                        $text = (string) preg_replace('/\b' . preg_quote($token, '/') . '\b/ui', 'the brand person', $text);
+                    }
+                }
+            }
+        }
+
+        return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     }
 
     public function isOpenAiVideoModerationBlock(Throwable $error): bool
