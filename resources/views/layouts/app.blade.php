@@ -2,7 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>{{ config('app.name', 'Social AI') }}</title>
@@ -12,6 +12,10 @@
     <link rel="manifest" href="/manifest.webmanifest">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <style>
+        html { overflow-x: hidden; }
+        input, textarea, select, button { touch-action: manipulation; }
+    </style>
 </head>
 <body class="overflow-x-hidden font-sans antialiased bg-app text-text">
     @php
@@ -23,10 +27,30 @@
             ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
         ];
         $mobileNavItems = [
-            ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
-            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create']],
-            ['route' => 'calendar', 'label' => 'Piano', 'active' => ['calendar', 'wizard*', 'plans.generating']],
-            ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
+            [
+                'route'  => 'dashboard',
+                'label'  => 'Home',
+                'active' => ['dashboard'],
+                'icon'   => '<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75"/></svg>',
+            ],
+            [
+                'route'  => 'posts.create',
+                'label'  => 'Crea',
+                'active' => ['posts.create'],
+                'icon'   => '<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>',
+            ],
+            [
+                'route'  => 'calendar',
+                'label'  => 'Piano',
+                'active' => ['calendar', 'wizard*', 'plans.generating'],
+                'icon'   => '<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/></svg>',
+            ],
+            [
+                'route'  => 'posts.index',
+                'label'  => 'Libreria',
+                'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*'],
+                'icon'   => '<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6Zm0 9.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25Zm9.75-9.75A2.25 2.25 0 0 1 15.75 3.75H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6Zm0 9.75A2.25 2.25 0 0 1 15.75 13.5H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/></svg>',
+            ],
         ];
     @endphp
 
@@ -131,21 +155,24 @@
         </main>
     </div>
 
-    <nav class="mobile-nav fixed inset-x-0 bottom-0 z-50 border-t border-app bg-white/95 backdrop-blur sm:hidden">
-        <div class="mx-auto max-w-7xl px-3 pb-[env(safe-area-inset-bottom)]">
-            <div class="ui-mobile-nav" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr));">
-                @foreach($mobileNavItems as $item)
-                    @php
-                        $patterns = \Illuminate\Support\Arr::wrap($item['active']);
-                        $isActive = collect($patterns)->contains(fn ($pattern) => request()->routeIs($pattern));
-                    @endphp
-                    <a
-                        href="{{ route($item['route']) }}"
-                        class="flex min-w-0 items-center justify-center whitespace-nowrap touch-manipulation select-none rounded-2xl px-2 py-3 {{ $isActive ? 'bg-brand text-white font-semibold shadow-lg shadow-blue-900/10' : 'text-gray-700 hover:bg-surface-2' }}"
-                    >
-                        <span class="truncate">{{ $item['label'] }}</span>
-                    </a>
-                @endforeach
+    <nav class="fixed inset-x-0 bottom-0 z-50 sm:hidden" aria-label="Navigazione principale">
+        <div class="px-3 pt-2" style="padding-bottom: max(12px, env(safe-area-inset-bottom))">
+            <div class="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/96 shadow-[0_4px_24px_rgba(0,0,0,0.11),0_1px_4px_rgba(0,0,0,0.06)] backdrop-blur-xl">
+                <div class="grid grid-cols-4">
+                    @foreach($mobileNavItems as $item)
+                        @php
+                            $patterns = \Illuminate\Support\Arr::wrap($item['active']);
+                            $isActive = collect($patterns)->contains(fn ($pattern) => request()->routeIs($pattern));
+                        @endphp
+                        <a
+                            href="{{ route($item['route']) }}"
+                            class="flex flex-col items-center gap-1 px-1 py-2.5 select-none touch-manipulation transition-colors {{ $isActive ? 'text-indigo-700' : 'text-gray-400 hover:text-gray-700' }}"
+                        >
+                            {!! $item['icon'] !!}
+                            <span class="text-[10px] leading-none {{ $isActive ? 'font-semibold' : 'font-medium' }}">{{ $item['label'] }}</span>
+                        </a>
+                    @endforeach
+                </div>
             </div>
         </div>
     </nav>
