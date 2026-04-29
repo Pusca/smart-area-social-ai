@@ -8,313 +8,308 @@
     <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
-        html,body { height:100%; overflow:hidden; }
-        [x-cloak] { display:none!important }
+        html, body { margin:0; padding:0; min-height:100%; }
+        body { background:var(--bg); color:var(--text); }
+        [x-cloak] { display:none !important }
 
-        /* ── chat layout ── */
-        .chat-wrap   { display:flex; flex-direction:column; height:100dvh; }
-        .chat-msgs   { flex:1; overflow-y:auto; scroll-behavior:smooth; overscroll-behavior:contain; }
-        .chat-msgs::-webkit-scrollbar { width:4px }
-        .chat-msgs::-webkit-scrollbar-thumb { background:var(--border); border-radius:99px }
-
-        /* bubbles */
-        .bubble-ai   { background:var(--surface-2); color:var(--text); border-radius:1rem 1rem 1rem .25rem; max-width:82%; }
-        .bubble-user { background:var(--primary); color:#fff; border-radius:1rem 1rem .25rem 1rem; max-width:82%; }
-
-        /* mic button states */
-        .mic-listening { animation: mic-pulse 1.2s ease-in-out infinite; }
-        @keyframes mic-pulse {
-            0%,100% { box-shadow:0 0 0 0 rgba(220,38,38,.4); }
-            50%      { box-shadow:0 0 0 10px rgba(220,38,38,0); }
+        /* ── mic ripple ── */
+        .mic-ring {
+            position:absolute; border-radius:50%;
+            border:2px solid var(--accent);
+            animation: mic-expand 1.6s ease-out infinite;
+            pointer-events:none;
+        }
+        .mic-ring:nth-child(2) { animation-delay:.5s }
+        .mic-ring:nth-child(3) { animation-delay:1s }
+        @keyframes mic-expand {
+            0%   { width:96px;height:96px;opacity:.7;top:50%;left:50%;transform:translate(-50%,-50%) }
+            100% { width:200px;height:200px;opacity:0;top:50%;left:50%;transform:translate(-50%,-50%) }
         }
 
-        /* fade-in messages */
-        @keyframes msgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
-        .msg-in { animation: msgIn .22s cubic-bezier(.22,1,.36,1) both }
+        /* ── mic button ── */
+        .mic-btn {
+            width:96px; height:96px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            cursor:pointer; border:none; outline:none;
+            transition:transform .15s, box-shadow .15s;
+            position:relative; z-index:2;
+        }
+        .mic-btn:active { transform:scale(.93) }
+        .mic-btn.idle    { background:var(--primary); box-shadow:0 8px 24px rgba(10,45,111,.35) }
+        .mic-btn.active  { background:#DC2626; box-shadow:0 8px 28px rgba(220,38,38,.45) }
+        .mic-btn.working { background:var(--primary); opacity:.7; pointer-events:none }
 
-        /* extracted pill badges */
-        .pill { display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .6rem;border-radius:99px;font-size:.7rem;font-weight:600;line-height:1; }
-        .pill-ok { background:rgba(15,159,110,.12);color:#0F9F6E }
-        .pill-miss { background:rgba(245,158,11,.1);color:#B45309 }
+        /* ── field chips ── */
+        .chip {
+            display:inline-flex; align-items:center; gap:.4rem;
+            border-radius:99px; font-size:.78rem; font-weight:600;
+            padding:.35rem .85rem; transition:all .3s cubic-bezier(.22,1,.36,1);
+        }
+        .chip-empty  { background:var(--surface-3); color:var(--text-muted) }
+        .chip-filled { background:rgba(15,159,110,.13); color:#0F9F6E }
+        .chip-filled .chip-dot { background:#0F9F6E }
+        .chip-empty  .chip-dot { background:var(--border) }
+        .chip-dot { width:6px; height:6px; border-radius:50%; shrink:0 }
 
-        /* image upload dropzone */
-        .dropzone-active { border-color:var(--accent)!important;background:var(--accent-soft)!important }
+        /* ── dropzone ── */
+        .dropzone {
+            border:2px dashed var(--border); border-radius:1rem;
+            transition:border-color .2s, background .2s;
+            cursor:pointer;
+        }
+        .dropzone.over { border-color:var(--accent); background:var(--accent-soft) }
+
+        /* ── hint text bounce-in ── */
+        @keyframes hintIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+        .hint-in { animation:hintIn .25s ease both }
+
+        /* ── CTA shine ── */
+        @keyframes cta-shine {
+            0%   { background-position:200% center }
+            100% { background-position:-200% center }
+        }
+        .cta-ready {
+            background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 50%, var(--primary) 100%);
+            background-size:200% auto;
+            animation: cta-shine 2.4s linear infinite;
+        }
     </style>
 </head>
 
-<body style="background:var(--bg);color:var(--text)" x-data="brandChat()" x-init="init()">
+<body x-data="brandVoice()" x-init="init()">
 
-<div class="chat-wrap">
+{{-- ── HEADER ── --}}
+<header class="flex items-center justify-between px-5 py-4 border-b" style="background:var(--surface);border-color:var(--border);max-width:100%">
+    <x-application-logo variant="full" class="h-7 w-auto" />
+    <form action="{{ route('logout') }}" method="POST">
+        @csrf
+        <button type="submit" class="text-xs px-3 py-1.5 rounded-lg transition" style="color:var(--text-muted)">Esci</button>
+    </form>
+</header>
 
-    {{-- ── HEADER ── --}}
-    <header class="shrink-0 flex items-center gap-3 px-4 py-3 border-b" style="background:var(--surface);border-color:var(--border)">
-        <x-application-logo variant="icon" class="h-7 w-7 shrink-0" />
-        <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold leading-tight" style="color:var(--text)">Setup Brand AI</p>
-            <p class="text-[11px] leading-tight" style="color:var(--text-muted)">Racconto il tuo brand in modo naturale</p>
+{{-- ── MAIN ── --}}
+<main class="flex flex-col items-center px-4 py-8 sm:py-12" style="min-height:calc(100dvh - 57px)">
+
+    <div class="w-full max-w-lg">
+
+        {{-- Title --}}
+        <div class="text-center mb-8">
+            <h1 class="text-2xl sm:text-3xl font-bold" style="color:var(--text)">Racconta il tuo brand</h1>
+            <p class="mt-2 text-sm leading-relaxed" style="color:var(--text-muted)">
+                Premi il microfono e parla liberamente.<br class="hidden sm:block">
+                L'AI capisce tutto e compila il profilo in automatico.
+            </p>
         </div>
 
-        {{-- progress pills --}}
-        <div class="hidden sm:flex items-center gap-1.5">
-            <template x-for="f in requiredFields" :key="f.key">
-                <span class="pill" :class="extracted[f.key] ? 'pill-ok' : 'pill-miss'" x-text="f.label"></span>
-            </template>
-        </div>
+        {{-- ── MIC ZONE ── --}}
+        <div class="flex flex-col items-center gap-5 mb-8">
 
-        {{-- logout --}}
-        <form action="{{ route('logout') }}" method="POST" class="ml-2">
-            @csrf
-            <button type="submit" class="text-xs px-2 py-1 rounded-lg transition hover:opacity-70" style="color:var(--text-muted)">Esci</button>
-        </form>
-    </header>
+            {{-- Ripple container --}}
+            <div class="relative flex items-center justify-center" style="width:200px;height:200px">
 
-    {{-- ── MAIN: chat + sidebar ── --}}
-    <div class="flex flex-1 min-h-0">
-
-        {{-- ── CHAT PANEL ── --}}
-        <div class="flex flex-col flex-1 min-w-0">
-
-            {{-- Messages --}}
-            <div class="chat-msgs flex-1 px-4 py-4 space-y-3" id="chat-scroll">
-
-                {{-- AI greeting (static) --}}
-                <div class="flex items-end gap-2 msg-in">
-                    <div class="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:var(--primary)">AI</div>
-                    <div class="bubble-ai px-4 py-2.5 text-sm leading-relaxed shadow-sm">
-                        Ciao! Sono qui per aiutarti a configurare il tuo brand. <br>
-                        Dimmi tutto: come si chiama la tua azienda e cosa fai? Puoi parlare liberamente!
-                    </div>
-                </div>
-
-                {{-- Dynamic messages --}}
-                <template x-for="(msg, i) in messages" :key="i">
-                    <div class="flex msg-in" :class="msg.role === 'user' ? 'justify-end' : 'items-end gap-2'">
-                        <template x-if="msg.role === 'assistant'">
-                            <div class="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:var(--primary)">AI</div>
-                        </template>
-                        <div class="px-4 py-2.5 text-sm leading-relaxed shadow-sm"
-                             :class="msg.role === 'user' ? 'bubble-user' : 'bubble-ai'"
-                             x-html="msg.content.replace(/\n/g,'<br>')"></div>
+                {{-- Rings (only when listening) --}}
+                <template x-if="phase === 'listening'">
+                    <div>
+                        <div class="mic-ring"></div>
+                        <div class="mic-ring"></div>
+                        <div class="mic-ring"></div>
                     </div>
                 </template>
 
-                {{-- AI typing indicator --}}
-                <div x-show="aiTyping" class="flex items-end gap-2 msg-in">
-                    <div class="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:var(--primary)">AI</div>
-                    <div class="bubble-ai px-4 py-3 flex gap-1 items-center">
-                        <span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background:var(--text-muted);animation-delay:0ms"></span>
-                        <span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background:var(--text-muted);animation-delay:150ms"></span>
-                        <span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background:var(--text-muted);animation-delay:300ms"></span>
-                    </div>
-                </div>
+                {{-- Main mic button --}}
+                <button class="mic-btn"
+                    :class="phase === 'listening' ? 'active' : phase === 'processing' ? 'working' : 'idle'"
+                    @click="toggleMic"
+                    :title="phase === 'idle' ? 'Inizia a parlare' : 'Ferma'">
 
+                    {{-- idle: mic icon --}}
+                    <template x-if="phase === 'idle' || phase === 'error'">
+                        <svg width="38" height="38" fill="none" stroke="white" stroke-width="1.75" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+                        </svg>
+                    </template>
+
+                    {{-- listening: stop square --}}
+                    <template x-if="phase === 'listening'">
+                        <svg width="32" height="32" fill="white" viewBox="0 0 24 24">
+                            <rect x="5" y="5" width="14" height="14" rx="2"/>
+                        </svg>
+                    </template>
+
+                    {{-- processing: spinner --}}
+                    <template x-if="phase === 'processing'">
+                        <svg class="animate-spin" width="32" height="32" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="white" stroke-width="4"/>
+                            <path class="opacity-75" fill="white" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                    </template>
+                </button>
             </div>
 
-            {{-- ── INPUT BAR ── --}}
-            <div class="shrink-0 border-t px-3 py-3" style="background:var(--surface);border-color:var(--border)">
+            {{-- Status label --}}
+            <div class="text-center">
+                <p class="text-sm font-semibold hint-in" :key="phase" style="color:var(--text)">
+                    <span x-show="phase === 'idle'"    >Tocca per parlare</span>
+                    <span x-show="phase === 'listening'" x-cloak>In ascolto…</span>
+                    <span x-show="phase === 'processing'" x-cloak>Elaborazione…</span>
+                    <span x-show="phase === 'error'" x-cloak style="color:var(--danger)" x-text="errorMsg"></span>
+                </p>
 
-                {{-- Complete CTA (mobile) - shown when complete --}}
-                <div x-show="isComplete && imageFiles.length > 0" x-cloak class="mb-2 sm:hidden">
-                    <button @click="completeOnboarding" :disabled="completing"
-                        class="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition"
-                        style="background:var(--primary)">
-                        <template x-if="!completing">
-                            <span class="flex items-center gap-2">
-                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                                Genera contenuti demo
-                            </span>
-                        </template>
-                        <template x-if="completing">
-                            <span class="flex items-center gap-2">
-                                <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                                Avvio generazione…
-                            </span>
-                        </template>
-                    </button>
+                {{-- AI hint / last question --}}
+                <p x-show="aiHint && phase === 'idle'" x-cloak
+                   class="mt-1.5 text-sm hint-in"
+                   style="color:var(--text-muted)"
+                   x-text="aiHint"></p>
+
+                {{-- Text fallback input toggle --}}
+                <button x-show="phase === 'idle'" @click="showText = !showText"
+                    class="mt-3 text-xs underline-offset-2 underline transition" style="color:var(--text-muted)">
+                    Preferisci scrivere?
+                </button>
+            </div>
+
+            {{-- Text fallback --}}
+            <div x-show="showText" x-cloak class="w-full hint-in">
+                <div class="flex gap-2">
+                    <input type="text" x-model="textInput"
+                        @keydown.enter="sendText"
+                        placeholder="Scrivi qui del tuo brand…"
+                        class="flex-1 rounded-xl border px-4 py-2.5 text-sm focus:outline-none transition"
+                        style="background:var(--surface);border-color:var(--border);color:var(--text)">
+                    <button @click="sendText" :disabled="!textInput.trim() || phase === 'processing'"
+                        class="rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40 transition"
+                        style="background:var(--primary)">Invia</button>
                 </div>
-
-                {{-- Image upload prompt (mobile) --}}
-                <div x-show="isComplete && imageFiles.length === 0" x-cloak class="mb-2 sm:hidden">
-                    <label class="flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2.5 cursor-pointer transition text-sm font-medium"
-                           style="border-color:var(--accent);color:var(--primary)">
-                        <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                        Carica almeno 1 foto del brand per generare i contenuti
-                        <input type="file" class="hidden" accept="image/png,image/jpeg,image/webp" multiple @change="handleImages($event)">
-                    </label>
-                </div>
-
-                <div class="flex items-end gap-2">
-                    {{-- Text input --}}
-                    <textarea
-                        x-model="userInput"
-                        @keydown.enter.prevent="if(!$event.shiftKey && userInput.trim()) sendMessage()"
-                        placeholder="Scrivi qui…"
-                        rows="1"
-                        :disabled="aiTyping"
-                        class="flex-1 resize-none rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed transition focus:outline-none"
-                        style="background:var(--surface-2);border-color:var(--border);color:var(--text);max-height:120px"
-                        @input="autoResize($el)"
-                    ></textarea>
-
-                    {{-- Mic button --}}
-                    <button @click="toggleMic" type="button"
-                        class="shrink-0 h-10 w-10 rounded-full flex items-center justify-center transition"
-                        :class="listening ? 'mic-listening' : ''"
-                        :style="listening ? 'background:#DC2626;color:#fff' : 'background:var(--surface-3);color:var(--text-muted)'"
-                        title="Parla">
-                        <svg class="h-4.5 w-4.5" style="width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-                                  d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-                                  d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
-                        </svg>
-                    </button>
-
-                    {{-- Send button --}}
-                    <button @click="sendMessage" type="button" :disabled="!userInput.trim() || aiTyping"
-                        class="shrink-0 h-10 w-10 rounded-full flex items-center justify-center transition disabled:opacity-40"
-                        style="background:var(--primary);color:#fff">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
-                        </svg>
-                    </button>
-                </div>
-
-                <p class="mt-1.5 text-center text-[10px]" style="color:var(--text-muted)">Invio con Enter · Shift+Enter per andare a capo</p>
             </div>
         </div>
 
-        {{-- ── SIDEBAR (desktop only) ── --}}
-        <aside class="hidden sm:flex flex-col w-72 xl:w-80 shrink-0 border-l overflow-y-auto" style="background:var(--surface);border-color:var(--border)">
-
-            {{-- Brand data extracted --}}
-            <div class="p-4 border-b" style="border-color:var(--border)">
-                <p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--text-muted)">Dati estratti</p>
-
-                <div class="space-y-2">
-                    <template x-for="f in allFields" :key="f.key">
-                        <div class="flex items-start gap-2">
-                            <div class="mt-0.5 h-4 w-4 shrink-0 rounded-full flex items-center justify-center text-[9px]"
-                                 :style="extracted[f.key] ? 'background:rgba(15,159,110,.15);color:#0F9F6E' : 'background:var(--surface-3);color:var(--text-muted)'">
-                                <template x-if="extracted[f.key]">
-                                    <svg class="h-2.5 w-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
-                                </template>
-                                <template x-if="!extracted[f.key]">
-                                    <span>·</span>
-                                </template>
-                            </div>
-                            <div class="min-w-0">
-                                <p class="text-[11px] font-semibold" style="color:var(--text-muted)" x-text="f.label + (f.required ? ' *' : '')"></p>
-                                <p class="text-xs truncate" style="color:var(--text)" x-text="formatValue(extracted[f.key]) || '—'"></p>
-                            </div>
-                        </div>
-                    </template>
-                </div>
+        {{-- ── FIELD CHIPS ── --}}
+        <div class="rounded-2xl p-4 mb-6" style="background:var(--surface);border:1px solid var(--border)">
+            <p class="text-[11px] font-semibold uppercase tracking-wide mb-3" style="color:var(--text-muted)">Informazioni raccolte</p>
+            <div class="flex flex-wrap gap-2">
+                <template x-for="f in allFields" :key="f.key">
+                    <span class="chip" :class="extracted[f.key] ? 'chip-filled' : 'chip-empty'">
+                        <span class="chip-dot"></span>
+                        <span x-text="f.label"></span>
+                        <template x-if="f.required && !extracted[f.key]">
+                            <span style="color:var(--danger);font-size:.65rem">*</span>
+                        </template>
+                    </span>
+                </template>
             </div>
 
-            {{-- Image upload --}}
-            <div class="p-4 border-b" style="border-color:var(--border)">
-                <p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--text-muted)">Foto brand <span style="color:var(--danger)">*</span></p>
-                <p class="text-[11px] mb-2" style="color:var(--text-muted)">Necessarie per generare i contenuti demo.</p>
+            {{-- Progress bar --}}
+            <div class="mt-3 h-1.5 rounded-full overflow-hidden" style="background:var(--surface-3)">
+                <div class="h-full rounded-full transition-all duration-500"
+                     style="background:var(--accent)"
+                     :style="'width:' + progressPct + '%'"></div>
+            </div>
+            <p class="mt-1.5 text-[11px] text-right" style="color:var(--text-muted)"
+               x-text="filledRequired + '/6 campi obbligatori'"></p>
+        </div>
 
-                <label class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-3 py-4 cursor-pointer transition text-center"
-                       :class="dragOver ? 'dropzone-active' : ''"
-                       style="border-color:var(--border)"
-                       @dragover.prevent="dragOver=true"
-                       @dragleave="dragOver=false"
-                       @drop.prevent="handleDrop($event)">
-                    <svg class="h-7 w-7 mb-1.5" style="color:var(--text-muted)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                    </svg>
-                    <span class="text-xs font-medium" style="color:var(--text)"
-                          x-text="imageFiles.length > 0 ? imageFiles.length + ' foto selezionate' : 'Clicca o trascina le foto'"></span>
-                    <span class="text-[10px] mt-0.5" style="color:var(--text-muted)">PNG, JPG, WebP · max 10 MB</span>
-                    <input type="file" class="hidden" accept="image/png,image/jpeg,image/webp" multiple @change="handleImages($event)">
+        {{-- ── IMAGE UPLOAD ── --}}
+        <div class="rounded-2xl p-4 mb-6" style="background:var(--surface);border:1px solid var(--border)">
+            <div class="flex items-center gap-2 mb-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide" style="color:var(--text-muted)">Foto brand</p>
+                <span class="text-[10px] px-1.5 py-0.5 rounded-md font-semibold"
+                      style="background:rgba(220,38,38,.1);color:var(--danger)">necessarie per la generazione</span>
+            </div>
+
+            <label class="dropzone flex flex-col items-center justify-center py-5 text-center"
+                   :class="dragOver ? 'over' : ''"
+                   @dragover.prevent="dragOver=true"
+                   @dragleave="dragOver=false"
+                   @drop.prevent="handleDrop">
+                <svg class="h-8 w-8 mb-2" style="color:var(--text-muted)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <span class="text-sm font-medium" style="color:var(--text)"
+                      x-text="imageFiles.length ? imageFiles.length + ' foto selezionate — clicca per aggiungerne' : 'Clicca o trascina le foto del brand'"></span>
+                <span class="text-[11px] mt-1" style="color:var(--text-muted)">PNG, JPG, WebP · max 10 MB ciascuna</span>
+                <input type="file" class="hidden" accept="image/png,image/jpeg,image/webp" multiple @change="handleImages">
+            </label>
+
+            <div x-show="imagePreviews.length > 0" class="mt-3 flex flex-wrap gap-2">
+                <template x-for="(url, i) in imagePreviews" :key="i">
+                    <div class="group relative">
+                        <img :src="url" class="h-14 w-14 rounded-xl object-cover border" style="border-color:var(--border)">
+                        <button type="button" @click="removeImage(i)"
+                            class="absolute -right-1 -top-1 hidden h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white group-hover:flex"
+                            style="background:var(--danger)">✕</button>
+                    </div>
+                </template>
+            </div>
+
+            {{-- Logo --}}
+            <div class="mt-3 pt-3 border-t" style="border-color:var(--border)">
+                <label class="flex items-center gap-3 cursor-pointer rounded-xl p-2.5 transition hover:opacity-80"
+                       style="background:var(--surface-2)">
+                    <div x-show="!logoPreview" class="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center" style="background:var(--surface-3)">
+                        <svg class="h-4 w-4" style="color:var(--text-muted)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                    </div>
+                    <img x-show="logoPreview" :src="logoPreview" class="h-8 w-8 rounded-lg object-contain border" style="border-color:var(--border)">
+                    <span class="text-xs flex-1 truncate" style="color:var(--text)"
+                          x-text="logoFile ? logoFile.name : 'Carica logo (opzionale)'"></span>
+                    <input type="file" class="hidden" accept="image/png,image/jpeg,image/webp,image/svg+xml" @change="handleLogo">
                 </label>
-
-                {{-- Thumbnails --}}
-                <div x-show="imagePreviews.length > 0" class="mt-2 flex flex-wrap gap-1.5">
-                    <template x-for="(url, i) in imagePreviews" :key="i">
-                        <div class="group relative">
-                            <img :src="url" class="h-12 w-12 rounded-lg object-cover border" style="border-color:var(--border)">
-                            <button type="button" @click="removeImage(i)"
-                                class="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white group-hover:flex"
-                                style="background:var(--danger)">✕</button>
-                        </div>
-                    </template>
-                </div>
-
-                {{-- Logo upload --}}
-                <div class="mt-3">
-                    <p class="text-[11px] font-semibold mb-1.5" style="color:var(--text-muted)">Logo <span class="font-normal">(opzionale)</span></p>
-                    <label class="flex items-center gap-2 rounded-xl border px-3 py-2 cursor-pointer transition hover:opacity-80"
-                           style="border-color:var(--border);background:var(--surface-2)">
-                        <div x-show="!logoPreview" class="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center" style="background:var(--surface-3)">
-                            <svg class="h-4 w-4" style="color:var(--text-muted)" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-                        </div>
-                        <img x-show="logoPreview" :src="logoPreview" class="h-8 w-8 rounded-lg object-contain border" style="border-color:var(--border)">
-                        <span class="text-xs truncate" style="color:var(--text)"
-                              x-text="logoFile ? logoFile.name : 'Carica logo'"></span>
-                        <input type="file" class="hidden" accept="image/png,image/jpeg,image/webp,image/svg+xml" @change="handleLogo($event)">
-                    </label>
-                </div>
             </div>
+        </div>
 
-            {{-- Complete CTA --}}
-            <div class="p-4 mt-auto">
-                <div x-show="!isComplete" class="text-center">
-                    <p class="text-xs" style="color:var(--text-muted)">Completa la chat per sbloccare la generazione</p>
-                    <div class="mt-2 flex flex-wrap justify-center gap-1">
-                        <template x-for="f in missingFields" :key="f">
-                            <span class="pill pill-miss" x-text="fieldLabel(f)"></span>
-                        </template>
-                    </div>
-                </div>
+        {{-- ── ERROR ── --}}
+        <div x-show="submitError" x-cloak
+             class="rounded-xl px-4 py-3 mb-4 text-sm"
+             style="background:rgba(220,38,38,.07);border:1px solid rgba(220,38,38,.2);color:var(--danger)"
+             x-text="submitError"></div>
 
-                <div x-show="isComplete" x-cloak>
-                    <div x-show="imageFiles.length === 0" class="mb-3 rounded-xl border px-3 py-2.5 text-xs text-center"
-                         style="border-color:var(--warning);background:rgba(245,158,11,.07);color:#B45309">
-                        Carica almeno 1 foto per continuare
-                    </div>
-                    <div x-show="errorMsg" class="mb-3 rounded-xl border px-3 py-2 text-xs" style="border-color:var(--danger);background:rgba(220,38,38,.07);color:var(--danger)" x-text="errorMsg"></div>
+        {{-- ── CTA ── --}}
+        <button @click="uploadAndComplete"
+            :disabled="!canComplete || completing"
+            class="w-full flex items-center justify-center gap-2.5 rounded-2xl py-4 text-base font-bold text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+            :class="canComplete ? 'cta-ready' : ''"
+            :style="!canComplete ? 'background:var(--surface-3);color:var(--text-muted)' : ''">
+            <template x-if="!completing">
+                <span class="flex items-center gap-2">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span x-text="canComplete ? 'Genera i contenuti demo' : 'Parla del tuo brand per sbloccare'"></span>
+                </span>
+            </template>
+            <template x-if="completing">
+                <span class="flex items-center gap-2">
+                    <svg class="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Avvio generazione…
+                </span>
+            </template>
+        </button>
 
-                    <button @click="uploadAndComplete" :disabled="imageFiles.length === 0 || completing"
-                        class="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition disabled:opacity-50"
-                        style="background:var(--primary)">
-                        <template x-if="!completing">
-                            <span class="flex items-center gap-2">
-                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                                Genera contenuti demo
-                            </span>
-                        </template>
-                        <template x-if="completing">
-                            <span class="flex items-center gap-2">
-                                <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                                Avvio generazione…
-                            </span>
-                        </template>
-                    </button>
-                </div>
-            </div>
+        <p class="mt-3 text-center text-[11px]" style="color:var(--text-muted)">
+            Puoi anche <a href="#" @click.prevent="skipToManual" class="underline underline-offset-2">compilare manualmente</a>
+        </p>
 
-        </aside>
     </div>
+</main>
 
-</div>
+{{-- Hidden manual fallback form (redirect to old-style if user wants) --}}
+<form id="manual-redirect" action="{{ route('onboarding') }}" method="GET" class="hidden"></form>
 
 <script>
-function brandChat() {
+function brandVoice() {
     return {
-        // state
-        messages:      [],
-        userInput:     '',
-        aiTyping:      false,
-        listening:     false,
-        isComplete:    false,
-        completing:    false,
-        dragOver:      false,
-        errorMsg:      '',
-        missingFields: ['business_name','industry','services','target','default_tone','default_goal'],
+        // phase: idle | listening | processing | error
+        phase:      'idle',
+        errorMsg:   '',
+        aiHint:     'Dimmi il nome della tua azienda e cosa fate.',
+        showText:   false,
+        textInput:  '',
+        completing: false,
+        submitError:'',
+        dragOver:   false,
+
+        // conversation history (hidden from user)
+        history: [],
 
         // extracted data
         extracted: {
@@ -331,84 +326,161 @@ function brandChat() {
             notes:             null,
         },
 
+        allFields: [
+            { key:'business_name', label:'Nome brand',  required:true  },
+            { key:'industry',      label:'Settore',      required:true  },
+            { key:'services',      label:'Servizi',      required:true  },
+            { key:'target',        label:'Audience',     required:true  },
+            { key:'default_tone',  label:'Tono',         required:true  },
+            { key:'default_goal',  label:'Obiettivo',    required:true  },
+            { key:'default_platforms', label:'Piattaforme', required:false },
+            { key:'vision',        label:'Visione',      required:false },
+            { key:'values',        label:'Valori',       required:false },
+            { key:'cta',           label:'CTA',          required:false },
+            { key:'notes',         label:'Note',         required:false },
+        ],
+
         // files
         imageFiles:    [],
         imagePreviews: [],
         logoFile:      null,
         logoPreview:   null,
 
-        // speech recognition
-        recognition: null,
+        // speech
+        recognition:   null,
+        silenceTimer:  null,
 
-        // field metadata
-        requiredFields: [
-            { key:'business_name', label:'Brand'    },
-            { key:'industry',      label:'Settore'  },
-            { key:'services',      label:'Servizi'  },
-            { key:'target',        label:'Audience' },
-            { key:'default_tone',  label:'Tono'     },
-            { key:'default_goal',  label:'Obiettivo'},
-        ],
-        allFields: [
-            { key:'business_name',     label:'Nome brand',   required:true  },
-            { key:'industry',          label:'Settore',       required:true  },
-            { key:'services',          label:'Servizi',       required:true  },
-            { key:'target',            label:'Audience',      required:true  },
-            { key:'default_tone',      label:'Tono',          required:true  },
-            { key:'default_goal',      label:'Obiettivo',     required:true  },
-            { key:'default_platforms', label:'Piattaforme',   required:false },
-            { key:'vision',            label:'Visione',       required:false },
-            { key:'values',            label:'Valori',        required:false },
-            { key:'cta',               label:'CTA',           required:false },
-            { key:'notes',             label:'Note',          required:false },
-        ],
-
-        init() {
-            this.setupSpeech();
+        get filledRequired() {
+            const req = ['business_name','industry','services','target','default_tone','default_goal'];
+            return req.filter(k => this.extracted[k]).length;
         },
 
-        setupSpeech() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) return;
-            const r = new SpeechRecognition();
-            r.lang = 'it-IT';
+        get progressPct() {
+            return Math.round((this.filledRequired / 6) * 100);
+        },
+
+        get isComplete() {
+            return this.filledRequired === 6;
+        },
+
+        get canComplete() {
+            return this.isComplete && this.imageFiles.length > 0;
+        },
+
+        init() {
+            // nothing auto-started
+        },
+
+        // ── SPEECH ───────────────────────────────────────────────────────────
+        buildRecognition() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return null;
+
+            const r         = new SR();
+            r.lang          = 'it-IT';
+            r.continuous    = false;
             r.interimResults = false;
             r.maxAlternatives = 1;
+
             r.onresult = (e) => {
-                const transcript = e.results[0][0].transcript;
-                this.userInput = transcript;
-                this.listening = false;
-                this.$nextTick(() => this.sendMessage());
+                this.clearSilenceTimer();
+                let transcript = '';
+                for (let i = e.resultIndex; i < e.results.length; i++) {
+                    if (e.results[i].isFinal) transcript += e.results[i][0].transcript;
+                }
+                if (transcript.trim()) {
+                    this.phase = 'processing';
+                    this.processInput(transcript.trim());
+                } else {
+                    this.phase = 'idle';
+                }
             };
-            r.onerror = () => { this.listening = false; };
-            r.onend   = () => { this.listening = false; };
-            this.recognition = r;
+
+            r.onerror = (e) => {
+                this.clearSilenceTimer();
+                if (e.error === 'no-speech') {
+                    this.phase   = 'idle';
+                } else if (e.error === 'not-allowed') {
+                    this.phase    = 'error';
+                    this.errorMsg = 'Microfono non autorizzato. Usa la tastiera.';
+                    this.showText = true;
+                } else {
+                    this.phase    = 'error';
+                    this.errorMsg = 'Errore microfono (' + e.error + '). Riprova.';
+                }
+            };
+
+            r.onend = () => {
+                this.clearSilenceTimer();
+                // If still in listening state after end (no result, no error) → go idle
+                if (this.phase === 'listening') this.phase = 'idle';
+            };
+
+            return r;
+        },
+
+        clearSilenceTimer() {
+            if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
         },
 
         toggleMic() {
-            if (!this.recognition) {
-                alert('Il riconoscimento vocale non è supportato in questo browser.');
-                return;
-            }
-            if (this.listening) {
-                this.recognition.stop();
-            } else {
-                this.listening = true;
-                this.recognition.start();
+            if (this.phase === 'listening') {
+                this.stopListening();
+            } else if (this.phase === 'idle' || this.phase === 'error') {
+                this.startListening();
             }
         },
 
-        async sendMessage() {
-            const text = this.userInput.trim();
-            if (!text || this.aiTyping) return;
+        startListening() {
+            // Re-create each time to avoid stale state on mobile
+            this.recognition = this.buildRecognition();
+            if (!this.recognition) {
+                this.phase    = 'error';
+                this.errorMsg = 'Riconoscimento vocale non supportato. Usa la tastiera.';
+                this.showText = true;
+                return;
+            }
 
-            this.messages.push({ role: 'user', content: text });
-            this.userInput = '';
-            this.$nextTick(() => this.scrollDown());
+            this.phase    = 'listening';
+            this.errorMsg = '';
 
-            this.aiTyping = true;
             try {
-                const res = await fetch('{{ route('ai.brand.chat') }}', {
+                this.recognition.start();
+
+                // Safety timeout: auto-stop after 30s
+                this.silenceTimer = setTimeout(() => {
+                    if (this.phase === 'listening') this.stopListening();
+                }, 30000);
+            } catch(e) {
+                this.phase    = 'error';
+                this.errorMsg = 'Impossibile avviare il microfono. Riprova.';
+            }
+        },
+
+        stopListening() {
+            this.clearSilenceTimer();
+            if (this.recognition) {
+                try { this.recognition.stop(); } catch(_) {}
+                this.recognition = null;
+            }
+            if (this.phase === 'listening') this.phase = 'idle';
+        },
+
+        // ── TEXT FALLBACK ─────────────────────────────────────────────────────
+        async sendText() {
+            const text = this.textInput.trim();
+            if (!text) return;
+            this.textInput = '';
+            this.phase = 'processing';
+            await this.processInput(text);
+        },
+
+        // ── CORE: send to AI ──────────────────────────────────────────────────
+        async processInput(text) {
+            this.history.push({ role: 'user', content: text });
+
+            try {
+                const res  = await fetch('{{ route('ai.brand.chat') }}', {
                     method:  'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -416,29 +488,37 @@ function brandChat() {
                         'Accept':       'application/json',
                     },
                     body: JSON.stringify({
-                        messages:         this.messages,
+                        messages:         this.history,
                         existing_profile: this.extractedNonNull(),
                     }),
                 });
+
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.message || 'Errore AI');
 
-                this.messages.push({ role: 'assistant', content: data.reply });
+                // Save AI reply in history (for context on next turn)
+                this.history.push({ role: 'assistant', content: data.reply });
 
-                // merge extracted fields
+                // Show AI reply as hint text (max 120 chars)
+                this.aiHint = data.reply.length > 120
+                    ? data.reply.slice(0, 117) + '…'
+                    : data.reply;
+
+                // Merge extracted fields (never overwrite with null)
                 if (data.extracted) {
                     for (const [k, v] of Object.entries(data.extracted)) {
                         if (v !== null && v !== '') this.extracted[k] = v;
                     }
                 }
-                this.missingFields = data.missing_fields || [];
-                this.isComplete    = data.complete === true;
+
+                this.phase = 'idle';
+
+                // Auto-speak AI reply if TTS available
+                this.speak(data.reply);
 
             } catch(e) {
-                this.messages.push({ role:'assistant', content:'Mi dispiace, si è verificato un errore. Riprova.' });
-            } finally {
-                this.aiTyping = false;
-                this.$nextTick(() => this.scrollDown());
+                this.aiHint = 'Errore. Riprova.';
+                this.phase  = 'idle';
             }
         },
 
@@ -448,29 +528,34 @@ function brandChat() {
             );
         },
 
-        scrollDown() {
-            const el = document.getElementById('chat-scroll');
-            if (el) el.scrollTop = el.scrollHeight;
+        // ── TTS (optional, non-blocking) ──────────────────────────────────────
+        speak(text) {
+            if (!window.speechSynthesis || !text) return;
+            try {
+                const clean = text.replace(/[*_`#]/g, '').trim();
+                const utt   = new SpeechSynthesisUtterance(clean);
+                utt.lang    = 'it-IT';
+                utt.rate    = 1.05;
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utt);
+            } catch(_) {}
         },
 
-        autoResize(el) {
-            el.style.height = 'auto';
-            el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-        },
-
+        // ── FILES ─────────────────────────────────────────────────────────────
         handleImages(event) {
             const files = Array.from(event.target.files);
             if (!files.length) return;
-            this.imageFiles = [...this.imageFiles, ...files];
+            this.imageFiles    = [...this.imageFiles, ...files];
             this.imagePreviews = [...this.imagePreviews, ...files.map(f => URL.createObjectURL(f))];
             event.target.value = '';
         },
 
         handleDrop(event) {
             this.dragOver = false;
-            const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+            const files   = Array.from(event.dataTransfer.files)
+                .filter(f => f.type.startsWith('image/'));
             if (!files.length) return;
-            this.imageFiles = [...this.imageFiles, ...files];
+            this.imageFiles    = [...this.imageFiles, ...files];
             this.imagePreviews = [...this.imagePreviews, ...files.map(f => URL.createObjectURL(f))];
         },
 
@@ -487,58 +572,56 @@ function brandChat() {
             this.logoPreview = URL.createObjectURL(file);
         },
 
+        // ── COMPLETE ─────────────────────────────────────────────────────────
         async uploadAndComplete() {
-            this.errorMsg = '';
-            if (this.imageFiles.length === 0) { this.errorMsg = 'Carica almeno 1 foto.'; return; }
-            this.completing = true;
+            if (!this.canComplete) return;
+            this.submitError = '';
+            this.completing  = true;
+
             try {
-                // 1. Upload assets
                 const csrf = document.querySelector('meta[name="csrf-token"]').content;
-                const fd   = new FormData();
+
+                // 1. Upload assets
+                const fd = new FormData();
                 if (this.logoFile) fd.append('logo', this.logoFile);
                 this.imageFiles.forEach((f, i) => fd.append('images[' + i + ']', f));
-                const uploadRes = await fetch('{{ route('onboarding.assets') }}', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
-                    body: fd,
-                });
-                if (!uploadRes.ok) { const d = await uploadRes.json(); throw new Error(d.message || 'Errore upload.'); }
 
-                // 2. Complete onboarding (applies extracted + runs quickstart)
+                const uploadRes = await fetch('{{ route('onboarding.assets') }}', {
+                    method:      'POST',
+                    credentials: 'same-origin',
+                    headers:     { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+                    body:        fd,
+                });
+                if (!uploadRes.ok) {
+                    const d = await uploadRes.json();
+                    throw new Error(d.message || 'Errore upload foto.');
+                }
+
+                // 2. Complete onboarding
                 const completeRes = await fetch('{{ route('ai.brand.onboarding-complete') }}', {
                     method:  'POST',
                     headers: { 'Content-Type':'application/json','X-CSRF-TOKEN':csrf,'Accept':'application/json' },
-                    body: JSON.stringify({ extracted: this.extractedNonNull() }),
+                    body:    JSON.stringify({ extracted: this.extractedNonNull() }),
                 });
                 const data = await completeRes.json();
                 if (!completeRes.ok) throw new Error(data.message || 'Errore generazione.');
+
                 window.location.href = data.redirect_url;
 
             } catch(e) {
-                this.errorMsg  = e.message;
-                this.completing = false;
+                this.submitError = e.message;
+                this.completing  = false;
             }
         },
 
-        // mobile path: upload + complete
-        async completeOnboarding() {
-            return this.uploadAndComplete();
-        },
-
-        formatValue(v) {
-            if (!v) return null;
-            if (Array.isArray(v)) return v.join(', ');
-            return String(v);
-        },
-
-        fieldLabel(key) {
-            const f = this.allFields.find(f => f.key === key);
-            return f ? f.label : key;
+        skipToManual() {
+            // We'll just reload and the old form-based approach would be needed
+            // For now, show text input
+            this.showText = true;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         },
     };
 }
 </script>
-
 </body>
 </html>

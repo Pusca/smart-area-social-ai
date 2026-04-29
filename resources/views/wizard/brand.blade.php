@@ -2785,8 +2785,8 @@
 
                 <button @click="toggleMic" type="button"
                     class="shrink-0 h-10 w-10 rounded-full flex items-center justify-center transition"
-                    :style="listening ? 'background:#DC2626;color:#fff' : 'background:var(--surface-3);color:var(--text-muted)'"
-                    :class="listening ? 'bv-mic-pulse' : ''"
+                    :style="micPhase === 'listening' ? 'background:#DC2626;color:#fff' : 'background:var(--surface-3);color:var(--text-muted)'"
+                    :class="micPhase === 'listening' ? 'bv-mic-pulse' : ''"
                     title="Parla">
                     <svg style="width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
@@ -2812,7 +2812,7 @@
 .bv-mic-pulse { animation: bv-pulse 1.2s ease-in-out infinite }
 @keyframes bv-pulse {
     0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.4)}
-    50%{box-shadow:0 0 0 10px rgba(220,38,38,0)}
+    50%{box-shadow:0 0 0 12px rgba(220,38,38,0)}
 }
 </style>
 
@@ -2823,40 +2823,95 @@ function brandVoiceModal() {
         messages:    [],
         userInput:   '',
         aiTyping:    false,
-        listening:   false,
+        micPhase:    'idle',   // idle | listening | processing
         applying:    false,
         appliedOk:   false,
         recognition: null,
+        silenceTimer:null,
         extracted:   {},
 
         get hasExtracted() {
             return Object.values(this.extracted).some(v => v !== null && v !== '');
         },
 
-        init() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) return;
-            const r = new SpeechRecognition();
-            r.lang = 'it-IT';
-            r.interimResults = false;
-            r.onresult = (e) => {
-                this.userInput = e.results[0][0].transcript;
-                this.listening = false;
-                this.$nextTick(() => this.sendMessage());
-            };
-            r.onerror = () => { this.listening = false; };
-            r.onend   = () => { this.listening = false; };
-            this.recognition = r;
-        },
+        get listening() { return this.micPhase === 'listening'; },
+
+        init() { /* no-op */ },
 
         close() {
+            this.stopMic();
             this.open = false;
         },
 
+        // ── robust speech recognition ──────────────────────────────────────
+        buildRecognition() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return null;
+            const r          = new SR();
+            r.lang           = 'it-IT';
+            r.continuous     = false;
+            r.interimResults = false;
+            r.maxAlternatives = 1;
+
+            r.onresult = (e) => {
+                this.clearSilenceTimer();
+                let transcript = '';
+                for (let i = e.resultIndex; i < e.results.length; i++) {
+                    if (e.results[i].isFinal) transcript += e.results[i][0].transcript;
+                }
+                if (transcript.trim()) {
+                    this.userInput = transcript.trim();
+                    this.micPhase  = 'idle';
+                    this.$nextTick(() => this.sendMessage());
+                } else {
+                    this.micPhase = 'idle';
+                }
+            };
+
+            r.onerror = (e) => {
+                this.clearSilenceTimer();
+                this.micPhase = 'idle';
+                if (e.error === 'not-allowed') {
+                    this.messages.push({ role:'assistant', content:'Microfono non autorizzato. Scrivi qui sotto.' });
+                    this.$nextTick(() => this.bvScrollDown());
+                }
+            };
+
+            r.onend = () => {
+                this.clearSilenceTimer();
+                if (this.micPhase === 'listening') this.micPhase = 'idle';
+            };
+
+            return r;
+        },
+
+        clearSilenceTimer() {
+            if (this.silenceTimer) { clearTimeout(this.silenceTimer); this.silenceTimer = null; }
+        },
+
         toggleMic() {
-            if (!this.recognition) { alert('Riconoscimento vocale non supportato.'); return; }
-            if (this.listening) { this.recognition.stop(); }
-            else { this.listening = true; this.recognition.start(); }
+            if (this.micPhase === 'listening') { this.stopMic(); return; }
+            this.startMic();
+        },
+
+        startMic() {
+            this.recognition = this.buildRecognition();
+            if (!this.recognition) {
+                this.messages.push({ role:'assistant', content:'Riconoscimento vocale non supportato. Usa la tastiera.' });
+                this.$nextTick(() => this.bvScrollDown());
+                return;
+            }
+            this.micPhase = 'listening';
+            try {
+                this.recognition.start();
+                this.silenceTimer = setTimeout(() => this.stopMic(), 30000);
+            } catch(_) { this.micPhase = 'idle'; }
+        },
+
+        stopMic() {
+            this.clearSilenceTimer();
+            if (this.recognition) { try { this.recognition.stop(); } catch(_) {} this.recognition = null; }
+            if (this.micPhase === 'listening') this.micPhase = 'idle';
         },
 
         bvAutoResize(el) {
@@ -2877,7 +2932,7 @@ function brandVoiceModal() {
                     method:  'POST',
                     headers: { 'Content-Type':'application/json','X-CSRF-TOKEN':csrf,'Accept':'application/json' },
                     body: JSON.stringify({
-                        messages: this.messages,
+                        messages:         this.messages,
                         existing_profile: this.currentProfileData(),
                     }),
                 });
@@ -2898,7 +2953,6 @@ function brandVoiceModal() {
         },
 
         currentProfileData() {
-            // Grab existing profile fields from the page (pre-filled inputs)
             const fields = ['business_name','industry','services','target','default_tone','default_goal','vision','values','cta','notes'];
             const data = {};
             fields.forEach(f => {
