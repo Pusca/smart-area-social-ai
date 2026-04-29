@@ -6,6 +6,7 @@ use App\Data\ContentGenerationInput;
 use App\Jobs\GenerateAiForContentItem;
 use App\Models\AlterEgo;
 use App\Models\ContentItem;
+use App\Models\TenantProfile;
 use App\Services\AlterEgoService;
 use App\Services\Editorial\CreativeBriefCompiler;
 use App\Services\Editorial\TrendBriefService;
@@ -13,6 +14,7 @@ use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\GenerationAuditService;
 use App\Services\Learning\TenantLearningLoopService;
 use App\Services\MemoryBuilderService;
+use App\Support\VisualModePresets;
 use Illuminate\Support\Str;
 
 class BuildGenerationContextStep
@@ -97,6 +99,17 @@ class BuildGenerationContextStep
             ->values()
             ->all();
 
+        // ── Visual mode — letto fresh dal DB (sempre aggiornato anche senza rigenerare il piano) ──
+        $visualMode = (string) data_get($meta, 'visual_mode', '');
+        if ($visualMode === '') {
+            $freshProfile = TenantProfile::query()
+                ->where('tenant_id', (int) $item->tenant_id)
+                ->value('overlay_preferences');
+            $freshOverlay = is_array($freshProfile) ? $freshProfile : (is_string($freshProfile) ? (json_decode($freshProfile, true) ?? []) : []);
+            $visualMode = (string) ($freshOverlay['visual_mode'] ?? VisualModePresets::DEFAULT_MODE);
+        }
+        $visualModePreset = VisualModePresets::getOrDefault($visualMode);
+
         $tenantLearning = (bool) config('social_manager.features.tenant_learning_v1', true)
             ? $this->tenantLearningLoopService->refreshForTenant((int) $item->tenant_id)
             : (array) data_get($meta, 'tenant_learning', data_get($strategy, 'tenant_learning', []));
@@ -114,18 +127,23 @@ class BuildGenerationContextStep
                 ]
             )
             : (array) data_get($meta, 'trend_brief', data_get($strategy, 'trend_brief', []));
-        $creativeBrief = (bool) config('social_manager.features.creative_brief_v1', true)
-            ? $this->creativeBriefCompiler->compileForContentItem($item, [
-                'strategy' => $strategy,
-                'tenant_profile' => $tenantProfile,
-                'item_brain' => $itemBrain,
-                'asset_identity' => $assetIdentity,
-                'memory_summary' => $memorySummary,
-                'trend_brief' => $trendBrief,
-                'tenant_learning' => $tenantLearning,
-                'brief_seed' => $briefSeed,
-            ])->toArray()
-            : (array) data_get($meta, 'creative_brief', []);
+
+        // Creative brief sempre attivo — non dipende da feature flag
+        $creativeBrief = $this->creativeBriefCompiler->compileForContentItem($item, [
+            'strategy' => $strategy,
+            'tenant_profile' => $tenantProfile,
+            'item_brain' => $itemBrain,
+            'asset_identity' => $assetIdentity,
+            'memory_summary' => $memorySummary,
+            'trend_brief' => $trendBrief,
+            'tenant_learning' => $tenantLearning,
+            'brief_seed' => $briefSeed,
+            'visual_mode' => $visualMode,
+        ])->toArray();
+
+        // ── Hard constraints — estratti da asset_variables e promossi in testa al context ──
+        // GPT legge hard_constraints PRIMA di tutto il resto: identita reali non negoziabili.
+        $hardConstraints = $this->buildHardConstraints($assetVariables, $assetIdentity);
 
         $planContext = ContentItem::query()
             ->where('tenant_id', $item->tenant_id)
@@ -159,11 +177,16 @@ class BuildGenerationContextStep
         $state->run = $run;
         $state->run = $this->generationAudit->syncRun($state->run, [
             'creative_brief' => $creativeBrief,
+            'visual_mode' => $visualMode,
+            'hard_constraints_count' => count($hardConstraints),
         ]);
         $state->meta = $meta;
         $state->meta['tenant_learning'] = $tenantLearning;
         $state->meta['trend_brief'] = $trendBrief;
         $state->meta['creative_brief'] = $creativeBrief;
+        $state->meta['visual_mode'] = $visualMode;
+        $state->meta['visual_mode_preset'] = $visualModePreset;
+        $state->meta['hard_constraints'] = $hardConstraints;
         if (!empty($alterEgoContext)) {
             $state->meta['alter_ego'] = $alterEgoContext;
         }
@@ -182,7 +205,10 @@ class BuildGenerationContextStep
             ->put('recent_captions', $recentCaptions)
             ->put('plan_titles', $planTitles)
             ->put('plan_captions', $planCaptions)
-            ->put('alter_ego', $alterEgoContext);
+            ->put('alter_ego', $alterEgoContext)
+            ->put('visual_mode', $visualMode)
+            ->put('visual_mode_preset', $visualModePreset)
+            ->put('hard_constraints', $hardConstraints);
 
         // ── Build typed DTO for downstream steps ───────────────────────────
         $state->input = ContentGenerationInput::fromItemAndMeta($item, $state->meta, $state->strictAssetMode);
@@ -191,6 +217,70 @@ class BuildGenerationContextStep
         $item->save();
 
         return $state;
+    }
+
+    /**
+     * Estrae hard constraints non negoziabili da asset_variables e asset_identity.
+     * Restituisce un array flat di stringhe da iniettare in testa al context GPT.
+     *
+     * @param  array<string, mixed>  $assetVariables
+     * @param  array<string, mixed>  $assetIdentity
+     * @return list<string>
+     */
+    private function buildHardConstraints(array $assetVariables, array $assetIdentity): array
+    {
+        $constraints = [];
+
+        // ── Personas in asset_variables ──────────────────────────────────────
+        $personas = (array) data_get($assetVariables, 'personas', []);
+        foreach ($personas as $persona) {
+            if (!is_array($persona)) {
+                continue;
+            }
+            $name = (string) data_get($persona, 'name', '');
+            $role = (string) data_get($persona, 'role', '');
+            $immutableTraits = (array) data_get($persona, 'immutable_traits', []);
+            $promptNotes = (string) data_get($persona, 'prompt_notes', '');
+            $lookNotes = (string) data_get($persona, 'look_notes', '');
+
+            if ($name !== '') {
+                $label = $name . ($role !== '' ? " ({$role})" : '');
+                foreach ($immutableTraits as $trait) {
+                    if (is_string($trait) && $trait !== '') {
+                        $constraints[] = "PERSONA {$label} — tratto immutabile: {$trait}";
+                    }
+                }
+                if ($promptNotes !== '') {
+                    $constraints[] = "PERSONA {$label} — regola operativa: {$promptNotes}";
+                }
+                if ($lookNotes !== '') {
+                    $constraints[] = "PERSONA {$label} — look obbligatorio: {$lookNotes}";
+                }
+            }
+        }
+
+        // ── asset_identity locked_elements e consistency_mode ────────────────
+        $lockedElements = (array) data_get($assetIdentity, 'locked_elements', []);
+        foreach ($lockedElements as $element) {
+            if (is_string($element) && $element !== '') {
+                $constraints[] = "ELEMENTO BLOCCATO (non modificabile): {$element}";
+            }
+        }
+
+        $consistencyMode = (string) data_get($assetIdentity, 'consistency_mode', '');
+        if ($consistencyMode === 'strict') {
+            $constraints[] = "CONSISTENCY_MODE=strict: usa solo editing e variazioni controllate. Non cambiare soggetto principale, ambiente o styling.";
+        }
+
+        // ── Catalog level immutable constraints ──────────────────────────────
+        $catalogConstraints = (array) data_get($assetVariables, 'catalog_constraints', []);
+        foreach ($catalogConstraints as $constraint) {
+            if (is_string($constraint) && $constraint !== '') {
+                $constraints[] = "VINCOLO CATALOGO: {$constraint}";
+            }
+        }
+
+        return array_values($constraints);
     }
 
     /**

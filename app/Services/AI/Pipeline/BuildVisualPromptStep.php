@@ -23,6 +23,7 @@ class BuildVisualPromptStep
         $assetVariables = (array) $state->get('asset_variables', []);
         $assetIdentity = (array) $state->get('asset_identity', []);
         $assetScoring = (array) $state->get('asset_scoring', (array) data_get($meta, 'asset_scoring', []));
+        $visualModePreset = (array) $state->get('visual_mode_preset', (array) data_get($meta, 'visual_mode_preset', []));
         $alterEgo = (array) $state->get('alter_ego', []);
         $alterEgoVisualRefs = array_values(array_filter(array_map(
             'strval',
@@ -131,6 +132,16 @@ class BuildVisualPromptStep
                 . ($selectedBrandImage ? "Usa i riferimenti brand come guida di stile, palette e identita visiva, ma crea una composizione fotografica COMPLETAMENTE NUOVA e ORIGINALE: nuova inquadratura, nuova luce, nuova scena. NON copiare ne riprodurre l'immagine di riferimento. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                 . "REGOLA ASSOLUTA E INVIOLABILE: NON includere nell'immagine nessun testo, lettera, numero, parola, scritta, titolo, slogan, caption, watermark, logo finto o qualsiasi segno tipografico. L'immagine deve contenere SOLO elementi visivi puri: persone, oggetti, scene, sfondi, luci, colori, forme. Zero testo. "
                 . "Stile professionale, fotografia editoriale premium, coerente con il brand.";
+
+            // ── Visual mode modifiers ────────────────────────────────────────
+            $positiveModifiers = trim((string) data_get($visualModePreset, 'positive_modifiers', ''));
+            $negativeModifiers = trim((string) data_get($visualModePreset, 'negative_modifiers', ''));
+            if ($positiveModifiers !== '') {
+                $prompt .= ' ' . $positiveModifiers;
+            }
+            if ($negativeModifiers !== '') {
+                $prompt .= ' ' . $negativeModifiers;
+            }
 
             $item->ai_image_prompt = $prompt;
             $item->save();

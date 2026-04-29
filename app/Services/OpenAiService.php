@@ -88,8 +88,11 @@ class OpenAiService
         $timeout = (int) (config('openai.timeout') ?: 60);
         $maxOutputTokens = max(600, (int) (config('openai.text_max_output_tokens') ?: 1400));
 
-        $instructions =
-            "Sei una social media manager senior.\n"
+        // ── Visual mode GPT instruction (prepended so the model reads it first) ──
+        $visualModeGptInstruction = trim((string) data_get($context, 'visual_mode_preset.gpt_instruction', ''));
+
+        $instructions = ($visualModeGptInstruction !== '' ? $visualModeGptInstruction . "\n\n" : '')
+            . "Sei una social media manager senior.\n"
             . "Usa strategia, profilo brand e direttive item_brain quando presenti nel contesto.\n"
             . "Se creative_brief e presente, trattalo come artefatto canonico pre-generazione: objective, hook_strategy, proof_points, identity_constraints, trend_overlays e publishability_constraints hanno priorita strategica.\n"
             . "Se trend_brief e presente, usa current_relevant_themes, recommended_post_angles, recommended_reel_structures, recommended_hook_patterns, recommended_cta_styles e trends_to_avoid come base fresca ed esplicabile.\n"

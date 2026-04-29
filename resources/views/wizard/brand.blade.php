@@ -63,6 +63,8 @@
     $overlayPreset = old('overlay_preset', $overlayPreferences['preset'] ?? 'modern_split_caption');
     $overlaySafeArea = old('overlay_safe_area', $overlayPreferences['safe_area'] ?? 'upper_third');
     $overlayAutoEnabled = (bool) old('overlay_auto_enabled', $overlayPreferences['auto_enabled'] ?? true);
+    $visualMode = old('visual_mode', $overlayPreferences['visual_mode'] ?? \App\Support\VisualModePresets::DEFAULT_MODE);
+    $visualModePresets = \App\Support\VisualModePresets::all();
     $preferredHookIntensity = old('preferred_hook_intensity', $overlayPreferences['preferred_hook_intensity'] ?? 'medium');
     $trendAppetite = old('trend_appetite', $overlayPreferences['trend_appetite'] ?? 'medium');
     $professionalismGuardrailLevel = old('professionalism_guardrail_level', $overlayPreferences['professionalism_guardrail_level'] ?? 'high');
@@ -995,6 +997,22 @@
                                     <option value="{{ $key }}" @selected($overlayPreset === $key)>{{ $row['label'] ?? $key }}</option>
                                 @endforeach
                             </select>
+                        </div>
+                        {{-- ── Visual mode preset ───────────────────────────────────────── --}}
+                        <div class="col-span-full">
+                            <label class="{{ $labelClass }} mb-2 block">Stile fotografico AI</label>
+                            <p class="mb-3 text-xs text-gray-500">Definisce il look visivo delle immagini generate dall'AI per questo brand.</p>
+                            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                                @foreach($visualModePresets as $modeKey => $modePreset)
+                                    <label class="cursor-pointer">
+                                        <input type="radio" name="visual_mode" value="{{ $modeKey }}" class="sr-only peer" @checked($visualMode === $modeKey)>
+                                        <div class="rounded-xl border-2 border-gray-200 bg-white p-3 text-center transition-all peer-checked:border-indigo-500 peer-checked:bg-indigo-50 hover:border-gray-300">
+                                            <span class="block font-semibold text-sm text-gray-800">{{ $modePreset['label'] }}</span>
+                                            <span class="mt-1 block text-xs text-gray-500 leading-snug">{{ $modePreset['description'] }}</span>
+                                        </div>
+                                    </label>
+                                @endforeach
+                            </div>
                         </div>
                         <div>
                             <label for="preferred_hook_intensity" class="{{ $labelClass }}">Preferred hook intensity</label>
