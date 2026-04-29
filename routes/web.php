@@ -18,6 +18,7 @@ use App\Http\Controllers\AdminWorkspaceController;
 use App\Http\Controllers\AgencyBrandSwitchController;
 use App\Http\Controllers\AlterEgoController;
 use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\BrandAiController;
 use App\Http\Controllers\LinkedInSocialController;
 use App\Http\Controllers\TikTokSocialController;
 use App\Http\Controllers\GoogleBusinessSocialController;
@@ -50,6 +51,10 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->gro
     Route::post('/onboarding/skip-social', [OnboardingController::class, 'skipSocial'])->name('onboarding.skip-social');
     Route::post('/onboarding/assets', [OnboardingController::class, 'uploadAssets'])->name('onboarding.assets');
     Route::post('/onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
+
+    // AI Brand chat — disponibile durante onboarding (nessun middleware onboardingComplete)
+    Route::post('/ai/brand/chat', [BrandAiController::class, 'chat'])->name('ai.brand.chat');
+    Route::post('/ai/brand/onboarding-complete', [BrandAiController::class, 'onboardingComplete'])->name('ai.brand.onboarding-complete');
 });
 
 // ── App principale (protetta da onboarding) ───────────────────────────────────
@@ -71,6 +76,9 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
     // ── Onboarding da URL: scraping brand ───────────────────────────────────
     // Endpoint usato dal wizard di onboarding per pre-compilare il profilo
     // estraendo dati dal sito web del cliente senza API esterne.
+    // AI Brand apply (brand center aggiornamento via AI)
+    Route::post('/ai/brand/apply', [BrandAiController::class, 'apply'])->name('ai.brand.apply');
+
     Route::post('/profile/brand/scrape-url', [TenantProfileController::class, 'scrapeUrl'])->name('profile.brand.scrape');
 
     // Profilo attivita e asset del tenant.

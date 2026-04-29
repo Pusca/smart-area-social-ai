@@ -2653,4 +2653,287 @@
         });
     })();
 </script>
+
+{{-- ══════════════════════════════════════════════════════════════
+     AI VOICE UPDATE MODAL — floating button + slide-in panel
+     ═════════════════════════════════════════════════════════════= --}}
+<div x-data="brandVoiceModal()" x-init="init()" @keydown.escape.window="close()">
+
+    {{-- Floating trigger button --}}
+    <button @click="open = !open"
+        class="fixed bottom-20 right-4 z-40 sm:bottom-6 sm:right-6 flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:opacity-90 active:scale-95"
+        style="background:var(--primary)">
+        <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                  d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                  d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+        </svg>
+        <span>Aggiorna con AI</span>
+    </button>
+
+    {{-- Backdrop --}}
+    <div x-show="open" x-cloak @click="close"
+         class="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"></div>
+
+    {{-- Slide-in panel --}}
+    <div x-show="open" x-cloak
+         class="fixed inset-y-0 right-0 z-50 flex w-full flex-col sm:w-[480px] shadow-2xl"
+         style="background:var(--surface)"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="transform translate-x-full"
+         x-transition:enter-end="transform translate-x-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="transform translate-x-0"
+         x-transition:leave-end="transform translate-x-full">
+
+        {{-- Panel header --}}
+        <div class="flex items-center gap-3 px-4 py-3 border-b shrink-0" style="border-color:var(--border)">
+            <div class="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:var(--primary)">AI</div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold" style="color:var(--text)">Aggiorna Brand con AI</p>
+                <p class="text-[11px]" style="color:var(--text-muted)">Parla o scrivi — estrarrò i dati e aggiornerò il profilo</p>
+            </div>
+            <button @click="close" class="p-1.5 rounded-lg transition hover:opacity-70" style="color:var(--text-muted)">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        {{-- Messages --}}
+        <div class="flex-1 overflow-y-auto px-4 py-4 space-y-3" id="bv-scroll">
+
+            {{-- AI greeting --}}
+            <div class="flex items-end gap-2">
+                <div class="h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-white text-[10px] font-bold" style="background:var(--primary)">AI</div>
+                <div class="px-3.5 py-2.5 text-sm rounded-2xl rounded-bl-sm shadow-sm leading-relaxed" style="background:var(--surface-2);color:var(--text);max-width:85%">
+                    Ciao! Puoi raccontarmi qualcosa di nuovo sul tuo brand — aggiornerò automaticamente i campi del profilo.
+                </div>
+            </div>
+
+            <template x-for="(msg, i) in messages" :key="i">
+                <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'items-end gap-2'">
+                    <template x-if="msg.role === 'assistant'">
+                        <div class="h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-white text-[10px] font-bold" style="background:var(--primary)">AI</div>
+                    </template>
+                    <div class="px-3.5 py-2.5 text-sm leading-relaxed shadow-sm"
+                         style="max-width:85%"
+                         :style="msg.role === 'user'
+                             ? 'background:var(--primary);color:#fff;border-radius:1rem 1rem .25rem 1rem'
+                             : 'background:var(--surface-2);color:var(--text);border-radius:1rem 1rem 1rem .25rem'"
+                         x-html="msg.content.replace(/\n/g,'<br>')"></div>
+                </div>
+            </template>
+
+            <div x-show="aiTyping" class="flex items-end gap-2">
+                <div class="h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-white text-[10px] font-bold" style="background:var(--primary)">AI</div>
+                <div class="px-3.5 py-3 rounded-2xl rounded-bl-sm shadow-sm flex gap-1 items-center" style="background:var(--surface-2)">
+                    <span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background:var(--text-muted);animation-delay:0ms"></span>
+                    <span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background:var(--text-muted);animation-delay:150ms"></span>
+                    <span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background:var(--text-muted);animation-delay:300ms"></span>
+                </div>
+            </div>
+
+            {{-- Apply success banner --}}
+            <div x-show="appliedOk" x-cloak
+                 class="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium"
+                 style="background:rgba(15,159,110,.1);color:#0F9F6E">
+                <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Profilo aggiornato! Ricarico la pagina…
+            </div>
+        </div>
+
+        {{-- Input bar --}}
+        <div class="shrink-0 border-t px-3 py-3" style="background:var(--surface);border-color:var(--border)">
+
+            {{-- Apply button when has extracted --}}
+            <div x-show="hasExtracted && !appliedOk" x-cloak class="mb-2">
+                <button @click="applyToProfile" :disabled="applying"
+                    class="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white transition disabled:opacity-50"
+                    style="background:var(--success, #0F9F6E)">
+                    <template x-if="!applying">
+                        <span class="flex items-center gap-1.5">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            Applica al profilo
+                        </span>
+                    </template>
+                    <template x-if="applying">
+                        <span class="flex items-center gap-2">
+                            <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                            Salvataggio…
+                        </span>
+                    </template>
+                </button>
+            </div>
+
+            <div class="flex items-end gap-2">
+                <textarea
+                    x-model="userInput"
+                    @keydown.enter.prevent="if(!$event.shiftKey && userInput.trim()) sendMessage()"
+                    placeholder="Scrivi o usa il microfono…"
+                    rows="1"
+                    :disabled="aiTyping"
+                    class="flex-1 resize-none rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed transition focus:outline-none"
+                    style="background:var(--surface-2);border-color:var(--border);color:var(--text);max-height:100px"
+                    @input="bvAutoResize($el)"
+                ></textarea>
+
+                <button @click="toggleMic" type="button"
+                    class="shrink-0 h-10 w-10 rounded-full flex items-center justify-center transition"
+                    :style="listening ? 'background:#DC2626;color:#fff' : 'background:var(--surface-3);color:var(--text-muted)'"
+                    :class="listening ? 'bv-mic-pulse' : ''"
+                    title="Parla">
+                    <svg style="width:1.125rem;height:1.125rem" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                              d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                              d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+                    </svg>
+                </button>
+
+                <button @click="sendMessage" type="button" :disabled="!userInput.trim() || aiTyping"
+                    class="shrink-0 h-10 w-10 rounded-full flex items-center justify-center transition disabled:opacity-40"
+                    style="background:var(--primary);color:#fff">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.bv-mic-pulse { animation: bv-pulse 1.2s ease-in-out infinite }
+@keyframes bv-pulse {
+    0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.4)}
+    50%{box-shadow:0 0 0 10px rgba(220,38,38,0)}
+}
+</style>
+
+<script>
+function brandVoiceModal() {
+    return {
+        open:        false,
+        messages:    [],
+        userInput:   '',
+        aiTyping:    false,
+        listening:   false,
+        applying:    false,
+        appliedOk:   false,
+        recognition: null,
+        extracted:   {},
+
+        get hasExtracted() {
+            return Object.values(this.extracted).some(v => v !== null && v !== '');
+        },
+
+        init() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) return;
+            const r = new SpeechRecognition();
+            r.lang = 'it-IT';
+            r.interimResults = false;
+            r.onresult = (e) => {
+                this.userInput = e.results[0][0].transcript;
+                this.listening = false;
+                this.$nextTick(() => this.sendMessage());
+            };
+            r.onerror = () => { this.listening = false; };
+            r.onend   = () => { this.listening = false; };
+            this.recognition = r;
+        },
+
+        close() {
+            this.open = false;
+        },
+
+        toggleMic() {
+            if (!this.recognition) { alert('Riconoscimento vocale non supportato.'); return; }
+            if (this.listening) { this.recognition.stop(); }
+            else { this.listening = true; this.recognition.start(); }
+        },
+
+        bvAutoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+        },
+
+        async sendMessage() {
+            const text = this.userInput.trim();
+            if (!text || this.aiTyping) return;
+            this.messages.push({ role: 'user', content: text });
+            this.userInput = '';
+            this.$nextTick(() => this.bvScrollDown());
+            this.aiTyping = true;
+            try {
+                const csrf = document.querySelector('meta[name="csrf-token"]').content;
+                const res  = await fetch('{{ route('ai.brand.chat') }}', {
+                    method:  'POST',
+                    headers: { 'Content-Type':'application/json','X-CSRF-TOKEN':csrf,'Accept':'application/json' },
+                    body: JSON.stringify({
+                        messages: this.messages,
+                        existing_profile: this.currentProfileData(),
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || 'Errore AI');
+                this.messages.push({ role:'assistant', content: data.reply });
+                if (data.extracted) {
+                    for (const [k,v] of Object.entries(data.extracted)) {
+                        if (v !== null && v !== '') this.extracted[k] = v;
+                    }
+                }
+            } catch(e) {
+                this.messages.push({ role:'assistant', content:'Si è verificato un errore. Riprova.' });
+            } finally {
+                this.aiTyping = false;
+                this.$nextTick(() => this.bvScrollDown());
+            }
+        },
+
+        currentProfileData() {
+            // Grab existing profile fields from the page (pre-filled inputs)
+            const fields = ['business_name','industry','services','target','default_tone','default_goal','vision','values','cta','notes'];
+            const data = {};
+            fields.forEach(f => {
+                const el = document.querySelector('[name="'+f+'"]');
+                if (el && el.value) data[f] = el.value;
+            });
+            return data;
+        },
+
+        async applyToProfile() {
+            this.applying = true;
+            try {
+                const csrf = document.querySelector('meta[name="csrf-token"]').content;
+                const res  = await fetch('{{ route('ai.brand.apply') }}', {
+                    method:  'POST',
+                    headers: { 'Content-Type':'application/json','X-CSRF-TOKEN':csrf,'Accept':'application/json' },
+                    body: JSON.stringify({ extracted: this.extracted }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || 'Errore salvataggio');
+                this.appliedOk = true;
+                this.$nextTick(() => this.bvScrollDown());
+                setTimeout(() => window.location.reload(), 1400);
+            } catch(e) {
+                this.messages.push({ role:'assistant', content:'Errore nel salvataggio: ' + e.message });
+            } finally {
+                this.applying = false;
+            }
+        },
+
+        bvScrollDown() {
+            const el = document.getElementById('bv-scroll');
+            if (el) el.scrollTop = el.scrollHeight;
+        },
+    };
+}
+</script>
 @endsection
