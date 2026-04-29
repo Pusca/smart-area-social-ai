@@ -21,7 +21,7 @@
                 </div>
             </div>
 
-            <a href="{{ route('content-items.index') }}" class="ui-btn-secondary">Torna alla lista</a>
+            <a href="{{ route('posts.index') }}" class="ui-btn-secondary">Torna alla lista</a>
         </div>
     </x-slot>
 

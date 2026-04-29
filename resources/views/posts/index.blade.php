@@ -126,7 +126,7 @@
                         <h2 class="text-lg font-semibold text-gray-900">Pipeline contenuti</h2>
                         <p class="mt-1 text-sm text-gray-600">Gestisci copy, stato AI e pubblicazione dei post.</p>
                     </div>
-                    <a href="{{ route('content-items.index') }}" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <a href="{{ route('posts.index') }}" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Apri galleria
                     </a>
                 </div>
