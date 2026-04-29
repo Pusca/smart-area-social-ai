@@ -15,15 +15,15 @@
     @php
         $desktopNavItems = [
             ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
-            ['route' => 'setup.index', 'label' => 'Setup', 'active' => ['setup.index', 'settings', 'profile.brand*']],
-            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create', 'posts.reels.create']],
+            ['route' => 'settings', 'label' => 'Setup', 'active' => ['settings', 'profile.brand*']],
+            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create']],
             ['route' => 'calendar', 'label' => 'Pianifica', 'active' => ['calendar', 'wizard*', 'plans.generating']],
             ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
         ];
         $mobileNavItems = [
             ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
-            ['route' => 'setup.index', 'label' => 'Setup', 'active' => ['setup.index', 'settings', 'profile.brand*']],
-            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create', 'posts.reels.create']],
+            ['route' => 'settings', 'label' => 'Setup', 'active' => ['settings', 'profile.brand*']],
+            ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create']],
             ['route' => 'calendar', 'label' => 'Piano', 'active' => ['calendar', 'wizard*', 'plans.generating']],
             ['route' => 'posts.index', 'label' => 'Lib', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
         ];
