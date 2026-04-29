@@ -41,6 +41,8 @@ class GenerateBaseTextStep
         $tenantLearning = (array) $state->get('tenant_learning', data_get($meta, 'tenant_learning', []));
         $trendBrief = (array) $state->get('trend_brief', data_get($meta, 'trend_brief', []));
         $creativeBrief = (array) $state->get('creative_brief', data_get($meta, 'creative_brief', []));
+        $hardConstraints = (array) $state->get('hard_constraints', data_get($meta, 'hard_constraints', []));
+        $visualModePreset = (array) $state->get('visual_mode_preset', data_get($meta, 'visual_mode_preset', []));
         $activeFeedbackRequest = (array) $state->get('active_feedback_request', []);
         $assetVariables = (array) $state->get('asset_variables', []);
         $assetIdentity = (array) $state->get('asset_identity', []);
@@ -124,6 +126,10 @@ class GenerateBaseTextStep
 
         try {
             $context = [
+                // ── Hard constraints: identità reali non negoziabili (letti per primi) ──
+                'hard_constraints' => $hardConstraints,
+                // ── Visual mode preset: istruzioni fotografiche per GPT ───────────────
+                'visual_mode_preset' => $visualModePreset,
                 'brand' => $tenantProfile,
                 'plan' => data_get($meta, 'plan', []),
                 'strategy' => $strategy,
