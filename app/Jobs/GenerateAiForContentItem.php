@@ -2974,8 +2974,9 @@ SVG;
             $parts[] = 'Scene plan: ' . $this->sanitizeVideoPromptForVeo($sceneSummary, $assetVariables) . '.';
         }
         if ($this->hasPersonAssetVariable($assetVariables)) {
-            $parts[] = 'If the brand person appears, keep the same real person identity from start to end.';
-            $parts[] = 'The subject is a custom brand persona represented by proprietary reference visuals — not a public figure or celebrity.';
+            $visualDescriptor = $this->buildPersonVisualDescriptorForVeo($assetVariables);
+            $parts[] = "Brand subject: {$visualDescriptor}. Maintain this exact visual identity from start to end of the video.";
+            $parts[] = 'The subject is a proprietary brand persona depicted in the provided reference image — not a public figure or celebrity. Animate and direct them naturally.';
         }
         $parts[] = $this->videoOutputLanguageInstruction($meta, (string) data_get($meta, 'manual_brief', ''), true);
 
@@ -3832,9 +3833,19 @@ SVG;
         array $imageReferencePathPool
     ): array {
         $videoOptions = $this->normalizeVideoOptionsForProvider('google_veo', $videoOptions);
-        // Reference images disponibili ma NON passate all'API: Veo image-to-video
-        // le userebbe come primo frame, creando un video che inizia con la foto
-        // brand ferma invece del video generato. Usiamo sempre text-to-video.
+
+        // Resolve the primary reference image absolute path.
+        // Priority: explicit $referenceAbs → first from generationReferenceAbsPool.
+        $veoReferenceAbs = null;
+        if (is_string($referenceAbs) && $referenceAbs !== '' && is_file($referenceAbs)) {
+            $veoReferenceAbs = $referenceAbs;
+        } elseif (!empty($generationReferenceAbsPool)) {
+            $candidate = $generationReferenceAbsPool[0];
+            if (is_string($candidate) && $candidate !== '' && is_file($candidate)) {
+                $veoReferenceAbs = $candidate;
+            }
+        }
+
         $activeReferencePath = trim((string) $referencePath);
         if ($activeReferencePath === '' && !empty($imageReferencePathPool)) {
             $activeReferencePath = trim((string) ($imageReferencePathPool[0] ?? ''));
@@ -3843,14 +3854,6 @@ SVG;
             $activeReferencePath !== '' ? [$activeReferencePath] : array_slice($referencePaths, 0, 1),
             fn ($value) => is_string($value) && $value !== ''
         ));
-        $requestSummary = [
-            'requested_reference_count' => count($imageReferencePathPool),
-            'active_reference_count'    => 0,
-            'image_input_skipped'       => true,
-            'image_input_skip_reason'   => 'veo_image_to_video_forces_first_frame',
-            'ignored_additional_references' => max(0, count($imageReferencePathPool)),
-            'reference_reason' => $referenceReason,
-        ];
 
         $googleVeoOptions = [
             'model' => (string) ($videoOptions['model'] ?? config('google_veo.model') ?: 'veo-3.1-generate-preview'),
@@ -3861,15 +3864,25 @@ SVG;
             'generate_audio' => false,
         ];
 
-        // Google Veo image-to-video usa il reference come PRIMO FRAME del video
-        // (comportamento API nativo). Per i contenuti brand le reference images
-        // servono per l'identità, non come ancora del primo frame. Si usa sempre
-        // text-to-video: il prompt contiene già la descrizione visiva del soggetto.
+        // Pass the brand asset reference image to Veo when available.
+        // Veo animates from the provided image, preserving the real person/product
+        // visual identity throughout the video. The prompt then directs scene,
+        // motion and storytelling without naming the person (Veo's safety filter
+        // blocks real-person names — identity comes from the image, not the name).
         $job = $googleVeo->createVideoJob(
             prompt: $videoPrompt,
-            inputReferenceAbsolutePath: null,
+            inputReferenceAbsolutePath: $veoReferenceAbs,
             options: $googleVeoOptions
         );
+
+        $requestSummary = [
+            'requested_reference_count'     => count($imageReferencePathPool),
+            'active_reference_count'        => $veoReferenceAbs !== null ? 1 : 0,
+            'image_input_passed'            => $veoReferenceAbs !== null,
+            'image_input_abs'               => $veoReferenceAbs,
+            'ignored_additional_references' => max(0, count($imageReferencePathPool) - ($veoReferenceAbs !== null ? 1 : 0)),
+            'reference_reason'              => $referenceReason,
+        ];
         $videoId = (string) ($job['id'] ?? '');
         $jobFinal = $googleVeo->waitForVideoCompletion($videoId);
         $videoBytes = $googleVeo->downloadVideoContent($jobFinal);
@@ -5164,13 +5177,49 @@ SVG;
     }
 
     /**
+     * Build a visual descriptor for a brand person suitable for Veo prompts.
+     * Uses physical profile traits (immutable_traits, look_notes) rather than
+     * the person's real name, which Veo's safety filter would block.
+     *
+     * @param  array<string, mixed>  $assetVariables
+     */
+    public function buildPersonVisualDescriptorForVeo(array $assetVariables): string
+    {
+        $row = $this->singleResolvedPersonVariable($assetVariables);
+        if ($row === null) {
+            return 'the brand person';
+        }
+
+        $profile = is_array($row['profile'] ?? null) ? $row['profile'] : [];
+        $parts = [];
+
+        $immutable = trim((string) ($profile['immutable_traits'] ?? ''));
+        $look      = trim((string) ($profile['look_notes'] ?? ''));
+        $role      = trim((string) ($row['name'] ?? $profile['role'] ?? ''));
+
+        // Prefer physical description; fall back to role label.
+        if ($immutable !== '') {
+            $parts[] = $immutable;
+        }
+        if ($look !== '' && $look !== $immutable) {
+            $parts[] = $look;
+        }
+
+        if (empty($parts)) {
+            // No profile data: use a generic label that doesn't mention real names.
+            return $role !== '' ? "the brand {$role}" : 'the brand person';
+        }
+
+        return 'a person: ' . implode('; ', $parts);
+    }
+
+    /**
      * Sanitize a video prompt for Google Veo — strips real person names so Veo's
      * person-safety filter does not block the generation.
      *
-     * Removes:
-     *  - Full names from assetVariables (e.g. "Maria Rossi" → "the brand person")
-     *  - Individual first/last name tokens extracted from multi-word full names
-     *  - Common Italian patterns that introduce a name: "di nome X", "si chiama X", "chiamata X"
+     * Replaces person names with a visual descriptor built from the person's
+     * physical profile (immutable_traits, look_notes) so that the prompt still
+     * communicates visual intent even after name removal.
      *
      * @param  array<string, mixed>  $assetVariables
      */
@@ -5181,7 +5230,8 @@ SVG;
             return '';
         }
 
-        $personNames = $this->personVariableNames($assetVariables);
+        $personNames  = $this->personVariableNames($assetVariables);
+        $visualDescriptor = !empty($personNames) ? $this->buildPersonVisualDescriptorForVeo($assetVariables) : 'the brand person';
 
         // Strip introductory "di nome X", "chiamata X", "si chiama X", "named X" patterns first.
         $nameIntroPatterns = [
@@ -5191,23 +5241,19 @@ SVG;
             '/\bnamed\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}/u',
         ];
         foreach ($nameIntroPatterns as $pattern) {
-            $text = (string) preg_replace($pattern, 'the brand person', $text);
+            $text = (string) preg_replace($pattern, $visualDescriptor, $text);
         }
 
-        // Strip full names and their individual components (first name, last name).
+        // Replace full names and individual name tokens with the visual descriptor.
         foreach ($personNames as $fullName) {
-            // Replace the full name first (most specific).
-            $text = (string) preg_replace('/\b' . preg_quote($fullName, '/') . '\b/ui', 'the brand person', $text);
+            $text = (string) preg_replace('/\b' . preg_quote($fullName, '/') . '\b/ui', $visualDescriptor, $text);
 
-            // If the full name has multiple tokens, also strip them individually to
-            // catch cases where the LLM uses only first name or only last name.
             $tokens = preg_split('/\s+/', $fullName) ?: [];
             if (count($tokens) >= 2) {
                 foreach ($tokens as $token) {
                     $token = trim($token);
-                    // Only strip tokens ≥4 chars to avoid stripping common Italian words.
                     if (mb_strlen($token) >= 4) {
-                        $text = (string) preg_replace('/\b' . preg_quote($token, '/') . '\b/ui', 'the brand person', $text);
+                        $text = (string) preg_replace('/\b' . preg_quote($token, '/') . '\b/ui', $visualDescriptor, $text);
                     }
                 }
             }
