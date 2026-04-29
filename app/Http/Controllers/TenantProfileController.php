@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\AlterEgo;
 use App\Models\AssetVariable;
 use App\Models\BrandAsset;
-use App\Models\ContentPlan;
 use App\Models\EditorialStrategy;
 use App\Models\TenantProfile;
 use App\Services\AssetIdentityService;
@@ -15,10 +14,8 @@ use App\Services\Editorial\EditorialStrategyService;
 use App\Services\Editorial\TrendBriefService;
 use App\Services\GuidedAssetVariableService;
 use App\Services\Learning\TenantLearningLoopService;
-use App\Services\Onboarding\QuickstartOnboardingService;
 use App\Services\TenantQuotaService;
 use App\Support\SpeechProviderResolver;
-use App\Support\GenerationExecution;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
@@ -36,7 +33,6 @@ class TenantProfileController extends Controller
         private readonly AssetIdentityService $assetIdentityService,
         private readonly AssetVariableService $assetVariableService,
         private readonly GuidedAssetVariableService $guidedAssetVariableService,
-        private readonly QuickstartOnboardingService $quickstartOnboardingService,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
         private readonly TenantQuotaService $tenantQuotaService
     ) {
@@ -138,11 +134,6 @@ class TenantProfileController extends Controller
         $assetVariableCatalog = $this->sanitizeRecursiveStrings(
             $this->assetVariableService->catalogForTenant($tenantId)
         );
-        $demoPlan = $this->resolveQuickstartDemoPlan($tenantId, $profile);
-        $isOnboardingPending = !$profile || !$profile->onboarding_completed_at;
-        $quickstartDismissed = (bool) ($profile?->quickstart_dismissed_at);
-        $shouldShowQuickstart = !$quickstartDismissed && ($isOnboardingPending || !$profile?->quickstart_generated_at || $demoPlan !== null);
-
         $alterEgos = AlterEgo::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
@@ -161,10 +152,6 @@ class TenantProfileController extends Controller
             'learningProfile',
             'assetVariables',
             'assetVariableCatalog',
-            'demoPlan',
-            'isOnboardingPending',
-            'quickstartDismissed',
-            'shouldShowQuickstart',
             'brandWarnings',
             'alterEgos',
             'imageProviderOptions',
@@ -208,75 +195,6 @@ class TenantProfileController extends Controller
         return redirect()
             ->route('profile.brand')
             ->with('status', 'Trend Brief aggiornato.');
-    }
-
-    public function storeQuickstart(Request $request)
-    {
-        $data = $request->validate([
-            'business_name' => 'required|string|max:120',
-            'industry' => 'required|string|max:120',
-            'website' => 'nullable|string|max:255',
-            'services' => 'required|string|max:2000',
-            'target' => 'required|string|max:2000',
-            'cta' => 'nullable|string|max:255',
-            'notes' => 'nullable|string|max:2000',
-            'default_goal' => 'nullable|string|max:500',
-            'default_tone' => 'nullable|string|max:80',
-            'logo' => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:8192',
-            'images' => 'nullable|array|max:12',
-            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:10240',
-            'quickstart_variable_name' => 'nullable|string|max:120',
-            'quickstart_variable_kind' => 'nullable|string|in:person,location,product,custom',
-            'quickstart_variable_description' => 'nullable|string|max:255',
-            'image_provider' => ['nullable', \App\Support\ImageProviderResolver::inRule()],
-            'video_provider' => ['nullable', \App\Support\VideoProviderResolver::inRule()],
-        ], [
-            'logo.max' => 'Il logo non puo superare 8 MB.',
-            'logo.mimes' => 'Il logo deve essere PNG, JPG, JPEG, WebP o SVG.',
-            'images.max' => 'Nel quick start puoi caricare fino a 12 immagini.',
-            'images.*.max' => 'Ogni immagine del quick start puo pesare al massimo 10 MB.',
-            'images.*.mimes' => 'Le immagini del quick start devono essere PNG, JPG, JPEG o WebP.',
-        ], [
-            'logo' => 'logo',
-            'images' => 'immagini di riferimento',
-            'images.*' => 'immagine di riferimento',
-        ]);
-
-        try {
-            $this->tenantQuotaService->assertCanCreateContentItems((int) $request->user()->tenant_id, 3);
-        } catch (\RuntimeException $e) {
-            return back()
-                ->withInput()
-                ->withErrors(['quickstart' => $e->getMessage()]);
-        }
-
-        try {
-            $result = $this->quickstartOnboardingService->runQuickstart(
-                user: $request->user(),
-                data: $data,
-                logo: $request->file('logo'),
-                images: (array) $request->file('images', []),
-                imageProvider: \App\Support\ImageProviderResolver::normalize((string) ($data['image_provider'] ?? '')),
-                videoProvider: \App\Support\VideoProviderResolver::normalize((string) ($data['video_provider'] ?? ''))
-            );
-
-            $count = count($result['created_items'] ?? []);
-
-            if (GenerationExecution::shouldShowProgressPage()) {
-                return redirect()->route('plans.generating', [
-                    'contentPlan' => $result['plan'],
-                    'context' => 'quickstart',
-                ]);
-            }
-
-            return redirect()
-                ->route('profile.brand')
-                ->with('status', "Prova pronta: creato un calendario demo di 7 giorni con {$count} contenuti. Puoi salvarlo nel workspace, rigenerarlo o eliminarlo quando vuoi.");
-        } catch (\Throwable $e) {
-            return back()
-                ->withInput()
-                ->withErrors(['quickstart' => $e->getMessage()]);
-        }
     }
 
     public function store(Request $request)
@@ -530,67 +448,6 @@ class TenantProfileController extends Controller
             DB::rollBack();
             return redirect()->route('profile.brand')->with('status', 'Errore salvataggio: ' . $e->getMessage());
         }
-    }
-
-    public function regenerateQuickstartDemo(Request $request)
-    {
-        try {
-            $result = $this->quickstartOnboardingService->regenerateQuickstart($request->user());
-            $count = count($result['created_items'] ?? []);
-
-            if (GenerationExecution::shouldShowProgressPage()) {
-                return redirect()->route('plans.generating', [
-                    'contentPlan' => $result['plan'],
-                    'context' => 'quickstart',
-                ]);
-            }
-
-            return redirect()
-                ->route('profile.brand')
-                ->with('status', "Demo rigenerata: trovati {$count} contenuti aggiornati per la prossima settimana.");
-        } catch (\Throwable $e) {
-            return redirect()
-                ->route('profile.brand')
-                ->with('status', 'Impossibile rigenerare la demo: ' . $e->getMessage());
-        }
-    }
-
-    public function saveQuickstartDemo(Request $request)
-    {
-        try {
-            $savedPlans = $this->quickstartOnboardingService->saveQuickstartDemo($request->user());
-            $message = $savedPlans > 0
-                ? 'Demo iniziale salvata nel workspace. I contenuti restano disponibili e il quickstart e stato chiuso.'
-                : 'Non ho trovato una demo iniziale attiva da salvare.';
-
-            return redirect()->route('profile.brand')->with('status', $message);
-        } catch (\Throwable $e) {
-            return redirect()
-                ->route('profile.brand')
-                ->with('status', 'Impossibile salvare la demo iniziale: ' . $e->getMessage());
-        }
-    }
-
-    public function destroyQuickstartDemo(Request $request)
-    {
-        $deletedPlans = $this->quickstartOnboardingService->deleteQuickstartDemo($request->user());
-        $message = $deletedPlans > 0
-            ? 'Demo iniziale eliminata e quickstart chiuso. I file demo sono stati rimossi.'
-            : 'Nessuna demo iniziale da eliminare.';
-
-        return redirect()->route('profile.brand')->with('status', $message);
-    }
-
-    public function dismissQuickstart(Request $request)
-    {
-        $dismissed = $this->quickstartOnboardingService->dismissQuickstart($request->user());
-        $message = $dismissed
-            ? 'Quick setup chiuso. Puoi completare subito i dati aziendali nel Brand Center.'
-            : 'Nessun quick setup attivo da chiudere.';
-
-        return redirect()
-            ->to(route('profile.brand') . '#brand-profile-section')
-            ->with('status', $message);
     }
 
     public function destroyAssets(Request $request)
@@ -1331,27 +1188,6 @@ class TenantProfileController extends Controller
                 $variable->identity_pack = $this->assetIdentityService->synthesizeIdentityPackForVariable($variable, $remainingAssets);
                 $variable->save();
             });
-    }
-
-    private function resolveQuickstartDemoPlan(int $tenantId, ?TenantProfile $profile): ?ContentPlan
-    {
-        $planQuery = ContentPlan::query()
-            ->where('tenant_id', $tenantId)
-            ->withCount('items')
-            ->with(['items' => fn ($q) => $q->orderBy('scheduled_at')->orderBy('id')]);
-
-        $planId = (int) ($profile?->quickstart_last_plan_id ?? 0);
-        if ($planId > 0) {
-            $plan = (clone $planQuery)->where('id', $planId)->first();
-            if ($plan) {
-                return $plan;
-            }
-        }
-
-        return (clone $planQuery)
-            ->latest('id')
-            ->get()
-            ->first(fn (ContentPlan $plan) => data_get($plan->settings, 'mode') === 'onboarding_quickstart_demo');
     }
 
     private function extractStudioPayload(array $data, TenantProfile $profile, EditorialStrategy $strategy): array

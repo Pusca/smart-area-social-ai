@@ -9,7 +9,6 @@ use App\Http\Controllers\ContentItemController;
 use App\Http\Controllers\ContentFeedbackController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PlanWizardController;
-use App\Http\Controllers\AiController;
 use App\Http\Controllers\AiGenerateController;
 use App\Http\Controllers\CanvaIntegrationController;
 use App\Http\Controllers\SettingsController;
@@ -59,7 +58,6 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
 
     Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar');
     Route::post('/calendar/content/{contentItem}/approve', [CalendarController::class, 'approve'])->name('calendar.content.approve');
-    Route::redirect('/brand', '/profile/brand', 302)->name('brand.legacy');
 
     // ── Feature multi-brand / agenzia ────────────────────────────────────────
     // Lista brand accessibili + switch sessione. Non richiede hasTenant
@@ -77,11 +75,6 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
 
     // Profilo attivita e asset del tenant.
     Route::get('/profile/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
-    Route::post('/profile/brand/quickstart', [TenantProfileController::class, 'storeQuickstart'])->name('profile.brand.quickstart.store');
-    Route::post('/profile/brand/quickstart/dismiss', [TenantProfileController::class, 'dismissQuickstart'])->name('profile.brand.quickstart.dismiss');
-    Route::post('/profile/brand/quickstart/save', [TenantProfileController::class, 'saveQuickstartDemo'])->name('profile.brand.quickstart.save');
-    Route::post('/profile/brand/quickstart/regenerate', [TenantProfileController::class, 'regenerateQuickstartDemo'])->name('profile.brand.quickstart.regenerate');
-    Route::delete('/profile/brand/quickstart', [TenantProfileController::class, 'destroyQuickstartDemo'])->name('profile.brand.quickstart.destroy');
     Route::post('/profile/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
     Route::post('/profile/brand/trends/refresh', [TenantProfileController::class, 'refreshTrendBrief'])->name('profile.brand.trends.refresh');
     Route::post('/profile/brand/variables', [TenantProfileController::class, 'storeVariable'])->name('profile.brand.variables.store');
@@ -107,14 +100,10 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
     Route::get('/plans/{contentPlan}/generating', [PlanWizardController::class, 'generating'])->name('plans.generating');
     Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
-    Route::get('/ai', [AiController::class, 'index'])->name('ai');
-    Route::post('/ai/generate', [AiController::class, 'generate'])->name('ai.generate');
-
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
     Route::post('/ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])->name('ai.content.generateImage');
 
-    Route::get('/setup', [SettingsController::class, 'index'])->name('setup.index');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::post('/settings/fine-tuning/start', [SettingsController::class, 'startFineTuning'])->name('settings.fine-tuning.start');
     Route::post('/settings/fine-tuning/sync', [SettingsController::class, 'syncFineTuning'])->name('settings.fine-tuning.sync');
@@ -144,7 +133,7 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         Route::get('/generation-feed', [ContentItemController::class, 'activeGenerations'])->name('generation.feed');
 
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');
-        Route::get('/reels/create', [ContentItemController::class, 'createReel'])->name('reels.create');
+        Route::redirect('/reels/create', '/posts/create?preset=reel');
         Route::post('/', [ContentItemController::class, 'store'])->name('store');
 
         Route::get('/{contentItem}/generating', [ContentItemController::class, 'generating'])->name('generating');
@@ -156,7 +145,7 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
     });
 
     Route::prefix('content-items')->name('content-items.')->group(function () {
-        Route::get('/', [ContentItemController::class, 'gallery'])->name('index');
+        Route::redirect('/', '/posts');
         Route::get('/{contentItem}', [ContentItemController::class, 'show'])->name('show');
         Route::post('/{contentItem}/canva/send', [CanvaIntegrationController::class, 'sendContentItem'])->name('canva.send');
     });

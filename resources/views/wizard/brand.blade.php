@@ -15,12 +15,6 @@
         $assetVariables = collect($assetVariables);
     }
     $assetVariableCatalog = is_array($assetVariableCatalog ?? null) ? $assetVariableCatalog : [];
-    /** @var \App\Models\ContentPlan|null $demoPlan */
-    $demoPlan = $demoPlan ?? null;
-    $isOnboardingPending = (bool) ($isOnboardingPending ?? false);
-    $quickstartDismissed = (bool) ($quickstartDismissed ?? false);
-    $shouldShowQuickstart = (bool) ($shouldShowQuickstart ?? (!$quickstartDismissed && ($isOnboardingPending || $demoPlan !== null)));
-    $quickstartDismissRoute = \Illuminate\Support\Facades\Route::has('profile.brand.quickstart.dismiss') ? route('profile.brand.quickstart.dismiss') : null;
 
     $byKind = $assets->groupBy('kind');
     $logos = $byKind['logo'] ?? collect();
@@ -100,15 +94,6 @@
     if (!($demoItems instanceof \Illuminate\Support\Collection)) {
         $demoItems = collect($demoItems);
     }
-    $quickstartTone = old('default_tone', $profile?->default_tone ?? 'professionale');
-    $quickstartNeedsImages = $images->isEmpty();
-    $demoRangeLabel = $hasDemoPlan && $demoPlan?->start_date && $demoPlan?->end_date
-        ? $demoPlan->start_date->format('d/m') . ' - ' . $demoPlan->end_date->format('d/m')
-        : '7 giorni';
-    $quickstartBadgeText = $hasDemoPlan ? 'pronta' : ($quickstartDismissed ? 'chiusa' : 'da creare');
-    $quickstartBadgeClass = $hasDemoPlan
-        ? 'border-cyan-200 bg-cyan-50 text-cyan-700'
-        : ($quickstartDismissed ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-700');
 
     $brandReadinessItems = collect([
         [
@@ -339,9 +324,6 @@
                     <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
                         Strategia {{ $strategyStatus }}
                     </span>
-                    <span class="inline-flex items-center rounded-full border {{ $quickstartBadgeClass }} px-2.5 py-1 text-xs font-semibold">
-                        Quickstart {{ $quickstartBadgeText }}
-                    </span>
                 </div>
             </div>
 
@@ -517,7 +499,7 @@
         </div>
     </div>
 
-    @if($shouldShowQuickstart)
+    @if(false) {{-- quickstart rimosso --}}
         @if(!$hasDemoPlan)
         <div class="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-emerald-50 p-6 shadow-sm">
             <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -788,8 +770,7 @@
         @endif
     @endif
 
-    @if(!$shouldShowQuickstart)
-        <div class="overflow-hidden rounded-3xl border border-indigo-200 bg-gradient-to-br from-white via-indigo-50/60 to-cyan-50/60 p-6 shadow-sm">
+    <div class="overflow-hidden rounded-3xl border border-indigo-200 bg-gradient-to-br from-white via-indigo-50/60 to-cyan-50/60 p-6 shadow-sm">
             <div class="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Prossimo passo</div>
@@ -835,7 +816,6 @@
                 </div>
             </div>
         </div>
-    @endif
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div class="space-y-6 xl:col-span-2">
