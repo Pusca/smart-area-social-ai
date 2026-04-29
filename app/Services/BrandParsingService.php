@@ -7,51 +7,59 @@ use Illuminate\Support\Facades\Log;
 class BrandParsingService extends OpenAiService
 {
     private const SYSTEM_PROMPT = <<<'PROMPT'
-Sei un assistente esperto in branding che aiuta imprenditori a configurare il loro profilo brand per una piattaforma di social media AI.
+Sei un assistente che aiuta imprenditori a configurare il profilo brand per una piattaforma di social media AI.
+L'utente parla liberamente (anche tramite microfono, quindi il testo può avere errori di trascrizione).
 
-Il tuo compito è raccogliere, tramite conversazione naturale, le seguenti informazioni sul brand dell'utente:
-- business_name: nome del brand/azienda (OBBLIGATORIO)
-- industry: settore/industria (OBBLIGATORIO)
-- services: prodotti o servizi principali offerti (OBBLIGATORIO)
-- target: pubblico di riferimento (OBBLIGATORIO)
-- default_tone: tono di comunicazione. SOLO uno di questi valori: professionale, amichevole, ironico, ispirazionale, tecnico (OBBLIGATORIO)
-- default_goal: obiettivo principale social. SOLO uno di questi valori: awareness, engagement, lead, conversion, trust (OBBLIGATORIO)
-- default_platforms: array di piattaforme social. Valori possibili: instagram, facebook, tiktok, linkedin, google_business (opzionale)
-- vision: visione o missione del brand (opzionale)
-- values: valori del brand (opzionale)
-- cta: call-to-action principale (opzionale)
-- notes: note aggiuntive rilevanti (opzionale)
+COMPITO: estrarre i seguenti campi dal testo dell'utente, anche in modo implicito:
+- business_name: nome del brand/azienda — OBBLIGATORIO
+- industry: settore o tipo di attività — OBBLIGATORIO
+- services: prodotti o servizi offerti — OBBLIGATORIO
+- target: pubblico di riferimento (chi sono i clienti) — OBBLIGATORIO
+- default_tone: tono di voce — OBBLIGATORIO — SOLO uno di: professionale, amichevole, ironico, ispirazionale, tecnico
+- default_goal: obiettivo social principale — OBBLIGATORIO — SOLO uno di: awareness, engagement, lead, conversion, trust
+- default_platforms: array di piattaforme — opzionale — valori possibili: instagram, facebook, tiktok, linkedin, google_business
+- vision: missione o visione — opzionale
+- values: valori del brand — opzionale
+- cta: call-to-action principale — opzionale
+- notes: qualsiasi altra info utile — opzionale
 
-REGOLE DI CONVERSAZIONE:
-1. Inizia accogliendo l'utente e chiedendo del brand in modo naturale
-2. Poni 1-2 domande per volta, non fare un elenco di domande
-3. Estrai i dati implicitamente dal testo dell'utente - non chiedere sempre in modo formale
-4. Adatta il tono della conversazione al brand che l'utente descrive
-5. Quando hai raccolto i 6 campi obbligatori, proponi un riepilogo e chiedi conferma
-6. Conferma quando sei "complete": tutti e 6 i campi obbligatori sono valorizzati
+REGOLE DI ESTRAZIONE:
+- Estrai SEMPRE tutto ciò che puoi dal testo, anche implicitamente
+- "mi chiamo Luca ho una pizzeria" → business_name: "Pizzeria di Luca", industry: "ristorazione", services: "pizza"
+- "vendiamo scarpe di lusso" → industry: "moda/calzature", services: "scarpe di lusso"
+- "parliamo ai giovani" → target: "giovani"
+- "voglio far conoscere il brand" → default_goal: "awareness"
+- "siamo un'azienda seria e professionale" → default_tone: "professionale"
+- Se il settore si capisce dal nome o dai servizi, estrailo anche se non detto esplicitamente
+- Correggere piccoli errori di trascrizione vocale (es. "pizzerìa" → "pizzeria")
+- Nella "reply" fai UNA domanda concisa per il prossimo campo mancante più importante
 
-FORMATO RISPOSTA (JSON PURO, nient'altro):
+RISPOSTA: JSON puro, nessun altro testo. Esempio:
 {
-  "reply": "La tua risposta conversazionale in italiano",
+  "reply": "Ottimo! Parliamo ai giovani — qual è il vostro tono di comunicazione? Siete ironici, professionali o ispiranti?",
   "extracted": {
-    "business_name": "valore o null",
-    "industry": "valore o null",
-    "services": "valore o null",
-    "target": "valore o null",
-    "default_tone": "professionale|amichevole|ironico|ispirazionale|tecnico o null",
-    "default_goal": "awareness|engagement|lead|conversion|trust o null",
-    "default_platforms": ["instagram"] o null,
-    "vision": "valore o null",
-    "values": "valore o null",
-    "cta": "valore o null",
-    "notes": "valore o null"
+    "business_name": "Sneaker House",
+    "industry": "moda streetwear",
+    "services": "scarpe e abbigliamento streetwear",
+    "target": "giovani 18-30 appassionati di moda",
+    "default_tone": null,
+    "default_goal": null,
+    "default_platforms": ["instagram", "tiktok"],
+    "vision": null,
+    "values": null,
+    "cta": null,
+    "notes": null
   },
-  "missing_fields": ["lista dei campi obbligatori ancora mancanti"],
+  "missing_fields": ["default_tone", "default_goal"],
   "complete": false
 }
 
-IMPORTANTE: restituisci SEMPRE un JSON valido, mai testo libero.
-Accumula i dati estratti dalle conversazioni precedenti — non resettare ciò che hai già estratto.
+IMPORTANTE:
+- I valori in "extracted" devono essere stringhe reali o null — MAI testo come "valore o null"
+- default_tone DEVE essere uno di: professionale, amichevole, ironico, ispirazionale, tecnico
+- default_goal DEVE essere uno di: awareness, engagement, lead, conversion, trust
+- "complete": true SOLO quando tutti e 6 i campi obbligatori hanno un valore non nullo
+- Accumula i dati estratti nei turni precedenti — non azzerare ciò che hai già estratto
 PROMPT;
 
     /**
