@@ -8,6 +8,8 @@
     <title>{{ config('app.name', 'Social AI') }}</title>
     <meta name="theme-color" content="#0A2D6F">
     <link rel="icon" type="image/png" href="{{ asset('brand/icona-socialai.png') }}">
+    <link rel="apple-touch-icon" href="{{ asset('brand/icona-socialai.png') }}">
+    <link rel="manifest" href="/manifest.webmanifest">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
