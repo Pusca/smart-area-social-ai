@@ -24,10 +24,9 @@
         ];
         $mobileNavItems = [
             ['route' => 'dashboard', 'label' => 'Home', 'active' => ['dashboard']],
-            ['route' => 'settings', 'label' => 'Setup', 'active' => ['settings', 'profile.brand*']],
             ['route' => 'posts.create', 'label' => 'Crea', 'active' => ['posts.create']],
             ['route' => 'calendar', 'label' => 'Piano', 'active' => ['calendar', 'wizard*', 'plans.generating']],
-            ['route' => 'posts.index', 'label' => 'Lib', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
+            ['route' => 'posts.index', 'label' => 'Libreria', 'active' => ['posts.index', 'posts.edit', 'posts.generating', 'posts.generation.*', 'content-items.*']],
         ];
     @endphp
 
@@ -79,11 +78,11 @@
                 <a
                     href="{{ route('settings') }}"
                     class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-app bg-surface-2 text-gray-700 transition hover:bg-white"
-                    aria-label="Account"
-                    title="Account"
+                    aria-label="Setup"
+                    title="Setup"
                 >
                     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path d="M10 2.75a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5ZM5.5 6.5a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM3.52 15.1a5.75 5.75 0 0 1 5.32-3.6h2.32a5.75 5.75 0 0 1 5.32 3.6.75.75 0 1 1-1.39.56A4.25 4.25 0 0 0 11.16 13H8.84a4.25 4.25 0 0 0-3.93 2.66.75.75 0 1 1-1.39-.56Z"/>
+                        <path fill-rule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.295 1.473a6.96 6.96 0 0 1 1.052.608l1.387-.554a1 1 0 0 1 1.174.38l1.18 2.044a1 1 0 0 1-.205 1.27l-1.13.966a7.1 7.1 0 0 1 0 1.218l1.13.966a1 1 0 0 1 .205 1.27l-1.18 2.044a1 1 0 0 1-1.174.38l-1.387-.554a6.96 6.96 0 0 1-1.052.608l-.295 1.473A1 1 0 0 1 11.18 19H8.82a1 1 0 0 1-.98-.804l-.295-1.473a6.96 6.96 0 0 1-1.052-.608l-1.387.554a1 1 0 0 1-1.174-.38L2.752 14.245a1 1 0 0 1 .205-1.27l1.13-.966a7.1 7.1 0 0 1 0-1.218l-1.13-.966a1 1 0 0 1-.205-1.27L3.932 6.511a1 1 0 0 1 1.174-.38l1.387.554a6.96 6.96 0 0 1 1.052-.608L7.84 1.804ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd"/>
                     </svg>
                 </a>
             </div>
@@ -134,7 +133,7 @@
 
     <nav class="mobile-nav fixed inset-x-0 bottom-0 z-50 border-t border-app bg-white/95 backdrop-blur sm:hidden">
         <div class="mx-auto max-w-7xl px-3 pb-[env(safe-area-inset-bottom)]">
-            <div class="ui-mobile-nav" style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr));">
+            <div class="ui-mobile-nav" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr));">
                 @foreach($mobileNavItems as $item)
                     @php
                         $patterns = \Illuminate\Support\Arr::wrap($item['active']);

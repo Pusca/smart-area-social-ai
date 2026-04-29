@@ -27,7 +27,14 @@
 @endphp
 
 <section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-    <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
+    {{-- Mobile: barra compatta con CTA diretta --}}
+    <div class="flex items-center justify-between sm:hidden">
+        <h1 class="text-lg font-semibold text-gray-900">Libreria</h1>
+        <a href="{{ route('posts.create') }}" class="ui-btn-primary">Crea</a>
+    </div>
+
+    {{-- Desktop: hero completo --}}
+    <div class="hidden overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm sm:block lg:p-8">
         <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
             <div>
                 <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Libreria contenuti</div>
@@ -75,7 +82,7 @@
         </div>
     @endif
 
-    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div class="hidden gap-4 sm:grid md:grid-cols-2 xl:grid-cols-4">
         <article class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex items-center justify-between">
                 <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Avanzamento AI</p>

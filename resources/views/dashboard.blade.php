@@ -21,18 +21,6 @@
                     Contenuti, calendario e pubblicazioni in una vista semplice da leggere, cosi sai subito dove intervenire.
                 </p>
 
-                <div class="mt-5 flex flex-wrap gap-2">
-                    <a href="{{ route('settings') }}" class="ui-btn-secondary">
-                        Apri setup
-                    </a>
-                    <a href="{{ route('posts.create') }}" class="ui-btn-primary">
-                        Apri area crea
-                    </a>
-                    <a href="{{ route('calendar') }}" class="ui-btn-secondary">
-                        Vai alla pianificazione
-                    </a>
-                </div>
-
                 <div class="mt-5 flex flex-wrap items-center gap-2">
                     <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $scoreBadgeClass }}">
                         Salute workspace {{ $workspaceScore }} / 100 - {{ $scoreLabel }}
@@ -78,6 +66,43 @@
                     </a>
                 </div>
             </div>
+        </div>
+    </div>
+
+    {{-- Ultimi contenuti — in cima per visibilità immediata su mobile --}}
+    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-900">Ultimi contenuti</h2>
+                <p class="mt-1 text-sm text-gray-600">Cosa è pronto, in lavorazione o da rivedere.</p>
+            </div>
+            <a href="{{ route('posts.index') }}" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                Apri libreria
+            </a>
+        </div>
+        <div class="mt-4 divide-y rounded-xl border border-gray-200">
+            @forelse($recentItems as $item)
+                @php
+                    $recentAiInfo = $uiAi($item->ai_status);
+                @endphp
+                <a href="{{ route('posts.edit', $item) }}" class="flex items-start justify-between gap-4 px-4 py-3 hover:bg-gray-50">
+                    <div class="min-w-0">
+                        <p class="text-xs text-gray-500">
+                            {{ strtoupper((string) $item->platform) }} · {{ strtoupper((string) $item->format) }}
+                            @if($item->scheduled_at)
+                                · {{ optional($item->scheduled_at)->format('d/m H:i') }}
+                            @endif
+                        </p>
+                        <p class="mt-1 truncate text-sm font-semibold text-gray-900">{{ $item->title ?: 'Senza titolo' }}</p>
+                        <p class="mt-1 line-clamp-2 text-xs text-gray-600">{{ $item->ai_caption ?: ($item->caption ?: '-') }}</p>
+                    </div>
+                    <span class="inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $recentAiInfo['badge'] }}">
+                        AI {{ $recentAiInfo['label'] }}
+                    </span>
+                </a>
+            @empty
+                <div class="px-4 py-8 text-center text-sm text-gray-600">Nessun contenuto ancora. <a href="{{ route('posts.create') }}" class="font-semibold text-indigo-600">Crea il primo</a></div>
+            @endforelse
         </div>
     </div>
 
@@ -297,42 +322,6 @@
                 @endif
             </div>
 
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Ultimi contenuti</h2>
-                        <p class="mt-1 text-sm text-gray-600">Un colpo d'occhio su cosa e pronto, in lavorazione o da rivedere.</p>
-                    </div>
-                    <a href="{{ route('posts.index') }}" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri libreria
-                    </a>
-                </div>
-
-                <div class="mt-4 divide-y rounded-xl border border-gray-200">
-                    @forelse($recentItems as $item)
-                        @php
-                            $recentAiInfo = $uiAi($item->ai_status);
-                        @endphp
-                        <a href="{{ route('posts.edit', $item) }}" class="flex items-start justify-between gap-4 px-4 py-3 hover:bg-gray-50">
-                            <div class="min-w-0">
-                                <p class="text-xs text-gray-500">
-                                    {{ strtoupper((string) $item->platform) }} - {{ strtoupper((string) $item->format) }}
-                                    @if($item->scheduled_at)
-                                        - {{ optional($item->scheduled_at)->format('d/m H:i') }}
-                                    @endif
-                                </p>
-                                <p class="mt-1 truncate text-sm font-semibold text-gray-900">{{ $item->title ?: 'Senza titolo' }}</p>
-                                <p class="mt-1 line-clamp-2 text-xs text-gray-600">{{ $item->ai_caption ?: ($item->caption ?: '-') }}</p>
-                            </div>
-                            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold {{ $recentAiInfo['badge'] }}">
-                                AI {{ $recentAiInfo['label'] }}
-                            </span>
-                        </a>
-                    @empty
-                        <div class="px-4 py-8 text-center text-sm text-gray-600">Nessun contenuto recente.</div>
-                    @endforelse
-                </div>
-            </div>
         </div>
 
         <div class="min-w-0 space-y-6">
@@ -360,33 +349,6 @@
                 </div>
             </div>
 
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Mappa del workspace</h2>
-                <p class="mt-1 text-sm text-gray-600">Le aree giuste, nell'ordine in cui di solito ti servono durante la giornata.</p>
-
-                <div class="mt-4 space-y-2">
-                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
-                        <p class="mt-1 text-xs text-gray-600">Sistema brand, asset e connessioni una volta sola, poi lavori piu veloce ovunque.</p>
-                    </a>
-                    <a href="{{ route('posts.create') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Crea</p>
-                        <p class="mt-1 text-xs text-gray-600">Apri l'area per contenuti singoli, reel o nuovi piani.</p>
-                    </a>
-                    <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
-                        <p class="mt-1 text-xs text-gray-600">Imposti un insieme di contenuti con una logica di periodo.</p>
-                    </a>
-                    <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlli uscite, approvazioni e copertura del calendario.</p>
-                    </a>
-                    <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
-                        <p class="mt-1 text-xs text-gray-600">Rivedi bozze, output AI e stato di pubblicazione.</p>
-                    </a>
-                </div>
-            </div>
         </div>
     </div>
 </section>
