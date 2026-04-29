@@ -89,8 +89,9 @@
     $completionRate = (int) round(($filledCount / max(1, count($profileChecks))) * 100);
     $strategyUpdatedAt = $strategy?->updated_at ? $strategy->updated_at->format('d/m/Y H:i') : '-';
     $strategyStatus = $strategyLocked ? 'LOCKED' : 'AUTO-REFRESH';
-    $hasDemoPlan = $demoPlan !== null;
-    $demoItems = $demoPlan?->items ?? collect();
+    $hasDemoPlan = false; // quickstart rimosso
+    $isOnboardingPending = false; // quickstart rimosso
+    $demoItems = collect();
     if (!($demoItems instanceof \Illuminate\Support\Collection)) {
         $demoItems = collect($demoItems);
     }
@@ -2128,8 +2129,8 @@
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs text-gray-500">Demo iniziale</p>
-                        <p class="mt-1 text-sm font-semibold {{ $hasDemoPlan ? 'text-cyan-700' : ($quickstartDismissed ? 'text-emerald-700' : 'text-gray-900') }}">
-                            {{ $hasDemoPlan ? 'Disponibile' : ($quickstartDismissed ? 'Chiusa' : 'Non presente') }}
+                        <p class="mt-1 text-sm font-semibold text-gray-900">
+                            Non presente
                         </p>
                     </div>
                     <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
@@ -2174,7 +2175,7 @@
                         <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                         <p class="mt-1 text-xs text-gray-600">Gestisci post e output AI.</p>
                     </a>
-                    <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
                         <p class="mt-1 text-xs text-gray-600">Torna alla panoramica setup per connessioni, stato e prossimi passi.</p>
                     </a>

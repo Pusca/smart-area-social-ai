@@ -22,7 +22,7 @@
                 </p>
 
                 <div class="mt-5 flex flex-wrap gap-2">
-                    <a href="{{ route('setup.index') }}" class="ui-btn-secondary">
+                    <a href="{{ route('settings') }}" class="ui-btn-secondary">
                         Apri setup
                     </a>
                     <a href="{{ route('posts.create') }}" class="ui-btn-primary">
@@ -73,7 +73,7 @@
                     <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
                         Crea contenuto
                     </a>
-                    <a href="{{ route('posts.reels.create') }}" class="ui-btn-secondary justify-center">
+                    <a href="{{ route('posts.create') }}?preset=reel" class="ui-btn-secondary justify-center">
                         Crea reel
                     </a>
                 </div>
@@ -365,7 +365,7 @@
                 <p class="mt-1 text-sm text-gray-600">Le aree giuste, nell'ordine in cui di solito ti servono durante la giornata.</p>
 
                 <div class="mt-4 space-y-2">
-                    <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
                         <p class="mt-1 text-xs text-gray-600">Sistema brand, asset e connessioni una volta sola, poi lavori piu veloce ovunque.</p>
                     </a>
@@ -384,10 +384,6 @@
                     <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
                         <p class="mt-1 text-xs text-gray-600">Rivedi bozze, output AI e stato di pubblicazione.</p>
-                    </a>
-                    <a href="{{ route('ai') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">AI Lab</p>
-                        <p class="mt-1 text-xs text-gray-600">Usa il flusso rapido separato quando vuoi un test o un output piu leggero.</p>
                     </a>
                 </div>
             </div>

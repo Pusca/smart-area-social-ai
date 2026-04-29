@@ -64,7 +64,7 @@
             <div class="rounded-[1.75rem] border border-brand bg-[var(--gradient-soft)] p-5 shadow-card">
                 <div class="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Azioni rapide</div>
                 <div class="mt-3 grid grid-cols-1 gap-2">
-                    <a href="{{ route('setup.index') }}" class="ui-btn-secondary justify-center">
+                    <a href="{{ route('settings') }}" class="ui-btn-secondary justify-center">
                         Apri setup
                     </a>
                     <a href="{{ route('wizard.done') }}" class="ui-btn-secondary justify-center">

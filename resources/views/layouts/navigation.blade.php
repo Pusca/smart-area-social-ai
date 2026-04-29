@@ -13,11 +13,11 @@
                         Home
                     </x-nav-link>
 
-                    <x-nav-link :href="route('setup.index')" :active="request()->routeIs('setup.index') || request()->routeIs('settings') || request()->routeIs('profile.brand*')">
+                    <x-nav-link :href="route('settings')" :active="request()->routeIs('settings') || request()->routeIs('profile.brand*')">
                         Setup
                     </x-nav-link>
 
-                    <x-nav-link :href="route('posts.create')" :active="request()->routeIs('posts.create') || request()->routeIs('posts.reels.create')">
+                    <x-nav-link :href="route('posts.create')" :active="request()->routeIs('posts.create')">
                         Crea
                     </x-nav-link>
 
@@ -51,7 +51,7 @@
                             Profilo
                         </x-dropdown-link>
 
-                        <x-dropdown-link :href="route('setup.index')">
+                        <x-dropdown-link :href="route('settings')">
                             Setup
                         </x-dropdown-link>
 
@@ -83,11 +83,11 @@
                 Home
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('setup.index')" :active="request()->routeIs('setup.index') || request()->routeIs('settings') || request()->routeIs('profile.brand*')">
+            <x-responsive-nav-link :href="route('settings')" :active="request()->routeIs('settings') || request()->routeIs('profile.brand*')">
                 Setup
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('posts.create')" :active="request()->routeIs('posts.create') || request()->routeIs('posts.reels.create')">
+            <x-responsive-nav-link :href="route('posts.create')" :active="request()->routeIs('posts.create')">
                 Crea
             </x-responsive-nav-link>
 

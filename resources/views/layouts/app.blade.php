@@ -57,7 +57,7 @@
                 </nav>
 
                 <div class="flex items-center gap-3">
-                    <a href="{{ route('setup.index') }}" class="inline-flex items-center gap-3 rounded-2xl border border-app bg-surface-2 px-3 py-2 transition hover:bg-white">
+                    <a href="{{ route('settings') }}" class="inline-flex items-center gap-3 rounded-2xl border border-app bg-surface-2 px-3 py-2 transition hover:bg-white">
                         <x-application-logo variant="icon" class="h-10 w-10" />
                         <div class="hidden text-left lg:block">
                             <p class="text-[11px] uppercase tracking-[0.18em] text-muted">Account</p>
@@ -75,7 +75,7 @@
                 </a>
 
                 <a
-                    href="{{ route('setup.index') }}"
+                    href="{{ route('settings') }}"
                     class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-app bg-surface-2 text-gray-700 transition hover:bg-white"
                     aria-label="Account"
                     title="Account"

@@ -94,7 +94,7 @@ Brand + setup tecnico
                     <p class="mt-2 text-sm font-semibold text-gray-900">{{ $profile?->business_name ?: 'Profilo da completare' }}</p>
                     <p class="mt-1 text-xs text-gray-600">{{ $logosCount }} logo, {{ $imagesCount }} immagini, {{ $knowledgeAssetsCount }} asset di conoscenza, {{ $assetVariablesCount }} variabili attive.</p>
                 </a>
-                <a href="{{ route('setup.index') }}#meta-connections" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
+                <a href="{{ route('settings') }}#meta-connections" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
                     <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Connessioni tecniche</p>
                     <p class="mt-2 text-sm font-semibold text-gray-900">{{ $activeSocialAccounts->count() }} account social attivi</p>
                     <p class="mt-1 text-xs text-gray-600">Meta, notifiche browser, PWA e ambiente operativo.</p>

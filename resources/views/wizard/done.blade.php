@@ -114,7 +114,7 @@
                     <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Apri libreria
                     </a>
-                    <a href="{{ route('setup.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <a href="{{ route('settings') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Apri setup
                     </a>
                 </div>
@@ -362,7 +362,7 @@
                 <h2 class="text-lg font-semibold text-gray-900">Collegamenti utili</h2>
                 <p class="mt-1 text-sm text-gray-600">Aree operative collegate al piano.</p>
                 <div class="mt-4 space-y-2">
-                    <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
                         <p class="mt-1 text-xs text-gray-600">Rivedi brand, asset e connessioni che sostengono il piano.</p>
                     </a>

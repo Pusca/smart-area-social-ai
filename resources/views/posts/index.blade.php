@@ -55,7 +55,7 @@
                     <a href="{{ route('posts.create') }}" class="ui-btn-primary justify-center">
                         Apri area crea
                     </a>
-                    <a href="{{ route('posts.reels.create') }}" class="ui-btn-primary justify-center">
+                    <a href="{{ route('posts.create') }}?preset=reel" class="ui-btn-primary justify-center">
                         Crea reel
                     </a>
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -252,7 +252,7 @@
                     <div class="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center">
                         <p class="text-sm text-gray-600">Nessun contenuto disponibile. Crea il primo post per attivare il flusso operativo.</p>
                         <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
-                            <a href="{{ route('posts.reels.create') }}" class="ui-btn-primary">
+                            <a href="{{ route('posts.create') }}?preset=reel" class="ui-btn-primary">
                                 Crea reel
                             </a>
                             <a href="{{ route('posts.create') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -328,7 +328,7 @@
                 <h2 class="text-lg font-semibold text-gray-900">Dove andare dopo</h2>
                 <p class="mt-1 text-sm text-gray-600">I collegamenti piu utili quando hai finito di rivedere la libreria.</p>
                 <div class="mt-4 space-y-2">
-                    <a href="{{ route('setup.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
                         <p class="mt-1 text-xs text-gray-600">Sistema brand, asset e connessioni che guideranno le prossime generazioni.</p>
                     </a>
@@ -343,10 +343,6 @@
                     <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
                         <p class="text-sm font-semibold text-gray-900">Pianifica</p>
                         <p class="mt-1 text-xs text-gray-600">Controlla la distribuzione dei contenuti e le prossime uscite.</p>
-                    </a>
-                    <a href="{{ route('ai') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">AI Lab</p>
-                        <p class="mt-1 text-xs text-gray-600">Apri il flusso rapido separato se ti serve un test o un output piu leggero.</p>
                     </a>
                 </div>
             </div>

@@ -30,7 +30,7 @@
         ? $imageProviderOptions
         : \App\Support\ImageProviderResolver::configuredWithLabels();
 
-    $reelCreateUrl = route('posts.reels.create');
+    $reelCreateUrl = route('posts.create') . '?preset=reel';
     $defaultPlatforms = old('platforms', $profile?->default_platforms ?? ['instagram']);
     if (!is_array($defaultPlatforms)) {
         $defaultPlatforms = ['instagram'];
@@ -158,7 +158,7 @@
                     <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Vai alla pianificazione
                     </a>
-                    <a href="{{ route('setup.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <a href="{{ route('settings') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                         Apri setup
                     </a>
                 </div>
