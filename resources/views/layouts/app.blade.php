@@ -155,24 +155,26 @@
         </main>
     </div>
 
-    <nav class="fixed inset-x-0 bottom-0 z-50 sm:hidden" aria-label="Navigazione principale">
-        <div class="px-3 pt-2" style="padding-bottom: max(12px, env(safe-area-inset-bottom))">
-            <div class="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/96 shadow-[0_4px_24px_rgba(0,0,0,0.11),0_1px_4px_rgba(0,0,0,0.06)] backdrop-blur-xl">
-                <div class="grid grid-cols-4">
-                    @foreach($mobileNavItems as $item)
-                        @php
-                            $patterns = \Illuminate\Support\Arr::wrap($item['active']);
-                            $isActive = collect($patterns)->contains(fn ($pattern) => request()->routeIs($pattern));
-                        @endphp
-                        <a
-                            href="{{ route($item['route']) }}"
-                            class="flex flex-col items-center gap-1 px-1 py-2.5 select-none touch-manipulation transition-colors {{ $isActive ? 'text-indigo-700' : 'text-gray-400 hover:text-gray-700' }}"
-                        >
-                            {!! $item['icon'] !!}
-                            <span class="text-[10px] leading-none {{ $isActive ? 'font-semibold' : 'font-medium' }}">{{ $item['label'] }}</span>
-                        </a>
-                    @endforeach
-                </div>
+    <nav class="fixed inset-x-0 bottom-0 z-50 sm:hidden" aria-label="Navigazione principale" style="border-top: 1px solid var(--border); background: rgba(255,255,255,0.97); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);">
+        <div class="mx-auto max-w-7xl" style="padding-bottom: max(10px, env(safe-area-inset-bottom));">
+            <div class="grid grid-cols-4">
+                @foreach($mobileNavItems as $item)
+                    @php
+                        $patterns = \Illuminate\Support\Arr::wrap($item['active']);
+                        $isActive = collect($patterns)->contains(fn ($pattern) => request()->routeIs($pattern));
+                    @endphp
+                    <a
+                        href="{{ route($item['route']) }}"
+                        class="relative flex flex-col items-center gap-1 py-3 px-1 select-none touch-manipulation transition-colors"
+                        style="color: {{ $isActive ? 'var(--primary)' : 'var(--text-muted)' }};"
+                    >
+                        @if($isActive)
+                            <span class="absolute top-0 left-1/2 h-[2px] w-8 -translate-x-1/2 rounded-full" style="background: var(--accent);"></span>
+                        @endif
+                        {!! $item['icon'] !!}
+                        <span class="text-[10px] leading-none {{ $isActive ? 'font-semibold' : 'font-medium' }}">{{ $item['label'] }}</span>
+                    </a>
+                @endforeach
             </div>
         </div>
     </nav>
