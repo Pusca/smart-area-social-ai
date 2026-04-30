@@ -147,9 +147,17 @@ PROMPT;
             }
         }
 
-        if (!empty($updates)) {
-            $profile->fill($updates)->save();
+        if (empty($updates)) {
+            return;
         }
+
+        // Se il profilo non esiste ancora in DB, l'INSERT richiede business_name (NOT NULL).
+        // Non salviamo finché non abbiamo almeno quel campo.
+        if (!$profile->exists && empty($updates['business_name'])) {
+            return;
+        }
+
+        $profile->fill($updates)->save();
     }
 
     /**
