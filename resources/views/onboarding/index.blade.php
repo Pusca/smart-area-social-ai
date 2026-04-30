@@ -478,10 +478,10 @@
                 if(micStream){ micStream.getTracks().forEach(function(t){t.stop();}); micStream=null; }
                 const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType||'audio/webm' });
                 audioChunks = [];
-                if (blob.size < 1000) { showApiError('Audio troppo corto. Riprova.'); setMicIdle(); return; }
+                if (blob.size < 100) { showApiError('Audio non rilevato. Controlla il microfono e riprova.'); setMicIdle(); return; }
                 sendAudio(blob);
             };
-            mediaRecorder.start();
+            mediaRecorder.start(500);
             recording = true;
             micBtn.className = 'mic-btn listen';
             micWrap.classList.add('listening');
