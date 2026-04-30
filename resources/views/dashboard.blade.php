@@ -113,59 +113,83 @@
 </div>
 
 {{-- ══════════════════════════════════════
-     2. STATS — 4 colonne
+     2. STATS — 2×2 mobile, 4 col desktop
 ══════════════════════════════════════ --}}
-<div class="grid grid-cols-4 gap-2 sm:gap-3 anim-2">
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-3 anim-2">
 
-    <div class="stat-hover dash-card p-4 sm:p-5">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl" style="background:#EEF4FE;">
-            <svg class="h-4 w-4" style="color:#0A2D6F;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
-            </svg>
+    {{-- Generati --}}
+    <div class="stat-hover dash-card overflow-hidden">
+        <div class="px-5 py-5 sm:px-5 sm:py-5">
+            <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">Generati</p>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:#EEF4FE;">
+                    <svg class="h-4 w-4" style="color:#0A2D6F;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+                    </svg>
+                </span>
+            </div>
+            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:#07183F;">{{ $doneItems }}</p>
+            <p class="mt-1 text-xs" style="color:#566783;">di {{ $totalItems }} totali</p>
         </div>
-        <p class="mt-3 text-2xl font-bold sm:text-3xl" style="color:#07183F;">{{ $doneItems }}</p>
-        <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-widest sm:text-[10px]" style="color:#566783;">Generati</p>
-        <div class="mt-3 h-1 w-full overflow-hidden rounded-full" style="background:#EEF4FE;">
-            <div class="h-full rounded-full" style="width:{{ $aiCompletion }}%;background:linear-gradient(90deg,#0A2D6F,#3BC8FF);"></div>
+        <div class="h-1.5 w-full" style="background:#EEF4FE;">
+            <div class="h-full" style="width:{{ $aiCompletion }}%;background:linear-gradient(90deg,#0A2D6F,#3BC8FF);"></div>
         </div>
     </div>
 
-    <div class="stat-hover dash-card p-4 sm:p-5">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl" style="background:#ecfdf5;">
-            <svg class="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
-            </svg>
+    {{-- Pubblicati --}}
+    <div class="stat-hover dash-card overflow-hidden">
+        <div class="px-5 py-5">
+            <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">Pubblicati</p>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:#ecfdf5;">
+                    <svg class="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                    </svg>
+                </span>
+            </div>
+            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:#07183F;">{{ $publishedItems }}</p>
+            <p class="mt-1 text-xs" style="color:#566783;">{{ $publishRate }}% del totale</p>
         </div>
-        <p class="mt-3 text-2xl font-bold text-gray-900 sm:text-3xl">{{ $publishedItems }}</p>
-        <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-gray-400 sm:text-[10px]">Pubblicati</p>
-        <div class="mt-3 h-1 w-full overflow-hidden rounded-full bg-gray-100">
-            <div class="h-full rounded-full bg-emerald-500" style="width:{{ $publishRate }}%"></div>
-        </div>
-    </div>
-
-    <div class="stat-hover dash-card p-4 sm:p-5">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl" style="background:#fffbeb;">
-            <svg class="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
-            </svg>
-        </div>
-        <p class="mt-3 text-2xl font-bold sm:text-3xl" style="color:{{ $queuedItems > 0 ? '#b45309' : '#07183F' }};">{{ $queuedItems }}</p>
-        <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-gray-400 sm:text-[10px]">In coda</p>
-        <div class="mt-3 h-1 w-full overflow-hidden rounded-full bg-gray-100">
-            <div class="h-full rounded-full bg-amber-400" style="width:{{ min(100, $queueRate) }}%"></div>
+        <div class="h-1.5 w-full bg-gray-100">
+            <div class="h-full bg-emerald-500" style="width:{{ $publishRate }}%"></div>
         </div>
     </div>
 
-    <div class="stat-hover dash-card p-4 sm:p-5">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl" style="background:{{ $errorItems > 0 ? '#fef2f2' : '#f9fafb' }};">
-            <svg class="h-4 w-4" style="color:{{ $errorItems > 0 ? '#dc2626' : '#9ca3af' }};" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
-            </svg>
+    {{-- In coda --}}
+    <div class="stat-hover dash-card overflow-hidden">
+        <div class="px-5 py-5">
+            <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">In coda</p>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:#fffbeb;">
+                    <svg class="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                    </svg>
+                </span>
+            </div>
+            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:{{ $queuedItems > 0 ? '#b45309' : '#07183F' }};">{{ $queuedItems }}</p>
+            <p class="mt-1 text-xs" style="color:#566783;">in generazione</p>
         </div>
-        <p class="mt-3 text-2xl font-bold sm:text-3xl" style="color:{{ $errorItems > 0 ? '#dc2626' : '#07183F' }};">{{ $errorItems }}</p>
-        <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-widest text-gray-400 sm:text-[10px]">Errori</p>
-        <div class="mt-3 h-1 w-full overflow-hidden rounded-full bg-gray-100">
-            <div class="h-full rounded-full" style="width:{{ max(4, $errorRate) }}%;background:{{ $errorItems > 0 ? '#dc2626' : '#e5e7eb' }};"></div>
+        <div class="h-1.5 w-full bg-gray-100">
+            <div class="h-full bg-amber-400" style="width:{{ min(100, $queueRate) }}%"></div>
+        </div>
+    </div>
+
+    {{-- Errori --}}
+    <div class="stat-hover dash-card overflow-hidden">
+        <div class="px-5 py-5">
+            <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">Errori</p>
+                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:{{ $errorItems > 0 ? '#fef2f2' : '#f9fafb' }};">
+                    <svg class="h-4 w-4" style="color:{{ $errorItems > 0 ? '#dc2626' : '#9ca3af' }};" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+                    </svg>
+                </span>
+            </div>
+            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:{{ $errorItems > 0 ? '#dc2626' : '#07183F' }};">{{ $errorItems }}</p>
+            <p class="mt-1 text-xs" style="color:#566783;">{{ $errorItems > 0 ? 'da verificare' : 'tutto ok' }}</p>
+        </div>
+        <div class="h-1.5 w-full bg-gray-100">
+            <div class="h-full" style="width:{{ max(4, $errorRate) }}%;background:{{ $errorItems > 0 ? '#dc2626' : '#e5e7eb' }};"></div>
         </div>
     </div>
 
@@ -260,7 +284,7 @@
 
     {{-- Piano attivo --}}
     <div class="dash-card overflow-hidden">
-        <div class="flex items-center justify-between gap-3 px-6 py-5" style="border-bottom:1px solid #D0DCF0;">
+        <div class="flex items-center justify-between gap-3 px-6 py-6" style="border-bottom:1px solid #D0DCF0;">
             <div class="flex items-center gap-3">
                 <span class="brand-icon-box">
                     <svg class="h-4 w-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -327,7 +351,7 @@
 
     {{-- Agenda --}}
     <div class="dash-card overflow-hidden">
-        <div class="flex items-center justify-between gap-3 px-6 py-5" style="border-bottom:1px solid #D0DCF0;">
+        <div class="flex items-center justify-between gap-3 px-6 py-6" style="border-bottom:1px solid #D0DCF0;">
             <div class="flex items-center gap-3">
                 <span class="accent-icon-box">
                     <svg class="h-4 w-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
