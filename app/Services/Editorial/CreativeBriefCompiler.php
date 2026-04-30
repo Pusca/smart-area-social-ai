@@ -26,7 +26,8 @@ class CreativeBriefCompiler
         $itemBrain = (array) ($context['item_brain'] ?? []);
         $assetIdentity = (array) ($context['asset_identity'] ?? []);
         $memorySummary = (array) ($context['memory_summary'] ?? []);
-        $trendBrief = (array) ($context['trend_brief'] ?? []);
+        $trendBrief       = (array) ($context['trend_brief'] ?? []);
+        $trendDrivenIdeas = (array) ($context['trend_driven_ideas'] ?? []);
         $learning = (array) ($context['tenant_learning'] ?? []);
         $manualBrief = trim((string) ($context['brief_seed'] ?? $item->caption ?? $item->title ?? ''));
 
@@ -137,6 +138,7 @@ class CreativeBriefCompiler
             'identity_constraints' => $identityConstraints,
             'visual_language' => $visualLanguage,
             'trend_overlays' => $trendOverlays,
+            'trend_driven_ideas' => $trendDrivenIdeas,
             'publishability_constraints' => $publishabilityConstraints,
             'learning_bias' => [
                 'preferred_hook_families' => (array) data_get($learning, 'preferred_hook_families', []),

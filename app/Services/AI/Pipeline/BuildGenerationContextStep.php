@@ -10,6 +10,8 @@ use App\Models\TenantProfile;
 use App\Services\AlterEgoService;
 use App\Services\Editorial\CreativeBriefCompiler;
 use App\Services\Editorial\TrendBriefService;
+use App\Services\Trends\TenantTrendSelectorService;
+use App\Services\Trends\TrendContentTranslatorService;
 use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\GenerationAuditService;
 use App\Services\Learning\TenantLearningLoopService;
@@ -24,6 +26,8 @@ class BuildGenerationContextStep
         private readonly TenantContentIntelligenceService $tenantContentIntelligence,
         private readonly GenerationAuditService $generationAudit,
         private readonly TrendBriefService $trendBriefService,
+        private readonly TenantTrendSelectorService $trendSelector,
+        private readonly TrendContentTranslatorService $trendTranslator,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
         private readonly CreativeBriefCompiler $creativeBriefCompiler,
         private readonly AlterEgoService $alterEgoService
@@ -128,6 +132,21 @@ class BuildGenerationContextStep
             )
             : (array) data_get($meta, 'trend_brief', data_get($strategy, 'trend_brief', []));
 
+        // ── Trend Engine: selezione segnali per item + traduzione in idee editoriali ──
+        // Feature-flagged: se disabilitato, passa array vuoto senza chiamate GPT.
+        $trendDrivenIdeas = [];
+        if ((bool) config('social_manager.features.trend_engine_v1', true) && !empty($trendBrief)) {
+            $snapshotId       = (int) data_get($trendBrief, 'source_snapshot_id', 0);
+            $selectedSignals  = $this->trendSelector->selectFor($item, $snapshotId);
+            if (!empty($selectedSignals)) {
+                $trendDrivenIdeas = $this->trendTranslator->translate(
+                    $selectedSignals,
+                    $tenantProfile,
+                    $item
+                );
+            }
+        }
+
         // Creative brief sempre attivo — non dipende da feature flag
         $creativeBrief = $this->creativeBriefCompiler->compileForContentItem($item, [
             'strategy' => $strategy,
@@ -136,6 +155,7 @@ class BuildGenerationContextStep
             'asset_identity' => $assetIdentity,
             'memory_summary' => $memorySummary,
             'trend_brief' => $trendBrief,
+            'trend_driven_ideas' => $trendDrivenIdeas,
             'tenant_learning' => $tenantLearning,
             'brief_seed' => $briefSeed,
             'visual_mode' => $visualMode,
@@ -183,6 +203,7 @@ class BuildGenerationContextStep
         $state->meta = $meta;
         $state->meta['tenant_learning'] = $tenantLearning;
         $state->meta['trend_brief'] = $trendBrief;
+        $state->meta['trend_driven_ideas'] = $trendDrivenIdeas;
         $state->meta['creative_brief'] = $creativeBrief;
         $state->meta['visual_mode'] = $visualMode;
         $state->meta['visual_mode_preset'] = $visualModePreset;
@@ -196,6 +217,7 @@ class BuildGenerationContextStep
             ->put('memory_summary', $memorySummary)
             ->put('tenant_learning', $tenantLearning)
             ->put('trend_brief', $trendBrief)
+            ->put('trend_driven_ideas', $trendDrivenIdeas)
             ->put('creative_brief', $creativeBrief)
             ->put('active_feedback_request', $activeFeedbackRequest)
             ->put('asset_variables', $assetVariables)

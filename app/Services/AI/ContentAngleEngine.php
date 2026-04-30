@@ -30,15 +30,22 @@ class ContentAngleEngine
         $ctaMode = $this->resolveCtaMode($strategyType, $goal, $platform);
         $platformOpening = $this->resolvePlatformOpeningStructure($platform, $format);
 
-        $mainHook = $this->applyProfessionalismGuardrail(
-            $this->interpolate((string) ($pattern['primary_template'] ?? ''), $lexicon),
-            $professionalismGuardrail
-        );
+        // ── Trend Engine v1: override hook with AI-translated trend idea ────────
+        $trendDrivenIdeas = (array) data_get($context, 'trend_driven_ideas', []);
+        $primaryIdea      = is_array($trendDrivenIdeas[0] ?? null) ? $trendDrivenIdeas[0] : null;
+
+        $rawMainHook = $primaryIdea !== null && $primaryIdea['hook'] !== ''
+            ? $primaryIdea['hook']
+            : $this->interpolate((string) ($pattern['primary_template'] ?? ''), $lexicon);
+
+        $mainHook = $this->applyProfessionalismGuardrail($rawMainHook, $professionalismGuardrail);
         $alternativeHook = $this->applyProfessionalismGuardrail(
             $this->interpolate((string) ($pattern['alternative_template'] ?? ''), $lexicon),
             $professionalismGuardrail
         );
-        $narrativeAngle = $this->interpolate((string) ($pattern['narrative_template'] ?? ''), $lexicon);
+        $narrativeAngle = $primaryIdea !== null && $primaryIdea['angle'] !== ''
+            ? $this->cleanSentence($primaryIdea['angle'], 220)
+            : $this->interpolate((string) ($pattern['narrative_template'] ?? ''), $lexicon);
         $authoritySignals = $this->buildSignals('authority_signal_templates', $strategyType, $lexicon);
         $trustSignals = $this->buildSignals('trust_signal_templates', $strategyType, $lexicon);
         $authorityCue = (string) data_get($authoritySignals, '0.cue', '');
@@ -92,6 +99,7 @@ class ContentAngleEngine
             'trust_signals' => $trustSignals,
             'viral_angle' => $viralAngle,
             'content_structure_meta' => $contentStructureMeta,
+            'trend_driven_ideas'     => $trendDrivenIdeas,
         ];
     }
 
@@ -442,12 +450,23 @@ class ContentAngleEngine
     private function resolveTrendRelevance(array $context, string $editorialMode, string $trendAppetite): string
     {
         $confidence = data_get($context, 'trend_confidence', data_get($context, 'item_brain.trend_confidence'));
-        $hasTrend = !empty((array) data_get($context, 'trend_opportunity', data_get($context, 'item_brain.trend_opportunity', [])))
+
+        // Trend Engine v1: if concrete translated ideas exist, always treat as trend-relevant
+        $drivenIdeas = (array) data_get($context, 'trend_driven_ideas', []);
+        $hasDrivenIdeas = !empty($drivenIdeas);
+
+        $hasTrend = $hasDrivenIdeas
+            || !empty((array) data_get($context, 'trend_opportunity', data_get($context, 'item_brain.trend_opportunity', [])))
             || trim((string) data_get($context, 'item_brain.trend_bridge', '')) !== ''
             || in_array($editorialMode, ['trend-aware', 'reactive'], true);
 
         if (!$hasTrend) {
             return 'low';
+        }
+
+        // Driven ideas always produce at least 'medium' relevance regardless of appetite
+        if ($hasDrivenIdeas && $trendAppetite !== 'low') {
+            return 'high';
         }
 
         if ($trendAppetite === 'low') {

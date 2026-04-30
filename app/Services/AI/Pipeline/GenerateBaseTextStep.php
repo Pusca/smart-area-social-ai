@@ -39,7 +39,8 @@ class GenerateBaseTextStep
         $strategy = (array) $state->get('strategy', []);
         $memorySummary = (array) $state->get('memory_summary', []);
         $tenantLearning = (array) $state->get('tenant_learning', data_get($meta, 'tenant_learning', []));
-        $trendBrief = (array) $state->get('trend_brief', data_get($meta, 'trend_brief', []));
+        $trendBrief       = (array) $state->get('trend_brief', data_get($meta, 'trend_brief', []));
+        $trendDrivenIdeas = (array) $state->get('trend_driven_ideas', data_get($meta, 'trend_driven_ideas', []));
         $creativeBrief = (array) $state->get('creative_brief', data_get($meta, 'creative_brief', []));
         $hardConstraints = (array) $state->get('hard_constraints', data_get($meta, 'hard_constraints', []));
         $visualModePreset = (array) $state->get('visual_mode_preset', data_get($meta, 'visual_mode_preset', []));
@@ -61,8 +62,9 @@ class GenerateBaseTextStep
             'topic' => (string) data_get($itemBrain, 'narrative_angle', data_get($itemBrain, 'angle', $item->title ?: $briefSeed)),
             'rubric' => (string) data_get($itemBrain, 'rubric', $item->rubric),
             'editorial_mode' => (string) data_get($itemBrain, 'editorial_mode', 'evergreen'),
-            'trend_confidence' => data_get($itemBrain, 'trend_confidence'),
-            'trend_opportunity' => (array) data_get($itemBrain, 'trend_opportunity', []),
+            'trend_confidence'    => data_get($itemBrain, 'trend_confidence'),
+            'trend_opportunity'   => (array) data_get($itemBrain, 'trend_opportunity', []),
+            'trend_driven_ideas'  => $trendDrivenIdeas,
             'tenant_profile' => $tenantProfile,
             'strategy' => $strategy,
             'item_brain' => $itemBrain,
@@ -154,6 +156,7 @@ class GenerateBaseTextStep
                 'memory_summary' => $memorySummary,
                 'tenant_learning' => $tenantLearning,
                 'trend_brief' => $trendBrief,
+                'trend_driven_ideas' => $trendDrivenIdeas,
                 'creative_brief' => $creativeBrief,
                 'knowledge_pack' => (array) data_get($meta, 'knowledge_pack', []),
                 'examples' => (array) data_get($meta, 'examples', []),
