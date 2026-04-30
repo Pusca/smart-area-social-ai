@@ -245,6 +245,21 @@
     transition: background 140ms;
 }
 .cr-breadcrumb:hover { background: rgba(10,45,111,0.12); }
+
+/* ── Grid scelte responsive ── */
+.cr-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    width: 100%;
+    max-width: 700px;
+}
+@media (max-width: 600px) {
+    .cr-choice-grid {
+        grid-template-columns: 1fr;
+        max-width: 100%;
+    }
+}
 </style>
 
 <div
@@ -275,7 +290,7 @@
         <h1 style="font-size:1.75rem;font-weight:800;color:var(--navy);margin-bottom:.5rem;letter-spacing:-.02em;">Cosa vuoi creare?</h1>
         <p style="font-size:.875rem;color:var(--slate);margin-bottom:2.75rem;">Scegli il tipo di contenuto per iniziare.</p>
 
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;width:100%;max-width:700px;">
+        <div class="cr-choice-grid">
 
             {{-- Post --}}
             <button type="button" @click="setMode('post')" class="cr-choice">
@@ -630,6 +645,7 @@ function createPage() {
         mode: @json($initialMode),
         setMode(m) {
             this.mode = m;
+            window.scrollTo({ top: 0, behavior: 'instant' });
             this.$nextTick(() => document.getElementById('generation_brief')?.focus());
         },
     };
