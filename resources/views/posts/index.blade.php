@@ -88,7 +88,7 @@
     @endif
 
     {{-- ── Filtri ── --}}
-    <div class="mb-3 flex flex-wrap gap-1.5">
+    <div class="flex flex-wrap gap-1.5" style="margin-bottom:.75rem;">
         <button class="lib-pill" :class="filter === '' && 'active'" @click="filter = ''">Tutti <span class="ml-1 opacity-50">{{ $totalItems }}</span></button>
         <button class="lib-pill" :class="filter === 'working' && 'active'" @click="filter = 'working'">In lavorazione</button>
         <button class="lib-pill" :class="filter === 'ready' && 'active'" @click="filter = 'ready'">Pronti</button>
@@ -99,10 +99,10 @@
     </div>
 
     {{-- ── Ricerca ── --}}
-    <div class="mb-5 flex items-center gap-2.5 px-4 py-2.5" style="background:rgba(10,45,111,0.04);border-radius:1rem;">
+    <div class="flex items-center gap-2.5" style="background:rgba(10,45,111,0.04);border-radius:1rem;padding:.625rem 1rem;margin-bottom:1.25rem;">
         <svg class="h-4 w-4 shrink-0" style="color:#94a3b8;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-        <input type="text" x-model="search" placeholder="Cerca per titolo o testo…" class="w-full bg-transparent text-sm outline-none" style="color:#1e3a5f;" />
-        <button x-show="search !== ''" @click="search = ''" class="shrink-0 rounded-full p-0.5 transition" style="color:#94a3b8;" x-cloak>
+        <input type="text" x-model="search" placeholder="Cerca per titolo o testo…" class="w-full text-sm" style="background:transparent;border:none;outline:none;box-shadow:none;border-radius:0;color:#1e3a5f;padding:0;" />
+        <button x-show="search !== ''" @click="search = ''" x-cloak style="color:#94a3b8;flex-shrink:0;line-height:1;">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
