@@ -161,8 +161,19 @@ PROMPT;
      */
     public function transcribe(string $path, string $originalName = 'audio.webm'): string
     {
+        $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION) ?: 'webm');
+        $mime = match ($ext) {
+            'ogg'  => 'audio/ogg',
+            'mp4'  => 'audio/mp4',
+            'm4a'  => 'audio/mp4',
+            'mp3'  => 'audio/mpeg',
+            'wav'  => 'audio/wav',
+            'flac' => 'audio/flac',
+            default => 'audio/webm',
+        };
+
         $response = $this->request(120)
-            ->attach('file', file_get_contents($path), $originalName)
+            ->attach('file', file_get_contents($path), $originalName, ['Content-Type' => $mime])
             ->post($this->url('/v1/audio/transcriptions'), [
                 'model'    => 'whisper-1',
                 'language' => 'it',
