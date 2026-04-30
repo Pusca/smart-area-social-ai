@@ -366,30 +366,30 @@
             <a href="{{ route('calendar') }}" class="btn-secondary shrink-0" style="padding:8px 16px;font-size:.8rem;">Calendario</a>
         </div>
 
-        <div class="px-6 py-5 space-y-3">
+        <div class="px-5 py-5 space-y-3">
             <div class="grid grid-cols-2 gap-2">
-                <div class="rounded-xl px-4 py-3" style="background:#EEF4FE;">
+                <div class="rounded-xl px-3 py-2.5" style="background:#EEF4FE;">
                     <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:#566783;">Previsti oggi</p>
-                    <p class="mt-1 text-lg font-bold" style="color:#07183F;">{{ $todayItems->count() }}</p>
+                    <p class="mt-1 text-base font-bold" style="color:#07183F;">{{ $todayItems->count() }}</p>
                 </div>
-                <div class="rounded-xl px-4 py-3" style="background:{{ $todayPending > 0 ? '#fffbeb' : '#ecfdf5' }};">
+                <div class="rounded-xl px-3 py-2.5" style="background:{{ $todayPending > 0 ? '#fffbeb' : '#ecfdf5' }};">
                     <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:{{ $todayPending > 0 ? '#d97706' : '#059669' }};">Da completare</p>
-                    <p class="mt-1 text-lg font-bold" style="color:{{ $todayPending > 0 ? '#b45309' : '#047857' }};">{{ $todayPending }}</p>
+                    <p class="mt-1 text-base font-bold" style="color:{{ $todayPending > 0 ? '#b45309' : '#047857' }};">{{ $todayPending }}</p>
                 </div>
-                <div class="rounded-xl px-4 py-3" style="background:#EEF4FE;">
+                <div class="rounded-xl px-3 py-2.5" style="background:#EEF4FE;">
                     <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:#566783;">In calendario</p>
-                    <p class="mt-1 text-lg font-bold" style="color:#07183F;">{{ $weekPlanned }}</p>
+                    <p class="mt-1 text-base font-bold" style="color:#07183F;">{{ $weekPlanned }}</p>
                 </div>
-                <div class="rounded-xl px-4 py-3" style="background:#ecfdf5;">
+                <div class="rounded-xl px-3 py-2.5" style="background:#ecfdf5;">
                     <p class="text-[9px] font-semibold uppercase tracking-wide text-emerald-600">Pubblicati</p>
-                    <p class="mt-1 text-lg font-bold text-emerald-700">{{ $weekPublished }}</p>
+                    <p class="mt-1 text-base font-bold text-emerald-700">{{ $weekPublished }}</p>
                 </div>
             </div>
 
             @if($nextItem?->scheduled_at)
-            <div class="flex items-center gap-3 rounded-xl px-4 py-3" style="background:#EEF4FE;border:1px solid #D0DCF0;">
-                <span class="brand-icon-box shrink-0" style="width:2rem;height:2rem;border-radius:.625rem;">
-                    <svg class="h-3.5 w-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <div class="flex items-center gap-3 rounded-xl px-3 py-2.5" style="background:#EEF4FE;border:1px solid #D0DCF0;">
+                <span class="brand-icon-box shrink-0" style="width:1.75rem;height:1.75rem;border-radius:.5rem;">
+                    <svg class="h-3 w-3 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2m6-2a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z"/>
                     </svg>
                 </span>
@@ -401,7 +401,7 @@
             </div>
             @endif
 
-            <div class="grid grid-cols-2 gap-2 pt-1">
+            <div class="grid grid-cols-2 gap-2">
                 <a href="{{ route('posts.create') }}" class="btn-primary justify-center">Crea contenuto</a>
                 <a href="{{ route('posts.create') }}?preset=reel" class="btn-secondary justify-center">Crea reel</a>
             </div>
