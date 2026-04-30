@@ -107,30 +107,52 @@
     display: flex;
     flex-direction: column;
     padding: var(--sp-xl);
-    border: var(--border-soft);
+    border: 1.5px solid rgba(10,45,111,0.1);
     border-radius: var(--radius-card);
     background: #fff;
     cursor: pointer;
-    transition: border-color 180ms, box-shadow 180ms, transform 180ms;
+    transition: border-color 200ms, box-shadow 200ms, transform 200ms, background 200ms;
     text-align: left;
     width: 100%;
     text-decoration: none;
+    position: relative;
+    overflow: hidden;
+}
+.cr-choice::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #3BC8FF 0%, #1498F3 100%);
+    border-radius: 3px 3px 0 0;
+    opacity: 0;
+    transition: opacity 200ms;
 }
 .cr-choice:hover {
-    border-color: rgba(10,45,111,0.3);
-    box-shadow: 0 8px 28px rgba(10,45,111,0.09);
-    transform: translateY(-2px);
+    border-color: rgba(10,45,111,0.22);
+    box-shadow: 0 16px 40px rgba(10,45,111,0.12);
+    transform: translateY(-4px);
+    background: rgba(10,45,111,0.015);
 }
+.cr-choice:hover::after { opacity: 1; }
 .cr-choice-icon {
-    width: 3rem; height: 3rem;
+    width: 3.25rem; height: 3.25rem;
     border-radius: var(--radius-inner);
     display: flex; align-items: center; justify-content: center;
-    background: rgba(10,45,111,0.07);
+    background: linear-gradient(135deg, rgba(59,200,255,.18) 0%, rgba(10,45,111,.09) 100%);
     margin-bottom: var(--sp-lg);
+    flex-shrink: 0;
 }
-.cr-choice-title { font-size: 1rem; font-weight: 700; color: var(--navy); margin-bottom: var(--sp-xs); }
-.cr-choice-desc  { font-size: .8rem; color: var(--slate); line-height: 1.5; }
-.cr-choice-arrow { margin-top: auto; padding-top: var(--sp-md); color: var(--slate-light); }
+.cr-choice-title { font-size: 1.05rem; font-weight: 700; color: var(--navy); margin-bottom: calc(var(--sp-xs) * .75); }
+.cr-choice-desc  { font-size: .8rem; color: var(--slate); line-height: 1.55; }
+.cr-choice-arrow {
+    margin-top: auto; padding-top: var(--sp-md);
+    display: flex; align-items: center; gap: .3rem;
+    font-size: .72rem; font-weight: 600;
+    color: var(--slate-light);
+    transition: color 200ms, gap 200ms;
+}
+.cr-choice:hover .cr-choice-arrow { color: #1498F3; gap: .5rem; }
 
 /* ── Card form ── */
 .cr-card {
@@ -159,11 +181,27 @@
 .cr-native {
     width: 100%;
     background: transparent;
-    border: none; outline: none; box-shadow: none;
+    border: none !important; outline: none !important; box-shadow: none !important;
     border-radius: 0; padding: 0;
     font-size: .875rem;
     color: #1e3a5f;
     appearance: none;
+}
+.cr-native:focus,
+.cr-native:active,
+.cr-native:focus-visible,
+.cr-field-wrap input:focus,
+.cr-field-wrap input:active,
+.cr-field-wrap input:focus-visible,
+.cr-field-wrap select:focus,
+.cr-field-wrap select:active,
+.cr-field-wrap select:focus-visible,
+.cr-field-wrap textarea:focus,
+.cr-field-wrap textarea:active,
+.cr-field-wrap textarea:focus-visible {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
 /* ── Platform pills ── */
@@ -212,7 +250,7 @@
 <div
     x-data="createPage()"
     class="w-full"
-    style="padding: 2rem 1.5rem; max-width: 860px; margin: 0 auto;"
+    :style="mode === '' ? 'padding:0;' : 'padding:2rem 1.5rem;max-width:860px;margin:0 auto;'"
 >
 
     @if($errors->any())
@@ -231,18 +269,18 @@
         x-transition:leave="transition duration-200 ease-in"
         x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"
-        style="min-height:calc(100vh - 14rem);display:flex;flex-direction:column;align-items:center;justify-content:center;"
+        style="min-height:calc(100dvh - 4rem);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1.5rem;"
     >
-        <p class="text-xs font-semibold uppercase tracking-widest" style="color:var(--slate-light);letter-spacing:.18em;margin-bottom:.5rem;">Crea</p>
-        <h1 style="font-size:1.6rem;font-weight:700;color:var(--navy);margin-bottom:.4rem;">Cosa vuoi creare?</h1>
-        <p style="font-size:.875rem;color:var(--slate);margin-bottom:2.5rem;">Scegli il tipo di contenuto per iniziare.</p>
+        <p style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.2em;color:var(--slate-light);margin-bottom:.625rem;">Nuovo contenuto</p>
+        <h1 style="font-size:1.75rem;font-weight:800;color:var(--navy);margin-bottom:.5rem;letter-spacing:-.02em;">Cosa vuoi creare?</h1>
+        <p style="font-size:.875rem;color:var(--slate);margin-bottom:2.75rem;">Scegli il tipo di contenuto per iniziare.</p>
 
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;width:100%;max-width:680px;">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;width:100%;max-width:700px;">
 
             {{-- Post --}}
             <button type="button" @click="setMode('post')" class="cr-choice">
                 <div class="cr-choice-icon">
-                    <svg width="22" height="22" fill="none" stroke="#0A2D6F" stroke-width="1.5" viewBox="0 0 24 24">
+                    <svg width="22" height="22" fill="none" stroke="#0A2D6F" stroke-width="1.6" viewBox="0 0 24 24">
                         <rect x="3" y="3" width="18" height="18" rx="2.5"/>
                         <path stroke-linecap="round" d="M3 9h18M9 21V9"/>
                     </svg>
@@ -250,35 +288,38 @@
                 <p class="cr-choice-title">Post</p>
                 <p class="cr-choice-desc">Immagine singola o carosello per il feed</p>
                 <div class="cr-choice-arrow">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    <span>Inizia</span>
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                 </div>
             </button>
 
             {{-- Reel --}}
             <button type="button" @click="setMode('reel')" class="cr-choice">
                 <div class="cr-choice-icon">
-                    <svg width="22" height="22" fill="none" stroke="#0A2D6F" stroke-width="1.5" viewBox="0 0 24 24">
+                    <svg width="22" height="22" fill="none" stroke="#0A2D6F" stroke-width="1.6" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                 </div>
                 <p class="cr-choice-title">Reel</p>
                 <p class="cr-choice-desc">Video con script, shot plan e voiceover</p>
                 <div class="cr-choice-arrow">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    <span>Inizia</span>
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                 </div>
             </button>
 
             {{-- Piano --}}
             <a href="{{ route('wizard.start') }}" class="cr-choice">
                 <div class="cr-choice-icon">
-                    <svg width="22" height="22" fill="none" stroke="#0A2D6F" stroke-width="1.5" viewBox="0 0 24 24">
+                    <svg width="22" height="22" fill="none" stroke="#0A2D6F" stroke-width="1.6" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
                 </div>
                 <p class="cr-choice-title">Piano editoriale</p>
                 <p class="cr-choice-desc">Sequenza di contenuti con logica d'insieme</p>
                 <div class="cr-choice-arrow">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    <span>Inizia</span>
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                 </div>
             </a>
 
