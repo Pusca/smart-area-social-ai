@@ -172,7 +172,7 @@ PROMPT;
             default => 'audio/webm',
         };
 
-        $response = $this->request(120)
+        $response = $this->request(120, false)
             ->attach('file',     file_get_contents($path), $originalName, ['Content-Type' => $mime])
             ->attach('model',    'whisper-1')
             ->attach('language', 'it')
