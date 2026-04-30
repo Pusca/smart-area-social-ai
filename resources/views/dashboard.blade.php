@@ -66,21 +66,28 @@
 <div class="space-y-5">
 
 {{-- ══════════════════════════════════════
-     BANNER WORKSPACE (dismissibile)
+     BANNER WORKSPACE — solo se score < 60, una volta per sessione
 ══════════════════════════════════════ --}}
-<div x-data="{ open: true }" x-show="open" x-transition.opacity class="anim-0">
+@if($workspaceScore < 60)
+<div
+    x-data="{ open: !sessionStorage.getItem('ws_banner_dismissed') }"
+    x-show="open"
+    x-transition.opacity
+    class="anim-0"
+>
     <div class="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-medium {{ $scoreBadgeClass }}">
         <div class="flex items-center gap-2">
             <x-application-logo variant="icon" class="h-4 w-4 shrink-0" />
-            <span>Workspace <strong>{{ $scoreLabel }}</strong></span>
+            <span>Workspace <strong>{{ $scoreLabel }}</strong> — {{ $workspaceScore < 40 ? 'ci sono errori da risolvere' : 'alcune cose richiedono attenzione' }}</span>
         </div>
-        <button @click="open = false" class="shrink-0 rounded-lg p-1 opacity-60 transition hover:opacity-100">
+        <button @click="open = false; sessionStorage.setItem('ws_banner_dismissed', '1')" class="shrink-0 rounded-lg p-1 opacity-60 transition hover:opacity-100">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
             </svg>
         </button>
     </div>
 </div>
+@endif
 
 {{-- ══════════════════════════════════════
      1. HEADER
