@@ -88,21 +88,21 @@
     @endif
 
     {{-- ── Filtri + ricerca ── --}}
-    <div class="mb-5 flex flex-wrap items-center gap-2">
+    <div class="mb-5 flex items-center justify-between gap-3">
         <div class="flex flex-wrap gap-1.5">
-            <button class="lib-pill" :class="filter === '' && 'active'" @click="filter = ''">Tutti <span class="ml-1 opacity-60">{{ $totalItems }}</span></button>
+            <button class="lib-pill" :class="filter === '' && 'active'" @click="filter = ''">Tutti <span class="ml-1 opacity-50">{{ $totalItems }}</span></button>
             <button class="lib-pill" :class="filter === 'working' && 'active'" @click="filter = 'working'">In lavorazione</button>
             <button class="lib-pill" :class="filter === 'ready' && 'active'" @click="filter = 'ready'">Pronti</button>
-            <button class="lib-pill" :class="filter === 'published' && 'active'" @click="filter = 'published'">Pubblicati <span class="ml-1 opacity-60">{{ $publishedItems }}</span></button>
+            <button class="lib-pill" :class="filter === 'published' && 'active'" @click="filter = 'published'">Pubblicati <span class="ml-1 opacity-50">{{ $publishedItems }}</span></button>
             @if($aiError > 0)
                 <button class="lib-pill" :class="filter === 'error' && 'active'" @click="filter = 'error'" style="color:#dc2626;">Errori {{ $aiError }}</button>
             @endif
         </div>
 
-        <div class="ml-auto flex items-center gap-2 rounded-xl px-3 py-2" style="background:rgba(10,45,111,0.04);">
-            <svg class="h-3.5 w-3.5 shrink-0" style="color:#94a3b8;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input type="text" x-model="search" placeholder="Cerca…" class="w-32 bg-transparent text-sm outline-none" style="color:#0A2D6F;" />
-        </div>
+        <label class="flex shrink-0 cursor-text items-center gap-1.5 rounded-full px-3 py-1.5" style="background:rgba(10,45,111,0.05);">
+            <svg class="h-3 w-3 shrink-0" style="color:#94a3b8;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" x-model="search" placeholder="Cerca…" class="w-24 bg-transparent outline-none" style="font-size:.72rem;font-weight:600;color:#0A2D6F;" />
+        </label>
     </div>
 
     @if($isPaginator)
