@@ -52,8 +52,9 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->gro
     Route::post('/onboarding/assets', [OnboardingController::class, 'uploadAssets'])->name('onboarding.assets');
     Route::post('/onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
 
-    // AI Brand chat + apply — disponibili durante onboarding (nessun middleware onboardingComplete)
+    // AI Brand — disponibili durante onboarding (nessun middleware onboardingComplete)
     Route::post('/ai/brand/chat', [BrandAiController::class, 'chat'])->name('ai.brand.chat');
+    Route::post('/ai/brand/transcribe-chat', [BrandAiController::class, 'transcribeAndChat'])->name('ai.brand.transcribe-chat');
     Route::post('/ai/brand/apply', [BrandAiController::class, 'apply'])->name('ai.brand.apply');
     Route::post('/ai/brand/onboarding-complete', [BrandAiController::class, 'onboardingComplete'])->name('ai.brand.onboarding-complete');
 });

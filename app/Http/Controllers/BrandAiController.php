@@ -44,6 +44,47 @@ class BrandAiController extends Controller
     }
 
     /**
+     * POST /ai/brand/transcribe-chat
+     * Trascrive audio con Whisper, estrae campi brand, salva subito in DB.
+     */
+    public function transcribeAndChat(Request $request): JsonResponse
+    {
+        $request->validate([
+            'audio'            => ['required', 'file', 'max:25600'],
+            'messages'         => ['sometimes', 'array'],
+            'messages.*.role'  => ['required_with:messages', 'in:user,assistant'],
+            'messages.*.content' => ['required_with:messages', 'string', 'max:4000'],
+            'existing_profile' => ['sometimes', 'array'],
+        ]);
+
+        try {
+            $file       = $request->file('audio');
+            $ext        = $file->getClientOriginalExtension() ?: 'webm';
+            $transcript = $this->parser->transcribe($file->getPathname(), 'audio.' . $ext);
+
+            if (empty($transcript)) {
+                return response()->json(['error' => 'Nessun parlato rilevato. Riprova.'], 422);
+            }
+
+            $messages   = $request->input('messages', []);
+            $messages[] = ['role' => 'user', 'content' => $transcript];
+
+            $result = $this->parser->chat($messages, $request->input('existing_profile', []));
+
+            /* Salva immediatamente in DB */
+            $user    = Auth::user();
+            $profile = TenantProfile::query()->firstOrNew(['tenant_id' => $user->tenant_id]);
+            $this->parser->mergeIntoProfile($profile, $result['extracted']);
+
+            return response()->json(array_merge($result, ['transcript' => $transcript]));
+
+        } catch (\Throwable $e) {
+            Log::error('BrandAiController::transcribeAndChat', ['error' => $e->getMessage()]);
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * POST /ai/brand/apply
      * Salva i dati estratti nel TenantProfile (uso dal brand center).
      */

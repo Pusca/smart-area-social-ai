@@ -152,6 +152,33 @@ PROMPT;
         }
     }
 
+    /**
+     * Trascrive un file audio tramite OpenAI Whisper.
+     *
+     * @param  string  $path  Percorso temporaneo del file audio
+     * @param  string  $originalName  Nome originale con estensione corretta
+     * @return string  Testo trascritto
+     */
+    public function transcribe(string $path, string $originalName = 'audio.webm'): string
+    {
+        $response = $this->request(120)
+            ->attach('file', file_get_contents($path), $originalName)
+            ->post($this->url('/v1/audio/transcriptions'), [
+                'model'    => 'whisper-1',
+                'language' => 'it',
+            ]);
+
+        if ($response->failed()) {
+            Log::error('BrandParsingService: Whisper error', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+            throw new \RuntimeException('Errore trascrizione: ' . $response->status());
+        }
+
+        return trim((string) $response->json('text', ''));
+    }
+
     private function computeMissingFields(array $extracted): array
     {
         $required = ['business_name', 'industry', 'services', 'target', 'default_tone', 'default_goal'];

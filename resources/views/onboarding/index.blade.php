@@ -347,11 +347,11 @@
     'use strict';
 
     /* ── CONFIG ─────────────────────────────────────────────────────────── */
-    const CHAT_URL     = '{{ route('ai.brand.chat') }}';
-    const APPLY_URL    = '{{ route('ai.brand.apply') }}';
-    const ASSETS_URL   = '{{ route('onboarding.assets') }}';
-    const COMPLETE_URL = '{{ route('ai.brand.onboarding-complete') }}';
-    const CSRF         = document.querySelector('meta[name="csrf-token"]').content;
+    const TRANSCRIBE_URL = '{{ route('ai.brand.transcribe-chat') }}';
+    const CHAT_URL       = '{{ route('ai.brand.chat') }}';
+    const ASSETS_URL     = '{{ route('onboarding.assets') }}';
+    const COMPLETE_URL   = '{{ route('ai.brand.onboarding-complete') }}';
+    const CSRF           = document.querySelector('meta[name="csrf-token"]').content;
 
     const REQUIRED = ['business_name','industry','services','target','default_tone','default_goal'];
     const ALL_FIELDS = [
@@ -369,15 +369,17 @@
     ];
 
     /* ── STATE ──────────────────────────────────────────────────────────── */
-    let history    = [];
-    let extracted  = {};
-    let imageFiles = [];
-    let logoFile   = null;
-    let listening  = false;
-    let sending    = false;
-    let completing = false;
-    let recognition = null;
-    let toastTimer  = null;
+    let history     = [];
+    let extracted   = {};
+    let imageFiles  = [];
+    let logoFile    = null;
+    let recording   = false;
+    let sending     = false;
+    let completing  = false;
+    let mediaRecorder = null;
+    let audioChunks   = [];
+    let micStream     = null;
+    let toastTimer    = null;
 
     /* ── ELEMENTS ───────────────────────────────────────────────────────── */
     const $ = id => document.getElementById(id);
@@ -408,10 +410,10 @@
     /* ── INIT ───────────────────────────────────────────────────────────── */
     function init() {
         micBtn.addEventListener('click', toggleMic);
-        sendBtn.addEventListener('click', sendInput);
+        sendBtn.addEventListener('click', sendText);
         textInput.addEventListener('input', onTextChange);
         textInput.addEventListener('keydown', function(e){
-            if ((e.ctrlKey||e.metaKey) && e.key==='Enter') { e.preventDefault(); sendInput(); }
+            if ((e.ctrlKey||e.metaKey) && e.key==='Enter') { e.preventDefault(); sendText(); }
         });
         imagesInput.addEventListener('change', function(e){ addImages(Array.from(e.target.files)); e.target.value=''; });
         $('logo-input').addEventListener('change', function(e){ setLogo(e.target.files[0]); });
@@ -423,7 +425,7 @@
         });
         ctaBtn.addEventListener('click', uploadAndComplete);
 
-        if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+        if (!navigator.mediaDevices || !window.MediaRecorder) {
             micBtn.disabled = true;
             micBtn.title = 'Microfono non supportato — usa la tastiera';
             micBtn.style.opacity = '.4';
@@ -434,79 +436,131 @@
         sendBtn.disabled = !textInput.value.trim() || sending;
     }
 
-    /* ── MIC ─────────────────────────────────────────────────────────────── */
+    /* ── MIC — MediaRecorder (Whisper backend) ───────────────────────────── */
     function toggleMic() {
-        if (listening) { stopMic(); return; }
+        if (recording) { stopMic(); return; }
         startMic();
     }
 
     function startMic() {
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR) return;
-        recognition = new SR();
-        recognition.lang = 'it-IT';
-        recognition.continuous = false;
-        recognition.interimResults = true;
-        recognition.maxAlternatives = 1;
+        if (!navigator.mediaDevices) {
+            showApiError('Microfono non disponibile su questo browser.');
+            return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+            micStream   = stream;
+            audioChunks = [];
 
-        recognition.onstart = function() {
-            listening = true;
+            /* Scegli il formato supportato */
+            const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/ogg','audio/mp4','']
+                .find(function(t){ return t === '' || MediaRecorder.isTypeSupported(t); });
+
+            mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+
+            mediaRecorder.ondataavailable = function(e) {
+                if (e.data && e.data.size > 0) audioChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = function() {
+                /* Ferma tracce microfono */
+                if (micStream) { micStream.getTracks().forEach(function(t){ t.stop(); }); micStream = null; }
+                const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                audioChunks = [];
+                if (blob.size < 1000) {
+                    showApiError('Audio troppo corto. Tieni premuto il microfono mentre parli.');
+                    return;
+                }
+                sendAudio(blob);
+            };
+
+            mediaRecorder.start();
+            recording = true;
             micBtn.className = 'mic-btn listen';
             micWrap.classList.add('listening');
             iconMic.style.display = 'none';
             iconStop.style.display = 'block';
-            micStatus.textContent = 'In ascolto — tocca per fermare';
+            micStatus.textContent = 'Registrazione — tocca per fermare e inviare';
             micStatus.style.color = '#DC2626';
-        };
+            hideApiError();
 
-        recognition.onresult = function(e) {
-            /* Prendi sempre l'ultimo transcript disponibile */
-            let last = '';
-            for (let i = 0; i < e.results.length; i++) {
-                last = e.results[i][0].transcript;
-            }
-            textInput.value = last;
-            onTextChange();
-        };
-
-        recognition.onerror = function(e) {
-            stopMicUI();
-            if (e.error === 'not-allowed') {
-                showApiError('Microfono non autorizzato. Usa la tastiera.');
-            } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-                showApiError('Errore microfono: ' + e.error);
-            }
-        };
-
-        recognition.onend = function() {
-            stopMicUI();
-            /* Testo rimane in textarea — utente preme Invia */
-        };
-
-        try { recognition.start(); }
-        catch(err) { stopMicUI(); showApiError('Impossibile avviare il microfono: ' + err.message); }
+        }).catch(function(err) {
+            showApiError('Microfono non autorizzato. Controlla i permessi del browser.');
+            console.error('[BrandAI] getUserMedia:', err);
+        });
     }
 
     function stopMic() {
-        if (recognition) { try { recognition.stop(); } catch(_){} recognition = null; }
-        stopMicUI();
-    }
-
-    function stopMicUI() {
-        listening = false;
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop(); /* onstop chiamerà sendAudio */
+        }
+        recording = false;
         micBtn.className = 'mic-btn idle';
         micWrap.classList.remove('listening');
         iconMic.style.display = 'block';
         iconStop.style.display = 'none';
-        micStatus.textContent = 'Scrivi oppure usa il microfono';
-        micStatus.style.color = '';
+        micStatus.textContent = 'Trascrivo…';
+        micStatus.style.color = 'var(--accent)';
     }
 
-    /* ── SEND ────────────────────────────────────────────────────────────── */
-    async function sendInput() {
+    /* ── SEND AUDIO (Whisper → BrandParsing → DB) ────────────────────────── */
+    async function sendAudio(blob) {
+        if (sending) return;
+        sending = true;
+        sendBtn.disabled = true;
+        hideApiError();
+
+        try {
+            const ext = blob.type.includes('ogg') ? 'ogg'
+                      : blob.type.includes('mp4') ? 'mp4'
+                      : 'webm';
+
+            const fd = new FormData();
+            fd.append('audio', blob, 'audio.' + ext);
+            /* Passa la history come array di coppie */
+            history.forEach(function(m, i) {
+                fd.append('messages[' + i + '][role]',    m.role);
+                fd.append('messages[' + i + '][content]', m.content);
+            });
+            /* Passa il profilo già estratto */
+            const ep = nonNull(extracted);
+            Object.keys(ep).forEach(function(k){ fd.append('existing_profile[' + k + ']', String(ep[k])); });
+
+            const res  = await fetch(TRANSCRIBE_URL, {
+                method:  'POST',
+                headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                body:    fd,
+            });
+
+            const raw = await res.text();
+            let data;
+            try { data = JSON.parse(raw); }
+            catch(_) { throw new Error('Risposta non JSON (HTTP ' + res.status + '). Ricarica la pagina.'); }
+
+            if (res.status === 422 && data.error) { showApiError(data.error); return; }
+            if (!res.ok) throw new Error(data.message || 'Errore HTTP ' + res.status);
+
+            /* Mostra il trascritto in textarea */
+            if (data.transcript) {
+                textInput.value = data.transcript;
+                onTextChange();
+            }
+
+            processAiResult(data);
+
+        } catch(e) {
+            console.error('[BrandAI] sendAudio error:', e);
+            showApiError(e.message);
+        } finally {
+            sending = false;
+            micStatus.textContent = 'Scrivi oppure usa il microfono';
+            micStatus.style.color = '';
+        }
+    }
+
+    /* ── SEND TEXT (testo libero → BrandParsing → DB) ────────────────────── */
+    async function sendText() {
         const text = textInput.value.trim();
         if (!text || sending) return;
-        if (listening) stopMic();
 
         sending = true;
         sendBtn.disabled = true;
@@ -532,55 +586,60 @@
             const raw = await res.text();
             let data;
             try { data = JSON.parse(raw); }
-            catch(_) {
-                throw new Error(
-                    'Risposta non JSON (HTTP ' + res.status + '). ' +
-                    'Prova a ricaricare la pagina — potrebbe essere scaduta la sessione.'
-                );
-            }
+            catch(_) { throw new Error('Risposta non JSON (HTTP ' + res.status + '). Ricarica la pagina.'); }
 
             if (!res.ok) throw new Error(data.message || 'Errore HTTP ' + res.status);
 
-            /* AI reply */
-            if (data.reply) {
-                history.push({ role: 'assistant', content: data.reply });
-                setHint(data.reply);
-                speak(data.reply);
-            }
-
-            /* Merge extracted */
-            if (data.extracted && typeof data.extracted === 'object') {
-                const newLabels = [];
-                let hasNew = false;
-                for (const [k, v] of Object.entries(data.extracted)) {
-                    if (v !== null && v !== '' && v !== undefined && v !== 'null') {
-                        if (!extracted[k]) {
-                            const f = ALL_FIELDS.find(x => x.key === k);
-                            if (f) newLabels.push(f.label);
-                            hasNew = true;
-                        }
-                        extracted[k] = v;
-                    }
-                }
-                updateChips();
-
-                /* Salva in DB ogni volta che ci sono dati nuovi */
-                if (hasNew) {
-                    saveToDb(nonNull(extracted));
-                    if (newLabels.length) showToast('Raccolto: ' + newLabels.join(', '));
-                }
-            }
-
             textInput.value = '';
+            processAiResult(data);
 
         } catch(e) {
-            console.error('[BrandAI] sendInput error:', e);
+            console.error('[BrandAI] sendText error:', e);
             showApiError(e.message);
-            history.pop(); /* rimuovi l'ultimo messaggio utente fallito */
+            history.pop();
         } finally {
             sending = false;
             sendBtn.disabled = !textInput.value.trim();
             sendLabel.textContent = 'Invia';
+        }
+    }
+
+    /* ── PROCESS AI RESULT (comune a audio e testo) ─────────────────────── */
+    function processAiResult(data) {
+        /* History reply */
+        if (data.reply) {
+            const last = history[history.length - 1];
+            if (!last || last.role !== 'assistant') {
+                history.push({ role: 'assistant', content: data.reply });
+            }
+            setHint(data.reply);
+        }
+
+        if (data.extracted && typeof data.extracted === 'object') {
+            const newLabels = [];
+            let hasNew = false;
+            for (const [k, v] of Object.entries(data.extracted)) {
+                if (v !== null && v !== '' && v !== undefined && v !== 'null') {
+                    if (!extracted[k]) {
+                        const f = ALL_FIELDS.find(x => x.key === k);
+                        if (f) newLabels.push(f.label);
+                        hasNew = true;
+                    }
+                    extracted[k] = v;
+                }
+            }
+            updateChips();
+
+            /* Salva in DB — fire and forget (per sendText; sendAudio salva già lato backend) */
+            if (hasNew && !data.transcript) {
+                fetch('{{ route('ai.brand.apply') }}', {
+                    method:  'POST',
+                    headers: { 'Content-Type':'application/json','X-CSRF-TOKEN':CSRF,'Accept':'application/json' },
+                    body:    JSON.stringify({ extracted: nonNull(extracted) }),
+                }).catch(function(e){ console.warn('[BrandAI] apply error', e); });
+            }
+
+            if (newLabels.length) showToast('Raccolto: ' + newLabels.join(', '));
         }
     }
 
@@ -732,23 +791,6 @@
             completing = false;
             updateChips();
         }
-    }
-
-    /* ── SAVE TO DB ─────────────────────────────────────────────────────── */
-    function saveToDb(data) {
-        fetch(APPLY_URL, {
-            method:  'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': CSRF,
-                'Accept':       'application/json',
-            },
-            body: JSON.stringify({ extracted: data }),
-        }).then(function(res) {
-            if (!res.ok) console.warn('[BrandAI] saveToDb failed', res.status);
-        }).catch(function(e) {
-            console.warn('[BrandAI] saveToDb error', e);
-        });
     }
 
     /* ── UTILS ───────────────────────────────────────────────────────────── */
