@@ -461,7 +461,13 @@
 
     function startMic() {
         if (!navigator.mediaDevices) { showApiError('Microfono non disponibile.'); return; }
-        navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+        navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl:  true,
+            }
+        }).then(function(stream) {
             micStream   = stream;
             audioChunks = [];
             const mimeType = ['audio/webm;codecs=opus','audio/webm','audio/ogg','audio/mp4','']
