@@ -5,17 +5,20 @@ namespace App\Services\AI\Pipeline;
 use App\Data\ContentGenerationInput;
 use App\Jobs\GenerateAiForContentItem;
 use App\Models\AlterEgo;
+use App\Models\AssetVariable;
 use App\Models\ContentItem;
 use App\Models\TenantProfile;
+use App\Services\AI\IdentityGuard;
+use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\AlterEgoService;
 use App\Services\Editorial\CreativeBriefCompiler;
 use App\Services\Editorial\TrendBriefService;
-use App\Services\Trends\TenantTrendSelectorService;
-use App\Services\Trends\TrendContentTranslatorService;
-use App\Services\AI\TenantContentIntelligenceService;
 use App\Services\GenerationAuditService;
+use App\Services\IdentityAssetService;
 use App\Services\Learning\TenantLearningLoopService;
 use App\Services\MemoryBuilderService;
+use App\Services\Trends\TenantTrendSelectorService;
+use App\Services\Trends\TrendContentTranslatorService;
 use App\Support\VisualModePresets;
 use Illuminate\Support\Str;
 
@@ -30,7 +33,9 @@ class BuildGenerationContextStep
         private readonly TrendContentTranslatorService $trendTranslator,
         private readonly TenantLearningLoopService $tenantLearningLoopService,
         private readonly CreativeBriefCompiler $creativeBriefCompiler,
-        private readonly AlterEgoService $alterEgoService
+        private readonly AlterEgoService $alterEgoService,
+        private readonly IdentityAssetService $identityAssetService,
+        private readonly IdentityGuard $identityGuard,
     ) {
     }
 
@@ -194,11 +199,23 @@ class BuildGenerationContextStep
         $primaryPlatform = strtolower(explode(',', (string) ($item->platform ?? ''))[0]);
         $alterEgoContext = $this->resolveAlterEgoContext($item, $meta, $primaryPlatform);
 
+        // ── IdentityAsset context (nuovo sistema) ──────────────────────────────
+        // Carica gli IdentityAsset collegati alle AssetVariable attive del tenant
+        // e all'AlterEgo corrente. Usato dal BuildVisualPromptStep per iniettare
+        // prompt visivi compilati e path di riferimento canonici.
+        $identityAssetContext = $this->resolveIdentityAssetContext(
+            tenantId: (int) $item->tenant_id,
+            provider: $primaryPlatform,
+            alterEgoContext: $alterEgoContext,
+            strictMode: $state->strictAssetMode,
+        );
+
         $state->run = $run;
         $state->run = $this->generationAudit->syncRun($state->run, [
-            'creative_brief' => $creativeBrief,
-            'visual_mode' => $visualMode,
-            'hard_constraints_count' => count($hardConstraints),
+            'creative_brief'          => $creativeBrief,
+            'visual_mode'             => $visualMode,
+            'hard_constraints_count'  => count($hardConstraints),
+            'identity_assets_count'   => count($identityAssetContext['slots'] ?? []),
         ]);
         $state->meta = $meta;
         $state->meta['tenant_learning'] = $tenantLearning;
@@ -211,6 +228,9 @@ class BuildGenerationContextStep
         if (!empty($alterEgoContext)) {
             $state->meta['alter_ego'] = $alterEgoContext;
         }
+        if (!empty($identityAssetContext['slots'])) {
+            $state->meta['identity_assets'] = $identityAssetContext;
+        }
         $state->put('strategy', $strategy)
             ->put('item_brain', $itemBrain)
             ->put('tenant_profile', $tenantProfile)
@@ -222,6 +242,7 @@ class BuildGenerationContextStep
             ->put('active_feedback_request', $activeFeedbackRequest)
             ->put('asset_variables', $assetVariables)
             ->put('asset_identity', $assetIdentity)
+            ->put('identity_assets', $identityAssetContext)
             ->put('brief_seed', $briefSeed)
             ->put('tenant_intelligence', $tenantIntelligence)
             ->put('recent_captions', $recentCaptions)
@@ -311,6 +332,11 @@ class BuildGenerationContextStep
      * Il persona_prompt restituito è adattato per la piattaforma target, se esiste
      * un adattamento configurato.
      *
+     * Se l'AlterEgo ha un IdentityAsset collegato, aggiunge:
+     * - identity_asset_id: id del modello
+     * - identity_prompt: prompt visivo compilato dell'identità
+     * - canonical_path: path assoluto dell'immagine canonica (se presente)
+     *
      * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
@@ -346,7 +372,7 @@ class BuildGenerationContextStep
             (array) ($alterEgo->visual_references ?? [])
         )));
 
-        return [
+        $context = [
             'id'                 => $alterEgo->id,
             'name'               => $alterEgo->name,
             'archetype'          => $alterEgo->archetype,
@@ -363,6 +389,147 @@ class BuildGenerationContextStep
             'platform'           => $platform,
             'persona_prompt'     => $personaPrompt,
             'visual_references'  => $visualRefs,
+            'identity_asset_id'  => null,
+            'identity_prompt'    => null,
+            'identity_canonical_path' => null,
+        ];
+
+        // ── IdentityAsset dell'AlterEgo (se collegato) ────────────────────────
+        if ($alterEgo->identity_asset_id !== null) {
+            $alterEgo->loadMissing('identityAsset');
+            $identity = $alterEgo->identityAsset;
+            if ($identity && $identity->is_active) {
+                $identity->loadMissing('canonicalMedia', 'referenceMedia');
+                $canonicalPath = $identity->canonicalPath();
+
+                // Aggiunge il canonical path ai visual_references se non già presente
+                if ($canonicalPath !== null && ! in_array($canonicalPath, $visualRefs, true)) {
+                    array_unshift($context['visual_references'], $canonicalPath);
+                }
+
+                $context['identity_asset_id']       = $identity->id;
+                $context['identity_prompt']          = $this->identityAssetService->compiledPrompt($identity);
+                $context['identity_canonical_path']  = $canonicalPath;
+            }
+        }
+
+        return $context;
+    }
+
+    /**
+     * Risolve gli IdentityAsset collegati alle AssetVariable attive del tenant.
+     *
+     * Restituisce un array strutturato con un "slot" per ogni IdentityAsset trovato,
+     * contenente: prompt compilato, path canonici/reference, risultato preflight.
+     *
+     * Se nessuna AssetVariable ha identity_asset_id valorizzato, ritorna array vuoto
+     * → zero impatto sul pipeline per i tenant che non usano il nuovo sistema.
+     *
+     * @param  array<string, mixed>  $alterEgoContext
+     * @return array<string, mixed>
+     */
+    private function resolveIdentityAssetContext(
+        int $tenantId,
+        string $provider,
+        array $alterEgoContext,
+        bool $strictMode,
+    ): array {
+        $slots = [];
+        $seenIds = [];
+
+        // ── Da AssetVariable ──────────────────────────────────────────────────
+        $variables = AssetVariable::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->whereNotNull('identity_asset_id')
+            ->with(['identityAsset.canonicalMedia', 'identityAsset.referenceMedia'])
+            ->get();
+
+        foreach ($variables as $variable) {
+            $identity = $variable->identityAsset;
+            if (! $identity || ! $identity->is_active || isset($seenIds[$identity->id])) {
+                continue;
+            }
+            $seenIds[$identity->id] = true;
+
+            $slots[] = $this->buildIdentityAssetSlot(
+                identity: $identity,
+                source: 'asset_variable',
+                sourceId: (int) $variable->id,
+                sourceSlug: (string) $variable->slug,
+                provider: $provider,
+                strictMode: $strictMode,
+            );
+        }
+
+        // ── Da AlterEgo (se ha IdentityAsset e non già aggiunto) ─────────────
+        $alterEgoIdentityId = (int) ($alterEgoContext['identity_asset_id'] ?? 0);
+        if ($alterEgoIdentityId > 0 && ! isset($seenIds[$alterEgoIdentityId])) {
+            $identity = \App\Models\IdentityAsset::query()
+                ->where('id', $alterEgoIdentityId)
+                ->where('tenant_id', $tenantId)
+                ->where('is_active', true)
+                ->with(['canonicalMedia', 'referenceMedia'])
+                ->first();
+
+            if ($identity) {
+                $seenIds[$identity->id] = true;
+                $slots[] = $this->buildIdentityAssetSlot(
+                    identity: $identity,
+                    source: 'alter_ego',
+                    sourceId: (int) ($alterEgoContext['id'] ?? 0),
+                    sourceSlug: 'alter_ego_' . ($alterEgoContext['id'] ?? ''),
+                    provider: $provider,
+                    strictMode: $strictMode,
+                );
+            }
+        }
+
+        if (empty($slots)) {
+            return [];
+        }
+
+        return [
+            'version'    => 'identity_asset_v1',
+            'slots'      => $slots,
+            'has_locked' => collect($slots)->some(fn (array $s) => (bool) ($s['locked'] ?? false)),
+        ];
+    }
+
+    /**
+     * Costruisce il dati di un singolo slot IdentityAsset per il context.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildIdentityAssetSlot(
+        \App\Models\IdentityAsset $identity,
+        string $source,
+        int $sourceId,
+        string $sourceSlug,
+        string $provider,
+        bool $strictMode,
+    ): array {
+        $canonicalPath  = $identity->canonicalPath();
+        $referencePaths = $identity->referencePathsForProvider($provider ?: 'default');
+
+        $preflight = $this->identityGuard->preflightFromIdentityAsset(
+            $identity,
+            $provider,
+            ['strict_asset_mode' => $strictMode || $identity->locked_visual_identity]
+        );
+
+        return [
+            'source'             => $source,           // 'asset_variable' | 'alter_ego'
+            'source_id'          => $sourceId,
+            'source_slug'        => $sourceSlug,
+            'identity_asset_id'  => $identity->id,
+            'identity_type'      => $identity->type,
+            'identity_name'      => $identity->name,
+            'identity_prompt'    => $this->identityAssetService->compiledPrompt($identity),
+            'canonical_path'     => $canonicalPath,
+            'reference_paths'    => $referencePaths,
+            'locked'             => $identity->locked_visual_identity,
+            'preflight'          => $preflight,
         ];
     }
 }

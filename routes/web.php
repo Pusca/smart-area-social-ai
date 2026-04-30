@@ -17,6 +17,7 @@ use App\Http\Controllers\TenantProfileController;
 use App\Http\Controllers\AdminWorkspaceController;
 use App\Http\Controllers\AgencyBrandSwitchController;
 use App\Http\Controllers\AlterEgoController;
+use App\Http\Controllers\IdentityAssetController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\BrandAiController;
 use App\Http\Controllers\LinkedInSocialController;
@@ -179,6 +180,24 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
         Route::post('/{alterEgo}/default', [AlterEgoController::class, 'setDefault'])->name('set-default');
         Route::post('/{alterEgo}/media', [AlterEgoController::class, 'uploadMedia'])->name('media.upload');
         Route::delete('/{alterEgo}/media', [AlterEgoController::class, 'destroyMedia'])->name('media.destroy');
+    });
+
+    // ── Identity Asset ────────────────────────────────────────────────────────
+    Route::prefix('identity-assets')->name('identity-assets.')->group(function (): void {
+        Route::get('/', [IdentityAssetController::class, 'index'])->name('index');
+        Route::get('/create', [IdentityAssetController::class, 'create'])->name('create');
+        Route::post('/', [IdentityAssetController::class, 'store'])->name('store');
+        Route::get('/{identityAsset}', [IdentityAssetController::class, 'show'])->name('show');
+        Route::get('/{identityAsset}/edit', [IdentityAssetController::class, 'edit'])->name('edit');
+        Route::put('/{identityAsset}', [IdentityAssetController::class, 'update'])->name('update');
+        Route::delete('/{identityAsset}', [IdentityAssetController::class, 'destroy'])->name('destroy');
+        Route::post('/{identityAsset}/media/attach', [IdentityAssetController::class, 'attachMedia'])->name('media.attach');
+        Route::delete('/{identityAsset}/media/detach', [IdentityAssetController::class, 'detachMedia'])->name('media.detach');
+        Route::post('/{identityAsset}/link-variable', [IdentityAssetController::class, 'linkVariable'])->name('link-variable');
+        Route::delete('/{identityAsset}/unlink-variable', [IdentityAssetController::class, 'unlinkVariable'])->name('unlink-variable');
+        Route::post('/{identityAsset}/link-alter-ego', [IdentityAssetController::class, 'linkAlterEgo'])->name('link-alter-ego');
+        Route::delete('/{identityAsset}/unlink-alter-ego', [IdentityAssetController::class, 'unlinkAlterEgo'])->name('unlink-alter-ego');
+        Route::post('/{identityAsset}/recompile', [IdentityAssetController::class, 'recompilePrompt'])->name('recompile');
     });
 
     Route::get('/push/public-key', [PushController::class, 'publicKey'])->name('push.publicKey');

@@ -16,6 +16,7 @@ class AssetVariable extends Model
         'description',
         'asset_ids',
         'canonical_asset_id',
+        'identity_asset_id',
         'voice_asset_id',
         'voice_provider',
         'voice_provider_voice_id',
@@ -28,13 +29,14 @@ class AssetVariable extends Model
     ];
 
     protected $casts = [
-        'asset_ids' => 'array',
-        'profile' => 'array',
-        'identity_pack' => 'array',
-        'canonical_asset_id' => 'integer',
-        'voice_asset_id' => 'integer',
+        'asset_ids'            => 'array',
+        'profile'              => 'array',
+        'identity_pack'        => 'array',
+        'canonical_asset_id'   => 'integer',
+        'identity_asset_id'    => 'integer',
+        'voice_asset_id'       => 'integer',
         'consistency_threshold' => 'integer',
-        'is_active' => 'boolean',
+        'is_active'            => 'boolean',
     ];
 
     public function canonicalAsset(): BelongsTo
@@ -45,5 +47,16 @@ class AssetVariable extends Model
     public function voiceAsset(): BelongsTo
     {
         return $this->belongsTo(BrandAsset::class, 'voice_asset_id');
+    }
+
+    public function identityAsset(): BelongsTo
+    {
+        return $this->belongsTo(IdentityAsset::class);
+    }
+
+    /** True se questa variabile ha un'identità gestita dal nuovo sistema. */
+    public function hasIdentityAsset(): bool
+    {
+        return $this->identity_asset_id !== null;
     }
 }

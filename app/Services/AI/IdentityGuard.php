@@ -4,10 +4,126 @@ namespace App\Services\AI;
 
 use App\Models\ContentItem;
 use App\Models\GenerationRun;
+use App\Models\IdentityAsset;
 use Illuminate\Support\Str;
 
 class IdentityGuard
 {
+    // ── Nuovi metodi — IdentityAsset-aware ────────────────────────────────────
+
+    /**
+     * Preflight basato su IdentityAsset (nuovo sistema).
+     *
+     * Costruisce la struttura di validazione direttamente dal modello,
+     * senza dipendere dall'array $assetIdentity sintetizzato dal vecchio pipeline.
+     *
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    public function preflightFromIdentityAsset(
+        IdentityAsset $identity,
+        string $provider = '',
+        array $context = []
+    ): array {
+        $identity->loadMissing('canonicalMedia', 'referenceMedia');
+
+        $canonicalPath = $identity->canonicalPath();
+        $slots = [[
+            'slot'                => $identity->type . '_' . $identity->id,
+            'name'                => $identity->name,
+            'kind'                => $identity->type,
+            'strictness_level'    => $identity->locked_visual_identity ? 'strict' : 'balanced',
+            'canonical_references' => $canonicalPath ? [$canonicalPath] : [],
+            'invariants'          => $this->extractInvariants($identity),
+            'transformables'      => $this->extractTransformables($identity),
+        ]];
+
+        $blockingReasons = [];
+        $strictAssetMode = (bool) ($context['strict_asset_mode'] ?? $identity->locked_visual_identity);
+
+        if ($strictAssetMode && $canonicalPath === null) {
+            $blockingReasons[] = 'IdentityGuard: IdentityAsset "' . $identity->name . '" è in modalità locked ma non ha un media canonico.';
+        }
+
+        return [
+            'version'    => (string) config('social_manager.identity_guard.version', 'identity_guard_v1'),
+            'checked_at' => now()->toDateTimeString(),
+            'identity_heavy' => true,
+            'identity_asset_id' => $identity->id,
+            'provider'   => $provider,
+            'status'     => empty($blockingReasons) ? 'pass' : 'blocked',
+            'slots'      => $slots,
+            'provider_specific_constraints' => [
+                'provider'        => $provider,
+                'constraint_text' => $this->providerConstraintText($slots, $provider),
+            ],
+            'blocking_reasons' => array_values(array_unique(array_filter($blockingReasons))),
+        ];
+    }
+
+    /**
+     * Validazione finale basata su IdentityAsset.
+     *
+     * Usa le consistency_rules dell'IdentityAsset per determinare threshold
+     * e comportamento (blocking vs warning) invece delle costanti hardcoded.
+     *
+     * @return array<string, mixed>
+     */
+    public function validateFinalFromIdentityAsset(
+        ContentItem $item,
+        IdentityAsset $identity,
+        ?GenerationRun $run = null
+    ): array {
+        $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
+        $threshold = $identity->guardConfidenceThreshold();
+        $isBlocking = $identity->guardIsBlocking();
+
+        $baseScores = array_values(array_filter([
+            $this->numeric(data_get($meta, 'video_generation.reference_validation.confidence')),
+            $this->numeric(data_get($meta, 'image_generation.alignment_review.confidence')),
+            $this->numeric(data_get($meta, 'asset_scoring.identity_confidence')),
+        ], fn ($value) => $value !== null));
+        $baseScore = empty($baseScores) ? null : min($baseScores);
+
+        $status = $baseScore === null
+            ? 'unknown'
+            : ($baseScore >= $threshold ? 'pass' : 'fail');
+
+        $blockingReasons = [];
+        if ($status === 'fail' && $isBlocking) {
+            $blockingReasons[] = match ($identity->type) {
+                IdentityAsset::TYPE_PERSON       => 'IdentityGuard: face drift beyond threshold for "' . $identity->name . '" (score: ' . round((float) $baseScore, 2) . ', min: ' . $threshold . ').',
+                IdentityAsset::TYPE_PRODUCT      => 'IdentityGuard: product geometry deformation beyond threshold for "' . $identity->name . '".',
+                IdentityAsset::TYPE_LOCATION     => 'IdentityGuard: location inconsistency beyond threshold for "' . $identity->name . '".',
+                IdentityAsset::TYPE_BRAND_OBJECT => 'IdentityGuard: brand object identity below threshold for "' . $identity->name . '".',
+                default                          => 'IdentityGuard: identity fidelity below threshold for "' . $identity->name . '".',
+            };
+        }
+
+        return [
+            'version'       => (string) config('social_manager.identity_guard.version', 'identity_guard_v1'),
+            'checked_at'    => now()->toDateTimeString(),
+            'status'        => empty($blockingReasons) ? ($status === 'unknown' ? 'unknown' : 'pass') : 'blocked',
+            'identity_heavy' => true,
+            'identity_asset_id' => $identity->id,
+            'slots' => [[
+                'slot'      => $identity->type . '_' . $identity->id,
+                'name'      => $identity->name,
+                'kind'      => $identity->type,
+                'score'     => $baseScore,
+                'threshold' => $threshold,
+                'status'    => $status,
+                'blocking'  => $isBlocking,
+                'source'    => $this->validationSource($meta),
+            ]],
+            'recommended_retry_layer' => empty($blockingReasons) ? null : 'visual',
+            'blocking_reasons' => array_values(array_unique(array_filter($blockingReasons))),
+            'run_id' => $run?->id,
+        ];
+    }
+
+    // ── Metodi esistenti (backward-compatible) ────────────────────────────────
+
     /**
      * @param  array<string, mixed>  $assetIdentity
      * @param  array<string, mixed>  $assetScoring
@@ -172,5 +288,61 @@ class IdentityGuard
     private function numeric(mixed $value): ?float
     {
         return is_numeric($value) ? max(0.0, min(1.0, (float) $value)) : null;
+    }
+
+    // ── Helper privati per IdentityAsset ─────────────────────────────────────
+
+    /**
+     * Estrae gli invarianti visivi da un IdentityAsset come array di stringhe leggibili.
+     *
+     * @return array<int, string>
+     */
+    private function extractInvariants(IdentityAsset $identity): array
+    {
+        $features = $identity->visual_features_json ?? [];
+        $rules = $identity->consistency_rules_json ?? [];
+        $items = [];
+
+        // Caratteristiche visive → invarianti
+        foreach ($features as $key => $value) {
+            $v = is_array($value) ? implode(', ', $value) : trim((string) $value);
+            if ($v !== '') {
+                $items[] = str_replace('_', ' ', $key) . ': ' . $v;
+            }
+        }
+
+        // Required features esplicite dalle consistency_rules
+        foreach ((array) ($rules['required_features'] ?? []) as $feat) {
+            $s = trim((string) $feat);
+            if ($s !== '' && ! in_array($s, $items, true)) {
+                $items[] = $s;
+            }
+        }
+
+        return array_slice($items, 0, 10);
+    }
+
+    /**
+     * Estrae gli elementi trasformabili da un IdentityAsset come array di stringhe.
+     *
+     * @return array<int, string>
+     */
+    private function extractTransformables(IdentityAsset $identity): array
+    {
+        $rules = $identity->usage_rules_json ?? [];
+        $items = [];
+
+        $transformableKeys = ['background_style', 'lighting', 'environment', 'color_palette'];
+        foreach ($transformableKeys as $key) {
+            if (! isset($rules[$key])) {
+                continue;
+            }
+            $v = is_array($rules[$key]) ? implode(', ', $rules[$key]) : trim((string) $rules[$key]);
+            if ($v !== '') {
+                $items[] = str_replace('_', ' ', $key) . ': ' . $v;
+            }
+        }
+
+        return $items;
     }
 }

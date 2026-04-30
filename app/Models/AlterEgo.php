@@ -10,6 +10,7 @@ class AlterEgo extends Model
 {
     protected $fillable = [
         'tenant_id',
+        'identity_asset_id',
         'name',
         'archetype',
         'tone',
@@ -50,6 +51,11 @@ class AlterEgo extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function identityAsset(): BelongsTo
+    {
+        return $this->belongsTo(IdentityAsset::class);
     }
 
     public function contentItems(): HasMany

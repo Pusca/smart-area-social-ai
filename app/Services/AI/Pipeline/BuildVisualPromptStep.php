@@ -30,6 +30,8 @@ class BuildVisualPromptStep
             (array) data_get($alterEgo, 'visual_references', [])
         )));
 
+        $identityAssets = (array) $state->get('identity_assets', []);
+
         $prompt = trim((string) ($item->ai_image_prompt ?? ''));
         $brandImageSources = $job->resolveBrandImageSources($strategy, $meta, (int) $item->tenant_id);
         $brandDecision = $job->decideBrandImageUsage($item, $brandImageSources, $this->openAi);
@@ -57,6 +59,29 @@ class BuildVisualPromptStep
             $selectedBrandImagePaths = array_values(array_unique(
                 array_merge($alterEgoVisualRefs, $selectedBrandImagePaths)
             ));
+        }
+
+        // ── IdentityAsset: inietta i canonical/reference path in testa ────────
+        // I path canonici degli IdentityAsset (soggetti con identità lockata) hanno
+        // priorità massima come reference visivi — vengono inseriti prima di tutto.
+        $identityCanonicalPaths = [];
+        $identityReferencePaths = [];
+        foreach ((array) data_get($identityAssets, 'slots', []) as $slot) {
+            if (is_string($slot['canonical_path'] ?? null) && $slot['canonical_path'] !== '') {
+                $identityCanonicalPaths[] = $slot['canonical_path'];
+            }
+            foreach ((array) ($slot['reference_paths'] ?? []) as $refPath) {
+                if (is_string($refPath) && $refPath !== '') {
+                    $identityReferencePaths[] = $refPath;
+                }
+            }
+        }
+        if (!empty($identityCanonicalPaths) || !empty($identityReferencePaths)) {
+            $selectedBrandImagePaths = array_values(array_unique(array_merge(
+                $identityCanonicalPaths,
+                $identityReferencePaths,
+                $selectedBrandImagePaths,
+            )));
         }
 
         $selectedBrandImagePaths = $job->filterReferenceImagePaths(array_values(array_unique($selectedBrandImagePaths)));
@@ -128,6 +153,7 @@ class BuildVisualPromptStep
                 . ($feedbackVisualHint !== '' ? $feedbackVisualHint . ' ' : '')
                 . ($socialPublicationHint !== '' ? $socialPublicationHint . ' ' : '')
                 . ($alterEgoPersonaHint !== '' ? $alterEgoPersonaHint : '')
+                . $this->buildIdentityAssetsPromptBlock($identityAssets)
                 . "Percorso logo di riferimento (solo contesto stilistico): {$logoPath}. "
                 . ($selectedBrandImage ? "Usa i riferimenti brand come guida di stile, palette e identita visiva, ma crea una composizione fotografica COMPLETAMENTE NUOVA e ORIGINALE: nuova inquadratura, nuova luce, nuova scena. NON copiare ne riprodurre l'immagine di riferimento. " : "Crea la composizione da zero seguendo la strategia e mantenendo novita rispetto ai post precedenti. ")
                 . "REGOLA ASSOLUTA E INVIOLABILE: NON includere nell'immagine nessun testo, lettera, numero, parola, scritta, titolo, slogan, caption, watermark, logo finto o qualsiasi segno tipografico. L'immagine deve contenere SOLO elementi visivi puri: persone, oggetti, scene, sfondi, luci, colori, forme. Zero testo. "
@@ -192,6 +218,36 @@ class BuildVisualPromptStep
             ->put('visual.embed_logo_in_scene', $embedLogoInScene);
 
         return $state;
+    }
+
+    /**
+     * Costruisce il blocco di istruzioni visive per tutti gli IdentityAsset del context.
+     *
+     * Se non ci sono slot IdentityAsset, ritorna stringa vuota → zero impatto sul prompt.
+     *
+     * @param  array<string, mixed>  $identityAssets
+     */
+    private function buildIdentityAssetsPromptBlock(array $identityAssets): string
+    {
+        $slots = (array) data_get($identityAssets, 'slots', []);
+        if (empty($slots)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($slots as $slot) {
+            $prompt = trim((string) ($slot['identity_prompt'] ?? ''));
+            if ($prompt === '') {
+                continue;
+            }
+            $parts[] = $prompt;
+        }
+
+        if (empty($parts)) {
+            return '';
+        }
+
+        return implode("\n\n", $parts) . ' ';
     }
 }
 
