@@ -348,6 +348,7 @@
 
     /* ── CONFIG ─────────────────────────────────────────────────────────── */
     const CHAT_URL     = '{{ route('ai.brand.chat') }}';
+    const APPLY_URL    = '{{ route('ai.brand.apply') }}';
     const ASSETS_URL   = '{{ route('onboarding.assets') }}';
     const COMPLETE_URL = '{{ route('ai.brand.onboarding-complete') }}';
     const CSRF         = document.querySelector('meta[name="csrf-token"]').content;
@@ -550,17 +551,24 @@
             /* Merge extracted */
             if (data.extracted && typeof data.extracted === 'object') {
                 const newLabels = [];
+                let hasNew = false;
                 for (const [k, v] of Object.entries(data.extracted)) {
                     if (v !== null && v !== '' && v !== undefined && v !== 'null') {
                         if (!extracted[k]) {
                             const f = ALL_FIELDS.find(x => x.key === k);
                             if (f) newLabels.push(f.label);
+                            hasNew = true;
                         }
                         extracted[k] = v;
                     }
                 }
                 updateChips();
-                if (newLabels.length) showToast('Raccolto: ' + newLabels.join(', '));
+
+                /* Salva in DB ogni volta che ci sono dati nuovi */
+                if (hasNew) {
+                    saveToDb(nonNull(extracted));
+                    if (newLabels.length) showToast('Raccolto: ' + newLabels.join(', '));
+                }
             }
 
             textInput.value = '';
@@ -724,6 +732,23 @@
             completing = false;
             updateChips();
         }
+    }
+
+    /* ── SAVE TO DB ─────────────────────────────────────────────────────── */
+    function saveToDb(data) {
+        fetch(APPLY_URL, {
+            method:  'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': CSRF,
+                'Accept':       'application/json',
+            },
+            body: JSON.stringify({ extracted: data }),
+        }).then(function(res) {
+            if (!res.ok) console.warn('[BrandAI] saveToDb failed', res.status);
+        }).catch(function(e) {
+            console.warn('[BrandAI] saveToDb error', e);
+        });
     }
 
     /* ── UTILS ───────────────────────────────────────────────────────────── */

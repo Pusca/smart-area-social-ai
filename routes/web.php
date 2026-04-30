@@ -52,8 +52,9 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->gro
     Route::post('/onboarding/assets', [OnboardingController::class, 'uploadAssets'])->name('onboarding.assets');
     Route::post('/onboarding/complete', [OnboardingController::class, 'complete'])->name('onboarding.complete');
 
-    // AI Brand chat — disponibile durante onboarding (nessun middleware onboardingComplete)
+    // AI Brand chat + apply — disponibili durante onboarding (nessun middleware onboardingComplete)
     Route::post('/ai/brand/chat', [BrandAiController::class, 'chat'])->name('ai.brand.chat');
+    Route::post('/ai/brand/apply', [BrandAiController::class, 'apply'])->name('ai.brand.apply');
     Route::post('/ai/brand/onboarding-complete', [BrandAiController::class, 'onboardingComplete'])->name('ai.brand.onboarding-complete');
 });
 
@@ -76,9 +77,6 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
     // ── Onboarding da URL: scraping brand ───────────────────────────────────
     // Endpoint usato dal wizard di onboarding per pre-compilare il profilo
     // estraendo dati dal sito web del cliente senza API esterne.
-    // AI Brand apply (brand center aggiornamento via AI)
-    Route::post('/ai/brand/apply', [BrandAiController::class, 'apply'])->name('ai.brand.apply');
-
     Route::post('/profile/brand/scrape-url', [TenantProfileController::class, 'scrapeUrl'])->name('profile.brand.scrape');
 
     // Profilo attivita e asset del tenant.
