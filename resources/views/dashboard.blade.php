@@ -201,7 +201,7 @@
 <div class="overflow-hidden anim-3" style="border-radius:2rem;border:1px solid #D0DCF0;box-shadow:0 2px 12px rgba(7,24,63,.06);">
 
     {{-- Header con gradiente brand --}}
-    <div style="background:linear-gradient(135deg,#071D4E 0%,#0A2D6F 58%,#2DBAF7 100%);padding:1.2rem 1.5rem;">
+    <div style="background:linear-gradient(135deg,#071D4E 0%,#0A2D6F 58%,#2DBAF7 100%);padding:.8rem 1.5rem;">
         <div class="flex items-center justify-between gap-4">
             <p style="font-size:1rem;font-weight:700;color:#fff;">Feed visivo</p>
             <div class="flex items-center gap-2">
