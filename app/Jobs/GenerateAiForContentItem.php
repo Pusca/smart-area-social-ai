@@ -3834,17 +3834,10 @@ SVG;
     ): array {
         $videoOptions = $this->normalizeVideoOptionsForProvider('google_veo', $videoOptions);
 
-        // Resolve the primary reference image absolute path.
-        // Priority: explicit $referenceAbs → first from generationReferenceAbsPool.
+        // Veo image-to-video mode uses the reference image as the literal first frame,
+        // causing the video to start with a static photo. Always use text-to-video mode
+        // so the video begins with motion from frame 1; brand identity is conveyed via prompt.
         $veoReferenceAbs = null;
-        if (is_string($referenceAbs) && $referenceAbs !== '' && is_file($referenceAbs)) {
-            $veoReferenceAbs = $referenceAbs;
-        } elseif (!empty($generationReferenceAbsPool)) {
-            $candidate = $generationReferenceAbsPool[0];
-            if (is_string($candidate) && $candidate !== '' && is_file($candidate)) {
-                $veoReferenceAbs = $candidate;
-            }
-        }
 
         $activeReferencePath = trim((string) $referencePath);
         if ($activeReferencePath === '' && !empty($imageReferencePathPool)) {
