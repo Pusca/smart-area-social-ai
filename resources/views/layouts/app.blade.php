@@ -213,6 +213,54 @@
     @endauth
 
     @auth
+        {{-- Plan-level generation persistent badge --}}
+        <div id="plan-gen-badge"
+             class="hidden fixed bottom-[5.5rem] left-3 z-[55] w-[calc(100vw-1.5rem)] max-w-[22rem] overflow-hidden rounded-[20px] border border-slate-200 bg-white/97 shadow-[0_8px_32px_rgba(15,23,42,0.14)] backdrop-blur sm:bottom-6 sm:left-6">
+            <div class="flex items-center gap-3 bg-gradient-to-r from-cyan-500 via-sky-600 to-indigo-700 px-4 py-3">
+                <span id="plan-gen-spinner" class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/70">Generazione in corso</p>
+                    <p id="plan-gen-label" class="truncate text-sm font-semibold text-white">Avvio...</p>
+                </div>
+                <a id="plan-gen-link" href="#" class="shrink-0 rounded-xl bg-white/18 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/30 transition">Apri</a>
+            </div>
+        </div>
+        <script>
+        (() => {
+            const LS_KEY  = 'socialai:plan-gen';
+            const badge   = document.getElementById('plan-gen-badge');
+            const labelEl = document.getElementById('plan-gen-label');
+            const linkEl  = document.getElementById('plan-gen-link');
+            const spinEl  = document.getElementById('plan-gen-spinner');
+            if (!badge) return;
+
+            const refresh = () => {
+                try {
+                    const raw = localStorage.getItem(LS_KEY);
+                    if (!raw) { badge.classList.add('hidden'); return; }
+                    const state = JSON.parse(raw);
+                    if (!state || !state.planId) { badge.classList.add('hidden'); return; }
+                    /* Hide on the generating page itself */
+                    if (window.location.href.includes('/plans/' + state.planId + '/generating')) {
+                        badge.classList.add('hidden'); return;
+                    }
+                    if (state.completed) { badge.classList.add('hidden'); localStorage.removeItem(LS_KEY); return; }
+                    badge.classList.remove('hidden');
+                    const done  = Number(state.done  || 0);
+                    const total = Number(state.total || 0);
+                    labelEl.textContent = total > 0 ? `${done} di ${total} contenuti pronti` : 'Generazione in corso...';
+                    if (linkEl && state.genUrl) linkEl.href = state.genUrl;
+                } catch(_) { badge.classList.add('hidden'); }
+            };
+
+            refresh();
+            setInterval(refresh, 3000);
+            window.addEventListener('storage', (e) => { if (e.key === LS_KEY) refresh(); });
+        })();
+        </script>
+    @endauth
+
+    @auth
         <script>
             (() => {
                 const root = document.getElementById('generation-drawer');

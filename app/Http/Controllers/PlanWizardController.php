@@ -138,9 +138,7 @@ class PlanWizardController extends Controller
         }
 
         $context = trim((string) $request->query('context', 'wizard'));
-        $returnUrl = $context === 'quickstart'
-            ? route('profile.brand')
-            : route('wizard.done');
+        $returnUrl = route('posts.index');
 
         return view('plans.generating', [
             'plan' => $contentPlan,
@@ -891,13 +889,27 @@ class PlanWizardController extends Controller
     {
         $counts = $counts ?? $this->planCounts($plan);
 
+        $recentDone = ContentItem::query()
+            ->where('content_plan_id', $plan->id)
+            ->where('ai_status', 'done')
+            ->orderByDesc('ai_generated_at')
+            ->limit(20)
+            ->get(['id', 'title', 'platform', 'format'])
+            ->map(fn ($item) => [
+                'id'       => (int) $item->id,
+                'title'    => (string) ($item->title ?? 'Contenuto'),
+                'platform' => (string) ($item->platform ?? ''),
+                'format'   => (string) ($item->format ?? 'post'),
+            ])
+            ->all();
+
         return [
-            'has_plan' => true,
-            'plan_id' => (int) $plan->id,
-            'active' => (($counts['queued'] + $counts['pending']) > 0),
-            'completed' => ($counts['total'] > 0 && ($counts['queued'] + $counts['pending']) === 0),
-            'counts' => $counts,
-            'completed_at' => now()->toDateTimeString(),
+            'has_plan'    => true,
+            'plan_id'     => (int) $plan->id,
+            'active'      => (($counts['queued'] + $counts['pending']) > 0),
+            'completed'   => ($counts['total'] > 0 && ($counts['queued'] + $counts['pending']) === 0),
+            'counts'      => $counts,
+            'recent_done' => $recentDone,
         ];
     }
 }
