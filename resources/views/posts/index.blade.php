@@ -87,22 +87,24 @@
         <div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('status') }}</div>
     @endif
 
-    {{-- ── Filtri + ricerca ── --}}
-    <div class="mb-5 flex items-center justify-between gap-3">
-        <div class="flex flex-wrap gap-1.5">
-            <button class="lib-pill" :class="filter === '' && 'active'" @click="filter = ''">Tutti <span class="ml-1 opacity-50">{{ $totalItems }}</span></button>
-            <button class="lib-pill" :class="filter === 'working' && 'active'" @click="filter = 'working'">In lavorazione</button>
-            <button class="lib-pill" :class="filter === 'ready' && 'active'" @click="filter = 'ready'">Pronti</button>
-            <button class="lib-pill" :class="filter === 'published' && 'active'" @click="filter = 'published'">Pubblicati <span class="ml-1 opacity-50">{{ $publishedItems }}</span></button>
-            @if($aiError > 0)
-                <button class="lib-pill" :class="filter === 'error' && 'active'" @click="filter = 'error'" style="color:#dc2626;">Errori {{ $aiError }}</button>
-            @endif
-        </div>
+    {{-- ── Filtri ── --}}
+    <div class="mb-3 flex flex-wrap gap-1.5">
+        <button class="lib-pill" :class="filter === '' && 'active'" @click="filter = ''">Tutti <span class="ml-1 opacity-50">{{ $totalItems }}</span></button>
+        <button class="lib-pill" :class="filter === 'working' && 'active'" @click="filter = 'working'">In lavorazione</button>
+        <button class="lib-pill" :class="filter === 'ready' && 'active'" @click="filter = 'ready'">Pronti</button>
+        <button class="lib-pill" :class="filter === 'published' && 'active'" @click="filter = 'published'">Pubblicati <span class="ml-1 opacity-50">{{ $publishedItems }}</span></button>
+        @if($aiError > 0)
+            <button class="lib-pill" :class="filter === 'error' && 'active'" @click="filter = 'error'" style="color:#dc2626;">Errori {{ $aiError }}</button>
+        @endif
+    </div>
 
-        <label class="flex shrink-0 cursor-text items-center gap-1.5 rounded-full px-3 py-1.5" style="background:rgba(10,45,111,0.05);">
-            <svg class="h-3 w-3 shrink-0" style="color:#94a3b8;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-            <input type="text" x-model="search" placeholder="Cerca…" class="w-24 bg-transparent outline-none" style="font-size:.72rem;font-weight:600;color:#0A2D6F;" />
-        </label>
+    {{-- ── Ricerca ── --}}
+    <div class="mb-5 flex items-center gap-2.5 rounded-2xl px-4 py-2.5" style="background:rgba(10,45,111,0.04);">
+        <svg class="h-4 w-4 shrink-0" style="color:#94a3b8;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" x-model="search" placeholder="Cerca per titolo o testo…" class="w-full bg-transparent text-sm outline-none" style="color:#1e3a5f;" />
+        <button x-show="search !== ''" @click="search = ''" class="shrink-0 rounded-full p-0.5 transition" style="color:#94a3b8;" x-cloak>
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
     </div>
 
     @if($isPaginator)
@@ -145,8 +147,8 @@
                 class="lib-card"
                 x-show="matchFilter('{{ $filterKey }}', '{{ addslashes(strtolower($item->title ?: '')) }} {{ addslashes(strtolower(\Illuminate\Support\Str::limit($item->ai_caption ?? '', 80))) }}')"
             >
-                {{-- Thumbnail --}}
-                <div class="lib-thumb">
+                {{-- Thumbnail (cliccabile) --}}
+                <a href="{{ route('posts.edit', $item) }}" class="lib-thumb block">
                     @if($previewImagePath !== '')
                         <img src="{{ asset('storage/' . ltrim($previewImagePath, '/')) }}" alt="" loading="lazy" onerror="this.parentElement.style.background='linear-gradient(135deg,#e8edf5,#dce6f0)'">
                     @elseif(!empty($item->ai_image_path))
@@ -175,7 +177,7 @@
                     <div class="absolute right-2.5 top-2.5 h-4 w-4 rounded-full" style="background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.12);">
                         <div class="m-1 h-2 w-2 rounded-full" style="background:{{ $dotColor }};"></div>
                     </div>
-                </div>
+                </a>
 
                 {{-- Body --}}
                 <div style="padding:.875rem 1rem;">
@@ -207,14 +209,6 @@
                     <div class="mt-3 flex items-center gap-1.5">
                         <a href="{{ route('posts.edit', $item) }}" class="ui-btn-primary flex-1 justify-center py-1.5 text-xs">Apri</a>
                         <a href="{{ route('posts.edit', $item) }}#feedback-loop" class="ui-btn-secondary px-3 py-1.5 text-xs">Feedback</a>
-                        @if(\Illuminate\Support\Facades\Route::has('ai.content.generate'))
-                            <form action="{{ route('ai.content.generate', $item) }}" method="POST">
-                                @csrf
-                                <button type="submit" title="Rigenera AI" class="ui-btn-secondary px-2.5 py-1.5 text-xs">
-                                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                                </button>
-                            </form>
-                        @endif
                     </div>
                 </div>
             </article>
