@@ -173,18 +173,17 @@ PROMPT;
         };
 
         $response = $this->request(120)
-            ->attach('file', file_get_contents($path), $originalName, ['Content-Type' => $mime])
-            ->post($this->url('/v1/audio/transcriptions'), [
-                'model'    => 'whisper-1',
-                'language' => 'it',
-            ]);
+            ->attach('file',     file_get_contents($path), $originalName, ['Content-Type' => $mime])
+            ->attach('model',    'whisper-1')
+            ->attach('language', 'it')
+            ->post($this->url('/v1/audio/transcriptions'));
 
         if ($response->failed()) {
             Log::error('BrandParsingService: Whisper error', [
                 'status' => $response->status(),
                 'body'   => $response->body(),
             ]);
-            throw new \RuntimeException('Errore trascrizione: ' . $response->status());
+            throw new \RuntimeException('Errore trascrizione: ' . $response->status() . ' — ' . $response->body());
         }
 
         return trim((string) $response->json('text', ''));
