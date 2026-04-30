@@ -366,7 +366,7 @@
             <a href="{{ route('calendar') }}" class="btn-secondary shrink-0" style="padding:8px 16px;font-size:.8rem;">Calendario</a>
         </div>
 
-        <div class="px-5 py-5 space-y-3">
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;">
             <div class="grid grid-cols-2 gap-2">
                 <div class="rounded-xl px-3 py-2.5" style="background:#EEF4FE;">
                     <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:#566783;">Previsti oggi</p>
