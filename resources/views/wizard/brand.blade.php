@@ -340,32 +340,9 @@
 <section class="w-full space-y-5 px-4 py-6 sm:px-6 lg:px-8" style="max-width:1080px;margin:0 auto;">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
-{{-- Pipeline header --}}
-@php
-$pipelineSteps = [
-    ['num'=>'01','label'=>'Chi sei','sub'=>'Nome, settore, servizi, target','href'=>'#brand-profile-section'],
-    ['num'=>'02','label'=>'I tuoi materiali','sub'=>'Logo, immagini, video','href'=>'#brand-assets-section'],
-    ['num'=>'03','label'=>'Come comunichi','sub'=>'Tono, piattaforme, frequenza','href'=>'#brand-defaults-section'],
-    ['num'=>'04','label'=>'Strategia','sub'=>'Obiettivi e stile visivo','href'=>'#brand-strategy-section'],
-];
-@endphp
-
-<div style="margin-bottom:1.5rem;">
-    <div style="margin-bottom:1.25rem;">
-        <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
-        <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;margin-top:.375rem;">{{ $profile?->business_name ?: 'Configura il tuo brand' }}</h1>
-    </div>
-
-    {{-- Pipeline steps --}}
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.625rem;">
-        @foreach($pipelineSteps as $step)
-        <a href="{{ $step['href'] }}" style="display:block;text-decoration:none;border:1px solid rgba(10,45,111,.1);border-radius:1rem;padding:.875rem 1rem;background:#fafbff;transition:border-color 150ms,background 150ms;">
-            <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;display:block;margin-bottom:.5rem;">{{ $step['num'] }}</span>
-            <p style="font-size:.8125rem;font-weight:700;color:#07183F;line-height:1.2;">{{ $step['label'] }}</p>
-            <p style="font-size:.7rem;color:#64748b;margin-top:.2rem;">{{ $step['sub'] }}</p>
-        </a>
-        @endforeach
-    </div>
+<div style="margin-bottom:1.25rem;">
+    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
+    <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;margin-top:.375rem;">{{ $profile?->business_name ?: 'Configura il tuo brand' }}</h1>
 </div>
 
 
@@ -413,6 +390,9 @@ $pipelineSteps = [
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Nome, settore, servizi che offri, cliente ideale, CTA.</p>
                             </div>
                         </div>
+                        @if(filled($profile?->business_name) && filled($profile?->services))
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Compilato</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -503,6 +483,9 @@ $pipelineSteps = [
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Tono di voce, piattaforme social, formati e frequenza di pubblicazione.</p>
                             </div>
                         </div>
+                        @if(filled($profile?->default_goal))
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Compilato</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -642,6 +625,9 @@ $pipelineSteps = [
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Obiettivi, KPI, stile visivo e ritmo di pubblicazione.</p>
                             </div>
                         </div>
+                        @if($strategy)
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Configurata</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -761,6 +747,9 @@ $pipelineSteps = [
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Carica logo, foto e video del brand. Più ne carichi, meglio lavora l'AI.</p>
                             </div>
                         </div>
+                        @if($assets->count() > 0)
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">{{ $assets->count() }} file</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
