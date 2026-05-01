@@ -4,7 +4,8 @@
 @php
     $statusUrl    = route('wizard.progress.plan', $plan);
     $generatingUrl = route('plans.generating', ['contentPlan' => $plan->id, 'context' => $context]);
-    $postsUrl     = route('posts.index');
+    $returnUrl    = $returnUrl ?? route('posts.index');
+    $returnLabel  = $returnLabel ?? 'Vai ai contenuti';
     $counts       = (array) ($progress['counts'] ?? []);
     $total        = (int) ($counts['total'] ?? 0);
     $done         = (int) ($counts['done'] ?? 0);
@@ -14,7 +15,20 @@
     $etaSeconds   = max(30, ($queued * 55));
     $recentDone   = (array) ($progress['recent_done'] ?? []);
     $completed    = (bool) ($progress['completed'] ?? false);
-    $contextLabel = $context === 'quickstart' ? 'demo iniziale' : 'piano editoriale';
+    $contextMeta  = match ($context) {
+        'quickstart' => [
+            'heading' => 'Sto completando la demo iniziale',
+            'description' => 'I contenuti demo vengono costruiti uno alla volta in background.',
+        ],
+        'single' => [
+            'heading' => 'Genero il contenuto',
+            'description' => 'Questo contenuto viene preparato in background e resta monitorabile finche non e pronto.',
+        ],
+        default => [
+            'heading' => 'Genero il piano editoriale',
+            'description' => 'I contenuti vengono costruiti uno alla volta in background.',
+        ],
+    };
 @endphp
 
 <style>
@@ -42,8 +56,8 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-700">AI al lavoro</p>
-                        <h1 class="mt-1 text-xl font-semibold text-gray-950 sm:text-2xl">Genero la {{ $contextLabel }}</h1>
-                        <p class="mt-1 text-sm text-gray-500">I contenuti vengono costruiti uno alla volta in background.</p>
+                        <h1 class="mt-1 text-xl font-semibold text-gray-950 sm:text-2xl">{{ $contextMeta['heading'] }}</h1>
+                        <p class="mt-1 text-sm text-gray-500">{{ $contextMeta['description'] }}</p>
                     </div>
                 </div>
                 {{-- Minimize button --}}
@@ -123,9 +137,9 @@
             {{-- Footer action --}}
             <div id="gen-footer" class="flex items-center justify-between gap-3">
                 <p class="text-sm text-gray-500">Puoi minimizzare e continuare a navigare.</p>
-                <a id="gen-posts-link" href="{{ $postsUrl }}"
+                <a id="gen-posts-link" href="{{ $returnUrl }}"
                     class="hidden inline-flex items-center gap-2 rounded-2xl bg-gray-950 px-5 py-3 text-sm font-semibold text-white shadow transition hover:bg-gray-800">
-                    Vai ai contenuti
+                    {{ $returnLabel }}
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"/></svg>
                 </a>
             </div>
@@ -136,7 +150,7 @@
 <script>
 (() => {
     const STATUS_URL     = @json($statusUrl);
-    const POSTS_URL      = @json($postsUrl);
+    const RETURN_URL     = @json($returnUrl);
     const GENERATING_URL = @json($generatingUrl);
     const PLAN_ID        = @json($plan->id);
     const LS_KEY         = 'socialai:plan-gen';
@@ -224,7 +238,7 @@
         clearState();
         if (!redirecting) {
             redirecting = true;
-            setTimeout(() => { window.location.assign(POSTS_URL); }, 2000);
+            setTimeout(() => { window.location.assign(RETURN_URL); }, 2000);
         }
     };
 

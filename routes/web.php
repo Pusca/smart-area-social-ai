@@ -138,6 +138,7 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant', 'onbo
 
     Route::prefix('posts')->name('posts.')->group(function () {
         Route::get('/', [ContentItemController::class, 'index'])->name('index');
+        Route::get('/generations', [ContentItemController::class, 'generationIndex'])->name('generation.index');
         Route::get('/generation-feed', [ContentItemController::class, 'activeGenerations'])->name('generation.feed');
 
         Route::get('/create', [ContentItemController::class, 'create'])->name('create');

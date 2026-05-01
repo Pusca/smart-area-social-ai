@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Support\GenerationExecution;
+use App\Support\GenerationProgressPage;
 use App\Support\ImageProviderResolver;
 use App\Support\VideoProviderResolver;
 use Illuminate\Http\Request;
@@ -22,6 +23,13 @@ class AiGenerateController extends Controller
         $contentItem->save();
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
+
+        if (GenerationExecution::shouldShowProgressPage() && (int) $contentItem->content_plan_id > 0) {
+            return redirect()->route('plans.generating', [
+                'contentPlan' => (int) $contentItem->content_plan_id,
+                'context' => GenerationProgressPage::contextForContentItem($contentItem),
+            ]);
+        }
 
         return redirect()
             ->route('posts.edit', $contentItem)
@@ -52,7 +60,7 @@ class AiGenerateController extends Controller
 
             return redirect()->route('plans.generating', [
                 'contentPlan' => $contentPlan,
-                'context' => 'wizard',
+                'context' => GenerationProgressPage::contextForPlan($contentPlan),
             ]);
         }
 
@@ -72,6 +80,13 @@ class AiGenerateController extends Controller
         $contentItem->save();
 
         GenerationExecution::dispatchContentItem((int) $contentItem->id);
+
+        if (GenerationExecution::shouldShowProgressPage() && (int) $contentItem->content_plan_id > 0) {
+            return redirect()->route('plans.generating', [
+                'contentPlan' => (int) $contentItem->content_plan_id,
+                'context' => GenerationProgressPage::contextForContentItem($contentItem),
+            ]);
+        }
 
         return redirect()
             ->route('posts.edit', $contentItem)

@@ -6,6 +6,7 @@ use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\GenerationRun;
 use App\Models\Tenant;
+use App\Models\TenantProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -22,6 +23,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($tenant);
 
         $user = User::factory()->create([
             'tenant_id' => $tenant->id,
@@ -74,6 +76,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($tenant);
 
         $otherTenant = Tenant::create([
             'name' => 'Other Tenant',
@@ -81,6 +84,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($otherTenant);
 
         $user = User::factory()->create([
             'tenant_id' => $tenant->id,
@@ -141,6 +145,83 @@ class GenerationProgressTest extends TestCase
             ->assertJsonPath('items.0.stage', 'In attesa di bootstrap');
     }
 
+    public function test_active_generation_entry_point_redirects_to_existing_plan_progress_page(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Demo Tenant',
+            'slug' => 'demo-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+        $this->markTenantOnboardingComplete($tenant);
+
+        $otherTenant = Tenant::create([
+            'name' => 'Other Tenant',
+            'slug' => 'other-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+        $this->markTenantOnboardingComplete($otherTenant);
+
+        $user = User::factory()->create([
+            'tenant_id' => $tenant->id,
+            'role' => 'owner',
+        ]);
+
+        $plan = ContentPlan::create([
+            'tenant_id' => $tenant->id,
+            'created_by' => $user->id,
+            'name' => 'Piano demo',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->toDateString(),
+            'status' => 'draft',
+            'settings' => ['mode' => 'single_manual'],
+        ]);
+
+        $otherPlan = ContentPlan::create([
+            'tenant_id' => $otherTenant->id,
+            'created_by' => $user->id,
+            'name' => 'Other plan',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->toDateString(),
+            'status' => 'draft',
+            'settings' => ['mode' => 'single_manual'],
+        ]);
+
+        ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'status' => 'draft',
+            'title' => 'Demo post',
+            'caption' => 'Brief demo',
+            'ai_status' => 'queued',
+            'ai_meta' => ['source' => 'manual_single_content'],
+        ]);
+
+        ContentItem::create([
+            'tenant_id' => $otherTenant->id,
+            'content_plan_id' => $otherPlan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'status' => 'draft',
+            'title' => 'Other post',
+            'caption' => 'Brief other',
+            'ai_status' => 'queued',
+            'ai_meta' => ['source' => 'manual_single_content'],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('posts.generation.index'))
+            ->assertRedirect(route('plans.generating', [
+                'contentPlan' => $plan,
+                'context' => 'single',
+            ]));
+    }
+
     public function test_plan_generation_page_is_available_for_quickstart_context(): void
     {
         $tenant = Tenant::create([
@@ -149,6 +230,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($tenant);
 
         $user = User::factory()->create([
             'tenant_id' => $tenant->id,
@@ -183,6 +265,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($tenant);
 
         $user = User::factory()->create([
             'tenant_id' => $tenant->id,
@@ -236,6 +319,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($tenant);
 
         $user = User::factory()->create([
             'tenant_id' => $tenant->id,
@@ -308,6 +392,7 @@ class GenerationProgressTest extends TestCase
             'plan' => 'trial',
             'is_active' => true,
         ]);
+        $this->markTenantOnboardingComplete($tenant);
 
         $user = User::factory()->create([
             'tenant_id' => $tenant->id,
@@ -345,5 +430,19 @@ class GenerationProgressTest extends TestCase
             ->assertJsonPath('counts.queued', 0)
             ->assertJsonPath('counts.error', 1)
             ->assertJsonPath('active', false);
+    }
+
+    private function markTenantOnboardingComplete(Tenant $tenant): void
+    {
+        TenantProfile::create([
+            'tenant_id' => $tenant->id,
+            'business_name' => $tenant->name,
+            'industry' => 'Demo',
+            'services' => 'Demo service',
+            'target' => 'Demo target',
+            'default_tone' => 'professionale',
+            'default_goal' => 'Awareness',
+            'onboarding_completed_at' => now(),
+        ]);
     }
 }

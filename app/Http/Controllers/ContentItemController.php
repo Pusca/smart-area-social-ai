@@ -21,12 +21,15 @@ use App\Services\MemoryBuilderService;
 use App\Services\Social\SocialPublishingService;
 use App\Services\TenantQuotaService;
 use App\Support\GenerationExecution;
+use App\Support\GenerationProgressPage;
 use App\Support\ImageProviderResolver;
 use App\Support\UiStatus;
 use App\Support\VideoProviderResolver;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
@@ -223,27 +226,26 @@ class ContentItemController extends Controller
         ]);
     }
 
+    public function generationIndex(Request $request): RedirectResponse
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+        $activeItem = $this->loadActiveGenerationItems($tenantId, 1)->first();
+
+        if (!$activeItem) {
+            return redirect()
+                ->route('posts.index')
+                ->with('status', 'Nessuna generazione attiva al momento.');
+        }
+
+        return redirect()->to($this->generationProgressUrlForContentItem($activeItem));
+    }
+
     public function activeGenerations(Request $request): JsonResponse
     {
         $tenantId = (int) $request->user()->tenant_id;
-        $limit = max(1, min(8, (int) config('generation.active_drawer_limit', 5)));
-
-        $items = ContentItem::query()
-            ->where('tenant_id', $tenantId)
-            ->whereIn('ai_status', ['queued', 'pending'])
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->limit($limit)
-            ->get();
-
-        $items->each(function (ContentItem $item): void {
-            $this->generationRuntimeMonitor->reconcileContentItem($item);
-            $item->refresh();
-        });
-
-        $activeItems = $items
-            ->filter(fn (ContentItem $item) => in_array((string) $item->ai_status, ['queued', 'pending'], true))
-            ->values();
+        $defaultLimit = max(1, min(8, (int) config('generation.active_drawer_limit', 5)));
+        $limit = max(1, min(50, (int) $request->query('limit', $defaultLimit)));
+        $activeItems = $this->loadActiveGenerationItems($tenantId, $limit);
 
         return response()->json([
             'count' => $activeItems->count(),
@@ -546,6 +548,13 @@ class ContentItemController extends Controller
             return redirect()
                 ->route('posts.edit', $item)
                 ->with('status', trim('Contenuto creato, ma la generazione AI non e partita: ' . $e->getMessage() . ' ' . $this->publicationSyncMessage($publicationSync)));
+        }
+
+        if (GenerationExecution::shouldShowProgressPage()) {
+            return redirect()->route('plans.generating', [
+                'contentPlan' => $plan,
+                'context' => GenerationProgressPage::contextForPlan($plan),
+            ]);
         }
 
         return redirect()
@@ -1671,9 +1680,50 @@ class ContentItemController extends Controller
             'runtime' => $runtime,
             'stage' => (string) ($runtime['stage_label'] ?? ''),
             'edit_url' => route('posts.edit', $contentItem),
-            'generating_url' => route('posts.generating', $contentItem),
+            'generating_url' => $this->generationProgressUrlForContentItem($contentItem),
             'updated_at' => optional($contentItem->updated_at)->toDateTimeString(),
         ];
+    }
+
+    /**
+     * @return Collection<int, ContentItem>
+     */
+    private function loadActiveGenerationItems(int $tenantId, int $limit): Collection
+    {
+        $items = ContentItem::query()
+            ->where('tenant_id', $tenantId)
+            ->whereIn('ai_status', ['queued', 'pending'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
+
+        $items->each(function (ContentItem $item): void {
+            $this->generationRuntimeMonitor->reconcileContentItem($item);
+            $item->refresh();
+        });
+
+        $activeItems = $items
+            ->filter(fn (ContentItem $item) => in_array((string) $item->ai_status, ['queued', 'pending'], true))
+            ->values();
+
+        if ($activeItems->isNotEmpty()) {
+            $activeItems->load(['plan:id,name']);
+        }
+
+        return $activeItems;
+    }
+
+    private function generationProgressUrlForContentItem(ContentItem $contentItem): string
+    {
+        if ((int) $contentItem->content_plan_id > 0) {
+            return route('plans.generating', [
+                'contentPlan' => (int) $contentItem->content_plan_id,
+                'context' => GenerationProgressPage::contextForContentItem($contentItem),
+            ]);
+        }
+
+        return route('posts.generating', $contentItem);
     }
 
     /**
@@ -1741,5 +1791,3 @@ class ContentItemController extends Controller
     }
 
 }
-
-

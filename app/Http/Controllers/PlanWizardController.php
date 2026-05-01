@@ -17,6 +17,7 @@ use App\Services\Editorial\EditorialStrategyService;
 use App\Services\MemoryBuilderService;
 use App\Services\TenantQuotaService;
 use App\Support\GenerationExecution;
+use App\Support\GenerationProgressPage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -137,13 +138,31 @@ class PlanWizardController extends Controller
             abort(403);
         }
 
-        $context = trim((string) $request->query('context', 'wizard'));
+        $requestedContext = trim((string) $request->query('context', ''));
+        $derivedContext = GenerationProgressPage::contextForPlan($contentPlan);
+        $context = in_array($requestedContext, ['quickstart', 'single', 'wizard'], true)
+            ? $requestedContext
+            : $derivedContext;
         $returnUrl = route('posts.index');
+        $returnLabel = 'Vai ai contenuti';
+
+        if ($context === 'single') {
+            $primaryItem = ContentItem::query()
+                ->where('content_plan_id', $contentPlan->id)
+                ->latest('id')
+                ->first();
+
+            if ($primaryItem) {
+                $returnUrl = route('posts.edit', $primaryItem);
+                $returnLabel = 'Apri il contenuto';
+            }
+        }
 
         return view('plans.generating', [
             'plan' => $contentPlan,
             'context' => $context,
             'returnUrl' => $returnUrl,
+            'returnLabel' => $returnLabel,
             'progress' => $this->progressPayload($contentPlan),
         ]);
     }

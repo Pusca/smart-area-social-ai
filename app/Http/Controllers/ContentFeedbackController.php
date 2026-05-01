@@ -6,6 +6,7 @@ use App\Models\ContentFeedbackEntry;
 use App\Models\ContentItem;
 use App\Services\MemoryBuilderService;
 use App\Support\GenerationExecution;
+use App\Support\GenerationProgressPage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -129,7 +130,14 @@ class ContentFeedbackController extends Controller
             GenerationExecution::dispatchContentItem((int) $contentItem->id);
 
             if (GenerationExecution::shouldShowProgressPage()) {
-                return redirect()->route('posts.generating', $contentItem);
+                if ((int) $contentItem->content_plan_id <= 0) {
+                    return redirect()->route('posts.generating', $contentItem);
+                }
+
+                return redirect()->route('plans.generating', [
+                    'contentPlan' => (int) $contentItem->content_plan_id,
+                    'context' => GenerationProgressPage::contextForContentItem($contentItem),
+                ]);
             }
 
             return redirect()
