@@ -1,74 +1,70 @@
 <x-guest-layout>
-    <div class="mx-auto max-w-md">
-        <div class="overflow-hidden rounded-[2rem] border border-app bg-white/94 shadow-panel">
-            <div class="border-b border-app bg-[var(--gradient-soft)] px-6 py-6">
-                <x-application-logo class="h-14 w-auto" />
-                <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Rientra e riprendi il ritmo dei tuoi contenuti</h1>
-                <p class="mt-2 text-sm leading-6 text-muted">
-                    Ritrovi subito calendario, contenuti e approvazioni in uno spazio ordinato e facile da leggere.
+<div class="mx-auto max-w-md">
+    <div style="background:#fff;border:1px solid rgba(10,45,111,.1);border-radius:1.5rem;padding:2rem 2rem 1.75rem;">
+
+        <x-application-logo class="h-12 w-auto" />
+
+        <h1 style="margin-top:1.25rem;font-size:1.25rem;font-weight:700;color:#07183F;letter-spacing:-.01em;">
+            Rientra e riprendi il ritmo
+        </h1>
+        <p style="margin-top:.375rem;font-size:.875rem;color:#64748b;line-height:1.5;">
+            Ritrovi subito calendario, contenuti e approvazioni in uno spazio ordinato.
+        </p>
+
+        <x-auth-session-status class="mt-4" :status="session('status')" />
+
+        <form method="POST" action="{{ route('login') }}" style="margin-top:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+            @csrf
+
+            <div>
+                <label for="email" class="ui-label">Email</label>
+                <input id="email" type="email" name="email" value="{{ old('email') }}"
+                       required autofocus autocomplete="username"
+                       class="ui-input mt-1">
+                <x-input-error :messages="$errors->get('email')" class="mt-1" />
+            </div>
+
+            <div>
+                <label for="password" class="ui-label">Password</label>
+                <input id="password" type="password" name="password"
+                       required autocomplete="current-password"
+                       class="ui-input mt-1">
+                <x-input-error :messages="$errors->get('password')" class="mt-1" />
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+                <label style="display:inline-flex;align-items:center;gap:.5rem;cursor:pointer;">
+                    <input type="checkbox" name="remember"
+                           style="width:1rem;height:1rem;accent-color:#0A2D6F;border-radius:.25rem;">
+                    <span style="font-size:.8125rem;color:#64748b;">Ricordami</span>
+                </label>
+
+                @if (Route::has('password.request'))
+                    <a href="{{ route('password.request') }}"
+                       style="font-size:.8125rem;color:#64748b;text-decoration:underline;">
+                        Password dimenticata?
+                    </a>
+                @endif
+            </div>
+
+            <button type="submit"
+                    style="display:flex;align-items:center;justify-content:center;padding:.75rem 1.5rem;background:#0A2D6F;color:#fff;font-size:.875rem;font-weight:600;border-radius:.875rem;border:none;cursor:pointer;letter-spacing:.01em;margin-top:.25rem;">
+                Accedi
+            </button>
+
+            @if (Route::has('register'))
+                <p style="text-align:center;font-size:.8125rem;color:#64748b;">
+                    Non hai un account?
+                    <a href="{{ route('register') }}" style="color:#0A2D6F;font-weight:600;text-decoration:none;">
+                        Crea il tuo workspace
+                    </a>
                 </p>
-            </div>
-
-            <div class="px-6 py-6">
-                <x-auth-session-status class="mb-4" :status="session('status')" />
-
-                <form method="POST" action="{{ route('login') }}" class="space-y-5">
-                    @csrf
-
-                    <div>
-                        <x-input-label for="email" :value="__('Email')" />
-                        <x-text-input id="email"
-                                      class="mt-1 block w-full rounded-xl"
-                                      type="email"
-                                      name="email"
-                                      :value="old('email')"
-                                      required autofocus autocomplete="username" />
-                        <x-input-error :messages="$errors->get('email')" class="mt-2" />
-                    </div>
-
-                    <div>
-                        <x-input-label for="password" :value="__('Password')" />
-                        <x-text-input id="password"
-                                      class="mt-1 block w-full rounded-xl"
-                                      type="password"
-                                      name="password"
-                                      required autocomplete="current-password" />
-                        <x-input-error :messages="$errors->get('password')" class="mt-2" />
-                    </div>
-
-                    <div class="flex items-center justify-between">
-                        <label for="remember_me" class="inline-flex items-center gap-2">
-                            <input id="remember_me" type="checkbox"
-                                   class="rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-                                   name="remember">
-                            <span class="text-sm text-gray-600">{{ __('Ricordami') }}</span>
-                        </label>
-
-                        @if (Route::has('password.request'))
-                            <a class="text-sm text-gray-600 hover:text-gray-900 underline"
-                               href="{{ route('password.request') }}">
-                                {{ __('Password dimenticata?') }}
-                            </a>
-                        @endif
-                    </div>
-
-                    <button type="submit"
-                            class="ui-btn-primary w-full justify-center py-3">
-                        {{ __('Accedi') }}
-                    </button>
-
-                    @if (Route::has('register'))
-                        <div class="text-center text-sm text-muted">
-                            Non hai un account?
-                            <a class="underline hover:text-gray-900" href="{{ route('register') }}">Crea il tuo workspace</a>
-                        </div>
-                    @endif
-                </form>
-            </div>
-        </div>
-
-        <div class="mt-4 text-center text-xs text-muted">
-            Accesso protetto al tuo workspace {{ config('app.name', 'Social AI') }}
-        </div>
+            @endif
+        </form>
     </div>
+
+    <p style="text-align:center;font-size:.7rem;color:#94a3b8;margin-top:.75rem;letter-spacing:.02em;">
+        Accesso protetto · {{ config('app.name', 'Social AI') }}
+    </p>
+</div>
 </x-guest-layout>

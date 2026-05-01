@@ -1,33 +1,39 @@
 <x-guest-layout>
-    <div class="mx-auto max-w-md ui-reveal">
-        <div class="ui-card p-6 sm:p-7">
-            <x-application-logo class="h-14 w-auto" />
-            <h1 class="mt-5 text-2xl font-semibold tracking-tight text-gray-900">Conferma la tua email</h1>
-            <div class="mt-3 text-sm leading-6 text-muted">
-                Prima di iniziare, conferma il tuo indirizzo email dal link che ti abbiamo inviato. Se non lo trovi, puoi richiederne uno nuovo qui sotto.
+<div class="mx-auto max-w-md">
+    <div style="background:#fff;border:1px solid rgba(10,45,111,.1);border-radius:1.5rem;padding:2rem 2rem 1.75rem;">
+
+        <x-application-logo class="h-12 w-auto" />
+
+        <h1 style="margin-top:1.25rem;font-size:1.25rem;font-weight:700;color:#07183F;letter-spacing:-.01em;">
+            Conferma la tua email
+        </h1>
+        <p style="margin-top:.375rem;font-size:.875rem;color:#64748b;line-height:1.5;">
+            Prima di iniziare, conferma il tuo indirizzo email dal link che ti abbiamo inviato. Se non lo trovi, richiedine uno nuovo qui sotto.
+        </p>
+
+        @if (session('status') == 'verification-link-sent')
+            <div style="margin-top:1rem;border-radius:.875rem;border:1px solid rgba(34,197,94,.25);background:rgba(240,253,244,.8);padding:.625rem 1rem;font-size:.8125rem;color:#166534;">
+                Ti abbiamo inviato un nuovo link di verifica.
             </div>
+        @endif
 
-            @if (session('status') == 'verification-link-sent')
-                <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-success">
-                    Ti abbiamo inviato un nuovo link di verifica.
-                </div>
-            @endif
+        <div style="margin-top:1.5rem;display:flex;align-items:center;gap:1rem;">
+            <form method="POST" action="{{ route('verification.send') }}">
+                @csrf
+                <button type="submit"
+                        style="display:inline-flex;align-items:center;padding:.625rem 1.25rem;background:#0A2D6F;color:#fff;font-size:.875rem;font-weight:600;border-radius:.875rem;border:none;cursor:pointer;">
+                    Invia di nuovo il link
+                </button>
+            </form>
 
-            <div class="mt-4 flex items-center justify-between gap-3">
-                <form method="POST" action="{{ route('verification.send') }}">
-                    @csrf
-                    <x-primary-button>
-                        Invia di nuovo il link
-                    </x-primary-button>
-                </form>
-
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
-                    <button type="submit" class="rounded-md text-sm text-muted underline transition hover:text-text focus:outline-none focus:ring-2 focus:ring-primary">
-                        Esci
-                    </button>
-                </form>
-            </div>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit"
+                        style="font-size:.8125rem;color:#64748b;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">
+                    Esci
+                </button>
+            </form>
         </div>
     </div>
+</div>
 </x-guest-layout>
