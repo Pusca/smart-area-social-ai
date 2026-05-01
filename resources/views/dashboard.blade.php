@@ -375,21 +375,21 @@
 
         <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;">
             <div class="grid grid-cols-2 gap-2">
-                <div class="rounded-xl px-3 py-2.5" style="background:#EEF4FE;">
-                    <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:#566783;">Previsti oggi</p>
-                    <p class="mt-1 text-base font-bold" style="color:#07183F;">{{ $todayItems->count() }}</p>
+                <div style="border-radius:.75rem;padding:.5rem .75rem;background:#EEF4FE;">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#566783;">Previsti oggi</p>
+                    <p style="margin-top:.2rem;font-size:.875rem;font-weight:700;color:#07183F;">{{ $todayItems->count() }}</p>
                 </div>
-                <div class="rounded-xl px-3 py-2.5" style="background:{{ $todayPending > 0 ? '#fffbeb' : '#ecfdf5' }};">
-                    <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:{{ $todayPending > 0 ? '#d97706' : '#059669' }};">Da completare</p>
-                    <p class="mt-1 text-base font-bold" style="color:{{ $todayPending > 0 ? '#b45309' : '#047857' }};">{{ $todayPending }}</p>
+                <div style="border-radius:.75rem;padding:.5rem .75rem;background:{{ $todayPending > 0 ? '#fffbeb' : '#ecfdf5' }};">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:{{ $todayPending > 0 ? '#d97706' : '#059669' }};">Da completare</p>
+                    <p style="margin-top:.2rem;font-size:.875rem;font-weight:700;color:{{ $todayPending > 0 ? '#b45309' : '#047857' }};">{{ $todayPending }}</p>
                 </div>
-                <div class="rounded-xl px-3 py-2.5" style="background:#EEF4FE;">
-                    <p class="text-[9px] font-semibold uppercase tracking-wide" style="color:#566783;">In calendario</p>
-                    <p class="mt-1 text-base font-bold" style="color:#07183F;">{{ $weekPlanned }}</p>
+                <div style="border-radius:.75rem;padding:.5rem .75rem;background:#EEF4FE;">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#566783;">In calendario</p>
+                    <p style="margin-top:.2rem;font-size:.875rem;font-weight:700;color:#07183F;">{{ $weekPlanned }}</p>
                 </div>
-                <div class="rounded-xl px-3 py-2.5" style="background:#ecfdf5;">
-                    <p class="text-[9px] font-semibold uppercase tracking-wide text-emerald-600">Pubblicati</p>
-                    <p class="mt-1 text-base font-bold text-emerald-700">{{ $weekPublished }}</p>
+                <div style="border-radius:.75rem;padding:.5rem .75rem;background:#ecfdf5;">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#059669;">Pubblicati</p>
+                    <p style="margin-top:.2rem;font-size:.875rem;font-weight:700;color:#047857;">{{ $weekPublished }}</p>
                 </div>
             </div>
 
