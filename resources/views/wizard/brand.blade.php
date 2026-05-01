@@ -343,37 +343,26 @@
 {{-- Pipeline header --}}
 @php
 $pipelineSteps = [
-    ['num'=>'01','label'=>'Chi sei','sub'=>'Nome, settore, servizi, target','href'=>'#brand-profile-section','done'=> filled($profile?->business_name) && filled($profile?->services)],
-    ['num'=>'02','label'=>'I tuoi materiali','sub'=>'Logo, immagini, video','href'=>'#brand-assets-section','done'=> $assets->count() > 0],
-    ['num'=>'03','label'=>'Come comunichi','sub'=>'Tono, piattaforme, frequenza','href'=>'#brand-defaults-section','done'=> filled($profile?->default_goal)],
-    ['num'=>'04','label'=>'Strategia','sub'=>'Obiettivi e stile visivo','href'=>'#brand-strategy-section','done'=> $strategy !== null],
+    ['num'=>'01','label'=>'Chi sei','sub'=>'Nome, settore, servizi, target','href'=>'#brand-profile-section'],
+    ['num'=>'02','label'=>'I tuoi materiali','sub'=>'Logo, immagini, video','href'=>'#brand-assets-section'],
+    ['num'=>'03','label'=>'Come comunichi','sub'=>'Tono, piattaforme, frequenza','href'=>'#brand-defaults-section'],
+    ['num'=>'04','label'=>'Strategia','sub'=>'Obiettivi e stile visivo','href'=>'#brand-strategy-section'],
 ];
-$pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
 @endphp
 
 <div style="margin-bottom:1.5rem;">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
-        <div>
-            <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
-            <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;margin-top:.375rem;">{{ $profile?->business_name ?: 'Configura il tuo brand' }}</h1>
-        </div>
-        <p style="font-size:.75rem;color:#64748b;">{{ $pipelineDone }}/4 step completati</p>
+    <div style="margin-bottom:1.25rem;">
+        <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
+        <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;margin-top:.375rem;">{{ $profile?->business_name ?: 'Configura il tuo brand' }}</h1>
     </div>
 
     {{-- Pipeline steps --}}
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.625rem;">
         @foreach($pipelineSteps as $step)
-        <a href="{{ $step['href'] }}" style="display:block;text-decoration:none;border:1px solid {{ $step['done'] ? '#a7f3d0' : 'rgba(10,45,111,.1)' }};border-radius:1rem;padding:.875rem 1rem;background:{{ $step['done'] ? '#ecfdf5' : '#fafbff' }};transition:border-color 150ms;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
-                <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:{{ $step['done'] ? '#065f46' : '#64748b' }};">{{ $step['num'] }}</span>
-                @if($step['done'])
-                <svg style="width:.875rem;height:.875rem;color:#065f46;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
-                @else
-                <div style="width:.625rem;height:.625rem;border-radius:999px;border:2px solid rgba(10,45,111,.2);"></div>
-                @endif
-            </div>
-            <p style="font-size:.8125rem;font-weight:700;color:{{ $step['done'] ? '#065f46' : '#07183F' }};line-height:1.2;">{{ $step['label'] }}</p>
-            <p style="font-size:.7rem;color:{{ $step['done'] ? '#047857' : '#64748b' }};margin-top:.2rem;">{{ $step['sub'] }}</p>
+        <a href="{{ $step['href'] }}" style="display:block;text-decoration:none;border:1px solid rgba(10,45,111,.1);border-radius:1rem;padding:.875rem 1rem;background:#fafbff;transition:border-color 150ms,background 150ms;">
+            <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;display:block;margin-bottom:.5rem;">{{ $step['num'] }}</span>
+            <p style="font-size:.8125rem;font-weight:700;color:#07183F;line-height:1.2;">{{ $step['label'] }}</p>
+            <p style="font-size:.7rem;color:#64748b;margin-top:.2rem;">{{ $step['sub'] }}</p>
         </a>
         @endforeach
     </div>
@@ -424,11 +413,6 @@ $pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Nome, settore, servizi che offri, cliente ideale, CTA.</p>
                             </div>
                         </div>
-                        @if(filled($profile?->business_name) && filled($profile?->services))
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Compilato</span>
-                        @else
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da fare</span>
-                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -519,11 +503,6 @@ $pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Tono di voce, piattaforme social, formati e frequenza di pubblicazione.</p>
                             </div>
                         </div>
-                        @if(filled($profile?->default_goal))
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Compilato</span>
-                        @else
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da fare</span>
-                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -663,11 +642,6 @@ $pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Obiettivi, KPI, stile visivo e ritmo di pubblicazione.</p>
                             </div>
                         </div>
-                        @if($strategy)
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Configurata</span>
-                        @else
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da fare</span>
-                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -787,11 +761,6 @@ $pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
                                 <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Carica logo, foto e video del brand. Più ne carichi, meglio lavora l'AI.</p>
                             </div>
                         </div>
-                        @if($assets->count() > 0)
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">{{ $assets->count() }} file</span>
-                        @else
-                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da caricare</span>
-                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -1193,9 +1162,6 @@ $pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
                             <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Definisci i soggetti fissi: persone, luoghi, prodotti. L'AI li userà come riferimento coerente.</p>
                         </div>
                     </div>
-                    @if($assetVariables->isNotEmpty())
-                    <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#e0f9ff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">{{ $assetVariables->count() }} definiti</span>
-                    @endif
                 </div>
                 <div style="padding:0 1.5rem 1.5rem;">
 
