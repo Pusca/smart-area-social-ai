@@ -332,26 +332,7 @@
     transition:background 150ms,border-color 150ms;
 }
 .bc-step-link:hover { background:#fff; border-color:var(--bc-blue); }
-.bc-trend-chip {
-    border:1px solid var(--bc-border);
-    border-radius:.875rem;
-    padding:.875rem 1rem;
-    background:#fafbff;
-}
-.bc-sidebar-chip {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:.5rem;
-    border:1px solid var(--bc-border);
-    border-radius:.875rem;
-    padding:.75rem 1rem;
-    background:#fafbff;
-}
 @media(max-width:680px) {
-    .bc-two-col { display:block !important; }
-    .bc-two-col > * + * { margin-top:1rem; }
-    .bc-four-col { grid-template-columns:1fr 1fr !important; }
     .bc-header-ctas { flex-wrap:wrap; }
 }
 </style>
@@ -362,36 +343,9 @@
 {{-- Header --}}
 <div style="margin-bottom:.25rem;">
     <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
-    <div class="bc-header-ctas" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-top:.375rem;">
-        <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;line-height:1.2;">Profilo azienda e asset</h1>
-        <div style="display:flex;align-items:center;gap:.625rem;flex-wrap:wrap;">
-            <button type="submit" form="brandProfileForm"
-                style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#fff;background:#0A2D6F;border:none;cursor:pointer;white-space:nowrap;">
-                <svg style="width:.9rem;height:.9rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                Salva Brand Center
-            </button>
-            <a href="{{ route('settings') }}"
-               style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#64748b;background:#f1f5f9;border:1px solid rgba(10,45,111,.1);text-decoration:none;white-space:nowrap;">
-                ← Setup
-            </a>
-        </div>
-    </div>
+    <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;line-height:1.2;margin-top:.375rem;">{{ $profile?->business_name ?: 'Profilo azienda' }}</h1>
 </div>
 
-{{-- Stat chips --}}
-<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem;">
-    <span class="bc-chip {{ $brandReadinessRate >= 80 ? 'bc-chip-ok' : ($brandReadinessRate >= 40 ? 'bc-chip-warn' : 'bc-chip-navy') }}">
-        Readiness {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} · {{ $brandReadinessRate }}%
-    </span>
-    <span class="bc-chip {{ $completionRate >= 80 ? 'bc-chip-ok' : 'bc-chip-navy' }}">Profilo {{ $completionRate }}%</span>
-    @if($logos->count() > 0)<span class="bc-chip bc-chip-navy">{{ $logos->count() }} logo</span>@endif
-    <span class="bc-chip bc-chip-navy">{{ $images->count() }} img · {{ $videos->count() }} video</span>
-    @if($audios->count() > 0)<span class="bc-chip bc-chip-navy">{{ $audios->count() }} audio</span>@endif
-    @if($documents->count() + $texts->count() + $links->count() > 0)
-    <span class="bc-chip bc-chip-navy">{{ $documents->count() + $texts->count() + $links->count() }} doc/note/link</span>
-    @endif
-    <span class="bc-chip {{ $strategyLocked ? 'bc-chip-warn' : 'bc-chip-ok' }}">Strategia {{ $strategyStatus }}</span>
-</div>
 
     @if(session('status'))
         <div style="border:1px solid #a7f3d0;background:#ecfdf5;border-radius:.875rem;padding:.875rem 1rem;font-size:.8125rem;color:#065f46;">
@@ -421,434 +375,23 @@
         </div>
     @endif
 
+
+    @if($brandReadinessMissing->isNotEmpty())
     <div class="bc-card">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
-            <div>
-                <p class="bc-section-title">Trend Brief</p>
-                <p class="bc-h2">Segnali correnti</p>
-                <p style="font-size:.75rem;color:#64748b;margin-top:.25rem;">Freshness, confidence e temi rilevanti per il brand.</p>
-            </div>
-            @if($trendRefreshRoute)
-                <form action="{{ $trendRefreshRoute }}" method="POST">
-                    @csrf
-                    <button type="submit"
-                        style="border:1px solid rgba(10,45,111,.1);background:#fafbff;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;cursor:pointer;">
-                        Aggiorna brief
-                    </button>
-                </form>
-            @endif
-        </div>
-
-        <div class="bc-four-col" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.625rem;margin-bottom:1.25rem;">
-            <div class="bc-trend-chip" style="text-align:center;">
-                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Freshness</p>
-                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#07183F;">
-                    {{ is_numeric(data_get($trendBrief, 'freshness_score')) ? number_format(((float) data_get($trendBrief, 'freshness_score')) * 100, 0) . '%' : '-' }}
-                </p>
-            </div>
-            <div class="bc-trend-chip" style="text-align:center;">
-                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Confidence</p>
-                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#07183F;">
-                    {{ is_numeric(data_get($trendBrief, 'confidence_score')) ? number_format(((float) data_get($trendBrief, 'confidence_score')) * 100, 0) . '%' : '-' }}
-                </p>
-            </div>
-            <div class="bc-trend-chip" style="text-align:center;">
-                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Segnali freschi</p>
-                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#065f46;">{{ (int) ($trendFreshness['fresh'] ?? 0) }}</p>
-            </div>
-            <div class="bc-trend-chip" style="text-align:center;">
-                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">In scadenza</p>
-                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#92400e;">{{ (int) ($trendFreshness['expiring'] ?? 0) }}</p>
-            </div>
-        </div>
-
-        <div class="bc-two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
-            <div style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:1rem;background:#fafbff;">
-                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem;">Temi rilevanti</p>
-                @if(!empty($trendThemes))
-                    <div style="display:flex;flex-direction:column;gap:.5rem;">
-                        @foreach(array_slice($trendThemes, 0, 4) as $theme)
-                            <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
-                                <p style="font-size:.8rem;font-weight:700;color:#07183F;">{{ $theme['title'] ?? $theme['topic'] ?? '-' }}</p>
-                                <p style="margin-top:.2rem;font-size:.7rem;color:#64748b;">
-                                    {{ strtoupper((string) ($theme['platform'] ?? '')) }} · {{ $theme['format_type'] ?? '-' }}
-                                </p>
-                            </div>
-                        @endforeach
+        <p style="font-size:.875rem;font-weight:700;color:#07183F;margin-bottom:.875rem;">Cosa manca ancora</p>
+        <div style="display:flex;flex-direction:column;gap:.5rem;">
+            @foreach($brandReadinessMissing as $item)
+                <a href="{{ $item['href'] }}" class="bc-step-link" style="display:flex;align-items:center;gap:.875rem;">
+                    <div style="width:1.25rem;height:1.25rem;border-radius:999px;border:2px solid rgba(10,45,111,.2);flex-shrink:0;"></div>
+                    <div>
+                        <p style="font-size:.875rem;font-weight:700;color:#07183F;">{{ $item['label'] }}</p>
+                        <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">{{ $item['hint'] }}</p>
                     </div>
-                @else
-                    <p style="font-size:.8rem;color:#64748b;">Nessun trend brief persistito ancora.</p>
-                @endif
-            </div>
-            <div style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:1rem;background:#fafbff;">
-                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem;">Segnali attivi</p>
-                <div style="display:flex;flex-direction:column;gap:.5rem;">
-                    @forelse(array_slice($trendActiveSignals, 0, 4) as $signal)
-                        <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
-                            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem;">
-                                <div>
-                                    <p style="font-size:.8rem;font-weight:700;color:#07183F;">{{ $signal['title'] ?? $signal['topic'] ?? '-' }}</p>
-                                    <p style="margin-top:.2rem;font-size:.7rem;color:#64748b;">
-                                        {{ strtoupper((string) ($signal['platform'] ?? '')) }} · {{ $signal['format_type'] ?? '-' }} · {{ $signal['source_type'] ?? '-' }}
-                                    </p>
-                                </div>
-                                <span class="bc-chip {{ ($signal['freshness_bucket'] ?? '') === 'fresh' ? 'bc-chip-ok' : 'bc-chip-warn' }}" style="flex-shrink:0;">
-                                    {{ $signal['freshness_bucket'] ?? 'expiring' }}
-                                </span>
-                            </div>
-                            @if(!empty($signal['evidence']['matched_hashtags'] ?? []))
-                                <p style="margin-top:.375rem;font-size:.7rem;color:#94a3b8;">
-                                    Match: {{ collect((array) ($signal['evidence']['matched_hashtags'] ?? []))->take(3)->implode(', ') }}
-                                </p>
-                            @elseif(!empty($signal['evidence']['sample_item_ids'] ?? []))
-                                <p style="margin-top:.375rem;font-size:.7rem;color:#94a3b8;">
-                                    Item {{ collect((array) ($signal['evidence']['sample_item_ids'] ?? []))->take(3)->implode(', ') }}
-                                </p>
-                            @endif
-                        </div>
-                    @empty
-                        <p style="font-size:.8rem;color:#64748b;">Nessun segnale attivo.</p>
-                    @endforelse
-                </div>
-                @if(!empty($trendSourceBreakdown))
-                    <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.375rem;">
-                        @foreach($trendSourceBreakdown as $source => $count)
-                            <span class="bc-chip bc-chip-navy">{{ $source }}: {{ (int) $count }}</span>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
-        </div>
-
-        <div style="margin-top:.75rem;border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:1rem;background:#fafbff;">
-            <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem;">Learning Loop</p>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;">
-                <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
-                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;">Hook preferiti</p>
-                    <p style="margin-top:.375rem;font-size:.8rem;font-weight:700;color:#07183F;">
-                        {{ collect((array) data_get($learningProfile, 'preferred_hook_families', []))->take(3)->implode(', ') ?: '-' }}
-                    </p>
-                </div>
-                <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
-                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;">CTA preferite</p>
-                    <p style="margin-top:.375rem;font-size:.8rem;font-weight:700;color:#07183F;">
-                        {{ collect((array) data_get($learningProfile, 'preferred_cta_styles', []))->take(3)->implode(', ') ?: '-' }}
-                    </p>
-                </div>
-                <div class="rounded-lg bg-gray-50 px-3 py-2">
-                    <div class="text-xs text-gray-500">Formati deboli</div>
-                    <div class="mt-1 text-sm font-semibold text-gray-900">
-                        {{ collect((array) data_get($learningProfile, 'formats_that_underperform', []))->pluck('format')->take(3)->implode(', ') ?: '-' }}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    @if(false) {{-- quickstart rimosso --}}
-        @if(!$hasDemoPlan)
-        <div class="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-emerald-50 p-6 shadow-sm">
-            <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-                <div>
-                    <div class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Quickstart</div>
-                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Crea una prova credibile in pochi minuti</h2>
-                    <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                        Questa e una prova guidata, pensata per farti vedere subito il valore del prodotto.
-                        Ti basta inserire i dati base del brand, caricare almeno 1 immagine reale e, se vuoi,
-                        definire gia una variabile visiva. La demo poi puo essere rigenerata o eliminata.
-                    </p>
-
-                    <div class="mt-5 grid gap-3 sm:grid-cols-3">
-                        <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Step 1</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">Dati essenziali</p>
-                            <p class="mt-1 text-xs text-gray-600">Nome, settore, servizi, target e tono.</p>
-                        </div>
-                        <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Step 2</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">1 logo + immagini</p>
-                            <p class="mt-1 text-xs text-gray-600">Il logo e facoltativo, le immagini reali servono per una prova piu credibile.</p>
-                        </div>
-                        <div class="rounded-2xl border border-white/80 bg-white/80 p-4">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Output</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">7 giorni di demo</p>
-                            <p class="mt-1 text-xs text-gray-600">3 contenuti: 2 post immagine e 1 reel su Instagram e Facebook.</p>
-                        </div>
-                    </div>
-
-                    <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        I motori AI e i provider restano selezionabili nei singoli contenuti: qui stai solo attivando la prova iniziale.
-                    </div>
-
-                    @if($quickstartDismissRoute)
-                    <form method="POST" action="{{ $quickstartDismissRoute }}" class="mt-4">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            Salta la prova breve e vai al Brand Center
-                        </button>
-                    </form>
-                    @endif
-                </div>
-
-                <form
-                    method="POST"
-                    action="{{ route('profile.brand.quickstart.store') }}"
-                    enctype="multipart/form-data"
-                    class="js-quickstart-generation-submit rounded-3xl border border-gray-200 bg-white p-5 shadow-sm"
-                    data-loader-title="Sto preparando la tua demo iniziale"
-                    data-loader-subtitle="Raccolgo brand, immagini e variabili per creare i primi contenuti e mostrarti subito una presenza social credibile."
-                    data-loader-estimate="165"
-                >
-                    @csrf
-                    <div class="space-y-4">
-                        <div>
-                            <label for="quick_business_name" class="{{ $labelClass }}">Nome attivita</label>
-                            <input id="quick_business_name" type="text" name="business_name" value="{{ old('business_name', $profile?->business_name ?? '') }}" class="{{ $inputClass }}" required>
-                        </div>
-                        <div>
-                            <label for="quick_industry" class="{{ $labelClass }}">Settore</label>
-                            <input id="quick_industry" type="text" name="industry" value="{{ old('industry', $profile?->industry ?? '') }}" placeholder="Es. ristorante, studio dentistico, ecommerce, consulenza" class="{{ $inputClass }}" required>
-                        </div>
-                        <div>
-                            <label for="quick_services" class="{{ $labelClass }}">Cosa vendi o fai</label>
-                            <textarea id="quick_services" name="services" rows="3" class="{{ $inputClass }}" placeholder="Es. brunch, aperitivi, eventi privati oppure consulenza fiscale, pratiche, supporto aziende" required>{{ old('services', $profile?->services ?? '') }}</textarea>
-                        </div>
-                        <div>
-                            <label for="quick_target" class="{{ $labelClass }}">Chi vuoi raggiungere</label>
-                            <textarea id="quick_target" name="target" rows="3" class="{{ $inputClass }}" placeholder="Es. famiglie in zona, professionisti, PMI, coppie, clienti premium" required>{{ old('target', $profile?->target ?? '') }}</textarea>
-                        </div>
-                        <div class="grid gap-4 sm:grid-cols-2">
-                            <div>
-                                <label for="quick_cta" class="{{ $labelClass }}">Invito all azione</label>
-                                <input id="quick_cta" type="text" name="cta" value="{{ old('cta', $profile?->cta ?? '') }}" placeholder="Es. Scrivici su WhatsApp" class="{{ $inputClass }}">
-                            </div>
-                            <div>
-                                <label for="quick_tone" class="{{ $labelClass }}">Tono consigliato</label>
-                                <select id="quick_tone" name="default_tone" class="{{ $inputClass }}">
-                                    <option value="professionale" @selected($quickstartTone === 'professionale')>Professionale</option>
-                                    <option value="amichevole" @selected($quickstartTone === 'amichevole')>Amichevole</option>
-                                    <option value="ironico" @selected($quickstartTone === 'ironico')>Ironico</option>
-                                    <option value="ispirazionale" @selected($quickstartTone === 'ispirazionale')>Ispirazionale</option>
-                                    <option value="tecnico" @selected($quickstartTone === 'tecnico')>Tecnico</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div>
-                            <label for="quick_notes" class="{{ $labelClass }}">Dettagli utili per la prova</label>
-                            <textarea id="quick_notes" name="notes" rows="3" class="{{ $inputClass }}" placeholder="Es. punti forti, fascia prezzo, zone servite, promozioni attive, stile da evitare">{{ old('notes', $profile?->notes ?? '') }}</textarea>
-                        </div>
-                        <div>
-                            <label for="quick_logo" class="{{ $labelClass }}">Logo (facoltativo)</label>
-                            <input id="quick_logo" type="file" name="logo" accept="image/*" class="{{ $inputClass }}">
-                        </div>
-                        <div>
-                            <label for="quick_images" class="{{ $labelClass }}">Immagini di riferimento {{ $quickstartNeedsImages ? '(almeno 1 richiesta)' : '(puoi aggiungerne altre)' }}</label>
-                            <input id="quick_images" type="file" name="images[]" accept="image/*" multiple class="{{ $inputClass }}" {{ $quickstartNeedsImages ? 'required' : '' }}>
-                            <p class="mt-1 text-xs text-gray-500">Vanno bene foto di prodotti, locale, team, lavori svolti o ambienti reali. Puoi caricarne fino a 12, max 10 MB ciascuna.</p>
-                        </div>
-
-                        <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4">
-                            <div class="flex items-center justify-between gap-3">
-                                <div>
-                                    <h3 class="text-sm font-semibold text-gray-900">Variabile visiva rapida</h3>
-                                    <p class="mt-1 text-xs text-gray-600">Facoltativa. Se la compili, l app raggruppa gli asset caricati in una variabile gia pronta per i prompt.</p>
-                                </div>
-                                <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600">Opzionale</span>
-                            </div>
-                            <div class="mt-4 grid gap-4 sm:grid-cols-3">
-                                <div>
-                                    <label for="quick_var_name" class="{{ $labelClass }}">Nome variabile</label>
-                                    <input id="quick_var_name" type="text" name="quickstart_variable_name" value="{{ old('quickstart_variable_name') }}" placeholder="Es. Chef Marco, showroom, collezione premium" class="{{ $inputClass }}">
-                                </div>
-                                <div>
-                                    <label for="quick_var_kind" class="{{ $labelClass }}">Tipo</label>
-                                    <select id="quick_var_kind" name="quickstart_variable_kind" class="{{ $inputClass }}">
-                                        <option value="person" @selected(old('quickstart_variable_kind') === 'person')>Persona</option>
-                                        <option value="location" @selected(old('quickstart_variable_kind') === 'location')>Luogo</option>
-                                        <option value="product" @selected(old('quickstart_variable_kind') === 'product')>Prodotto</option>
-                                        <option value="custom" @selected(old('quickstart_variable_kind', 'custom') === 'custom')>Custom</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label for="quick_var_description" class="{{ $labelClass }}">Descrizione breve</label>
-                                    <input id="quick_var_description" type="text" name="quickstart_variable_description" value="{{ old('quickstart_variable_description') }}" placeholder="Es. volto del brand o prodotto di punta" class="{{ $inputClass }}">
-                                </div>
-                            </div>
-                        </div>
-
-                        <?php
-                            $qsImageProviders = is_array($imageProviderOptions ?? null) && !empty($imageProviderOptions)
-                                ? $imageProviderOptions
-                                : \App\Support\ImageProviderResolver::configuredWithLabels();
-                            $qsVideoProviders = is_array($videoProviderOptions ?? null) && !empty($videoProviderOptions)
-                                ? $videoProviderOptions
-                                : \App\Support\VideoProviderResolver::configuredWithLabels();
-                            $qsDefaultImage = array_key_first($qsImageProviders) ?? \App\Support\ImageProviderResolver::default();
-                            $qsDefaultVideo = array_key_first($qsVideoProviders) ?? \App\Support\VideoProviderResolver::default();
-                        ?>
-                        @if(count($qsImageProviders) > 1 || count($qsVideoProviders) > 1)
-                        <div class="grid gap-3 border-t border-gray-100 pt-3 sm:grid-cols-2">
-                            @if(count($qsImageProviders) > 1)
-                            <div>
-                                <label for="qs_image_provider" class="{{ $labelClass }}">Motore immagini</label>
-                                <select id="qs_image_provider" name="image_provider" class="{{ $inputClass }}">
-                                    @foreach($qsImageProviders as $pk => $pl)
-                                        <option value="{{ $pk }}" @selected($qsDefaultImage === $pk)>{{ $pl }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            @else
-                            <input type="hidden" name="image_provider" value="{{ $qsDefaultImage }}">
-                            @endif
-                            @if(count($qsVideoProviders) > 1)
-                            <div>
-                                <label for="qs_video_provider" class="{{ $labelClass }}">Motore video (reel)</label>
-                                <select id="qs_video_provider" name="video_provider" class="{{ $inputClass }}">
-                                    @foreach($qsVideoProviders as $pk => $pl)
-                                        <option value="{{ $pk }}" @selected($qsDefaultVideo === $pk)>{{ $pl }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            @else
-                            <input type="hidden" name="video_provider" value="{{ $qsDefaultVideo }}">
-                            @endif
-                        </div>
-                        @else
-                        <input type="hidden" name="image_provider" value="{{ $qsDefaultImage }}">
-                        <input type="hidden" name="video_provider" value="{{ $qsDefaultVideo }}">
-                        @endif
-
-                        <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
-                            <p class="text-xs text-gray-500">La demo usa Instagram e Facebook, con 2 post immagine e 1 reel.</p>
-                            <div class="flex flex-wrap items-center gap-2">
-                                @if($quickstartDismissRoute)
-                                    <button type="submit" formaction="{{ $quickstartDismissRoute }}" formnovalidate class="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                                        Vai al Brand Center completo
-                                    </button>
-                                @endif
-                                <button type="submit" class="ui-btn-primary justify-center">
-                                    Crea la prova guidata
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-        @else
-        <div class="overflow-hidden rounded-3xl border border-cyan-200 bg-gradient-to-br from-white via-cyan-50 to-emerald-50 p-6 shadow-sm">
-            <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                <div>
-                    <div class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Demo iniziale</div>
-                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">La tua prova e gia pronta</h2>
-                    <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                        Hai gia una demo attiva per {{ $demoRangeLabel }}. Ora puoi decidere se tenerla nel workspace,
-                        rigenerarla con i dati attuali oppure eliminarla e chiudere il quickstart.
-                    </p>
-                    <div class="mt-5 flex flex-wrap items-center gap-2">
-                        <span class="inline-flex items-center rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-semibold text-cyan-700">
-                            {{ $demoItems->count() }} contenuti
-                        </span>
-                        <span class="inline-flex items-center rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-semibold text-cyan-700">
-                            {{ $demoRangeLabel }}
-                        </span>
-                        <span class="inline-flex items-center rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-semibold text-cyan-700">
-                            Instagram + Facebook
-                        </span>
-                    </div>
-                    <div class="mt-5 grid gap-3 sm:grid-cols-3">
-                        @foreach($demoItems as $demoItem)
-                            <article class="rounded-2xl border border-white/80 bg-white/80 p-4">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ strtoupper((string) $demoItem->format) }}</p>
-                                <h3 class="mt-2 text-sm font-semibold text-gray-900">{{ $demoItem->title }}</h3>
-                                <p class="mt-1 text-xs text-gray-600">{{ optional($demoItem->scheduled_at)->format('d/m H:i') ?: 'Data da definire' }}</p>
-                            </article>
-                        @endforeach
-                    </div>
-                </div>
-
-                <div class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div class="space-y-3">
-                        <form method="POST" action="{{ route('profile.brand.quickstart.save') }}">
-                            @csrf
-                            <button type="submit" class="ui-btn-primary w-full justify-center">
-                                Salva i contenuti nel workspace
-                            </button>
-                        </form>
-                        @if($quickstartDismissRoute)
-                        <form method="POST" action="{{ $quickstartDismissRoute }}">
-                            @csrf
-                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                                Chiudi quick setup e continua nel Brand Center
-                            </button>
-                        </form>
-                        @endif
-                        <a href="{{ route('calendar') }}" class="ui-btn-primary w-full justify-center">
-                            Apri pianificazione demo
-                        </a>
-                        <a href="{{ route('posts.index') }}" class="inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            Apri libreria generati
-                        </a>
-                        <form
-                            method="POST"
-                            action="{{ route('profile.brand.quickstart.regenerate') }}"
-                            class="js-quickstart-generation-submit"
-                            data-loader-title="Sto rigenerando la tua demo iniziale"
-                            data-loader-subtitle="Aggiorno il setup e ricreo i contenuti demo usando le informazioni brand più recenti."
-                            data-loader-estimate="150"
-                        >
-                            @csrf
-                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-700 hover:bg-cyan-100">
-                                Rigenera demo
-                            </button>
-                        </form>
-                        <form method="POST" action="{{ route('profile.brand.quickstart.destroy') }}" onsubmit="return confirm('Eliminare la demo iniziale?');">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" class="inline-flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
-                                Elimina demo
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        </div>
-        @endif
-    @endif
-
-    <div class="bc-card">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
-            <div>
-                <p class="bc-section-title">Percorso Brand Center</p>
-                <p class="bc-h2">{{ $brandReadinessRate >= 100 ? 'Brand Center completo' : 'Completa il Brand Center' }}</p>
-            </div>
-            <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">{{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree</span>
-        </div>
-
-        <div style="height:5px;border-radius:999px;background:rgba(10,45,111,.08);overflow:hidden;margin-bottom:1rem;">
-            <div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#3BC8FF,#1498F3,#0A2D6F);width:{{ max(8,$brandReadinessRate) }}%;"></div>
-        </div>
-
-        @if($brandReadinessMissing->count() > 0)
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.625rem;">
-            @foreach($brandReadinessMissing->take(4) as $item)
-                <a href="{{ $item['href'] }}" class="bc-step-link">
-                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Da completare</p>
-                    <p style="margin-top:.375rem;font-size:.8125rem;font-weight:700;color:#07183F;">{{ $item['label'] }}</p>
-                    <p style="margin-top:.25rem;font-size:.7rem;color:#64748b;line-height:1.4;">{{ $item['hint'] }}</p>
                 </a>
             @endforeach
         </div>
-        @else
-        <div style="border:1px solid #a7f3d0;background:#ecfdf5;border-radius:.875rem;padding:1rem;display:flex;align-items:center;gap:.75rem;">
-            <svg style="width:1.25rem;height:1.25rem;color:#065f46;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            <div>
-                <p style="font-size:.8125rem;font-weight:700;color:#065f46;">Profilo ben compilato</p>
-                <p style="font-size:.7rem;color:#047857;margin-top:.125rem;">Strategia e contenuti hanno già un contesto utile da cui partire.</p>
-            </div>
-        </div>
-        @endif
     </div>
+    @endif
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div class="space-y-6 xl:col-span-2">
@@ -856,45 +399,11 @@
                 @csrf
                 <input type="hidden" name="strategy_action" id="strategy_action" value="save">
 
-                <div class="order-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-                    <div class="border-b border-gray-100 p-6">
-                        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Brand workflow</div>
-                                <h2 class="mt-2 text-xl font-semibold text-gray-900">Prima le impostazioni operative, poi i dati aziendali stabili</h2>
-                                <p class="mt-2 max-w-2xl text-sm text-gray-600">
-                                    Le sezioni piu usate restano in alto. I dati che cambiano raramente stanno piu in basso,
-                                    cosi il Brand Center si gestisce piu velocemente.
-                                </p>
-                            </div>
-                            <div class="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-900">
-                                <p class="font-semibold">Salvataggio unico</p>
-                                <p class="mt-1 text-xs text-indigo-800">Asset base, default, strategia e anagrafica restano nello stesso form.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="grid gap-3 p-6 md:grid-cols-2 xl:grid-cols-4">
-                        <a href="#brand-assets-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Materiali brand</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} logo, {{ $images->count() }} immagini, {{ $videos->count() }} video, {{ $audios->count() }} audio</p>
-                            <p class="mt-1 text-xs text-gray-600">Entrano nel dossier cliente usato per grounding e riferimenti.</p>
-                        </a>
-                        <a href="#brand-defaults-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Default contenuti</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ ucfirst($tone) }} / {{ old('default_posts_per_week', $profile?->default_posts_per_week ?? 5) }} post/settimana</p>
-                            <p class="mt-1 text-xs text-gray-600">{{ $defaultPlatformSummary !== '' ? $defaultPlatformSummary : 'Da completare' }}</p>
-                        </a>
-                        <a href="#brand-strategy-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Strategy Studio</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $strategyStatus }}</p>
-                            <p class="mt-1 text-xs text-gray-600">Ultimo update {{ $strategyUpdatedAt }}</p>
-                        </a>
-                        <a href="#brand-profile-section" class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Dati aziendali</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $companySummary->isNotEmpty() ? $companySummary->implode(' - ') : 'Da completare' }}</p>
-                            <p class="mt-1 text-xs text-gray-600">Sono in basso perche in genere cambiano meno spesso.</p>
-                        </a>
-                    </div>
+                <div class="order-0" style="display:flex;flex-wrap:wrap;gap:.5rem;">
+                    <a href="#brand-assets-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Materiali</a>
+                    <a href="#brand-defaults-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Impostazioni</a>
+                    <a href="#brand-strategy-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Strategia</a>
+                    <a href="#brand-profile-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Dati aziendali</a>
                 </div>
 
                 <details id="brand-profile-section" class="order-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($companySectionOpen) open @endif>
@@ -2165,45 +1674,16 @@
             </div>
         </div>
 
-        <div class="self-start space-y-4 xl:sticky xl:top-6">
-            {{-- Panoramica --}}
+        <div class="self-start xl:sticky xl:top-6">
             <div class="bc-card">
-                <p class="bc-section-title">Panoramica</p>
-                <div style="display:flex;flex-direction:column;gap:.5rem;">
-                    <div class="bc-sidebar-chip">
-                        <p style="font-size:.75rem;color:#64748b;">Profilo</p>
-                        <span style="font-size:.875rem;font-weight:700;color:#07183F;">{{ $completionRate }}%</span>
-                    </div>
-                    <div class="bc-sidebar-chip">
-                        <p style="font-size:.75rem;color:#64748b;">Asset totali</p>
-                        <span style="font-size:.875rem;font-weight:700;color:#07183F;">{{ $assets->count() }}</span>
-                    </div>
-                    <div class="bc-sidebar-chip">
-                        <p style="font-size:.75rem;color:#64748b;">Piattaforme</p>
-                        <span style="font-size:.875rem;font-weight:700;color:#07183F;">{{ max(0, count($defaultPlatforms)) }}</span>
-                    </div>
-                    <div class="bc-sidebar-chip">
-                        <p style="font-size:.75rem;color:#64748b;">Strategia</p>
-                        <span class="bc-chip {{ $strategyLocked ? 'bc-chip-warn' : 'bc-chip-ok' }}">{{ $strategyStatus }}</span>
-                    </div>
-                    <div class="bc-sidebar-chip">
-                        <p style="font-size:.75rem;color:#64748b;">Ultimo update</p>
-                        <span style="font-size:.7rem;font-weight:600;color:#07183F;">{{ $strategyUpdatedAt }}</span>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Salva --}}
-            <div class="bc-card">
-                <p class="bc-section-title">Salvataggio</p>
                 <button type="submit" form="brandProfileForm"
-                    style="width:100%;border:none;border-radius:.875rem;padding:.75rem 1rem;font-size:.875rem;font-weight:700;color:#fff;background:#0A2D6F;cursor:pointer;margin-bottom:.75rem;">
+                    style="width:100%;border:none;border-radius:.875rem;padding:.875rem 1rem;font-size:.9rem;font-weight:700;color:#fff;background:#0A2D6F;cursor:pointer;margin-bottom:1rem;">
                     Salva Brand Center
                 </button>
                 <div style="display:flex;flex-direction:column;gap:.375rem;">
-                    <a href="{{ route('settings') }}" class="bc-step-link" style="font-size:.8rem;font-weight:700;color:#07183F;">Setup workspace →</a>
-                    <a href="{{ route('calendar') }}" class="bc-step-link" style="font-size:.8rem;font-weight:700;color:#07183F;">Pianifica →</a>
-                    <a href="{{ route('posts.index') }}" class="bc-step-link" style="font-size:.8rem;font-weight:700;color:#07183F;">Libreria →</a>
+                    <a href="{{ route('settings') }}" class="bc-step-link" style="font-size:.8rem;font-weight:600;color:#07183F;">← Setup workspace</a>
+                    <a href="{{ route('calendar') }}" class="bc-step-link" style="font-size:.8rem;font-weight:600;color:#07183F;">Pianifica →</a>
+                    <a href="{{ route('posts.index') }}" class="bc-step-link" style="font-size:.8rem;font-weight:600;color:#07183F;">Libreria →</a>
                 </div>
             </div>
         </div>
