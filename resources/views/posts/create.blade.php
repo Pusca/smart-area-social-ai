@@ -254,10 +254,18 @@
     width: 100%;
     max-width: 700px;
 }
+.cr-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-md);
+}
 @media (max-width: 600px) {
     .cr-choice-grid {
         grid-template-columns: 1fr;
         max-width: 100%;
+    }
+    .cr-two-col {
+        grid-template-columns: 1fr;
     }
 }
 </style>
@@ -390,7 +398,7 @@
             </div>
 
             {{-- ── Data + Piattaforme ── --}}
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-md);">
+            <div class="cr-two-col">
                 <div class="cr-card cr-section">
                     <label class="cr-field-label">Programmazione</label>
                     <div class="cr-field-wrap">
