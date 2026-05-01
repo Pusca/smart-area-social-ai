@@ -253,6 +253,66 @@ class GenerationProgressTest extends TestCase
             ->assertSee('Sto completando la demo iniziale');
     }
 
+    public function test_plan_generation_page_shows_only_remaining_items(): void
+    {
+        $tenant = Tenant::create([
+            'name' => 'Demo Tenant',
+            'slug' => 'demo-tenant',
+            'plan' => 'trial',
+            'is_active' => true,
+        ]);
+        $this->markTenantOnboardingComplete($tenant);
+
+        $user = User::factory()->create([
+            'tenant_id' => $tenant->id,
+            'role' => 'owner',
+        ]);
+
+        $plan = ContentPlan::create([
+            'tenant_id' => $tenant->id,
+            'created_by' => $user->id,
+            'name' => 'Piano demo',
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->toDateString(),
+            'status' => 'draft',
+            'settings' => ['mode' => 'wizard'],
+        ]);
+
+        ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'instagram',
+            'format' => 'post',
+            'status' => 'draft',
+            'title' => 'Contenuto in coda',
+            'caption' => 'Brief demo',
+            'ai_status' => 'queued',
+            'ai_meta' => ['source' => 'manual_single_content'],
+        ]);
+
+        ContentItem::create([
+            'tenant_id' => $tenant->id,
+            'content_plan_id' => $plan->id,
+            'created_by' => $user->id,
+            'platform' => 'facebook',
+            'format' => 'reel',
+            'status' => 'draft',
+            'title' => 'Contenuto completato',
+            'caption' => 'Brief demo',
+            'ai_status' => 'done',
+            'ai_generated_at' => now(),
+            'ai_meta' => ['source' => 'manual_single_content'],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('plans.generating', ['contentPlan' => $plan, 'context' => 'wizard']))
+            ->assertOk()
+            ->assertSee('Contenuti da completare')
+            ->assertSee('Contenuto in coda')
+            ->assertDontSee('Contenuto completato');
+    }
+
     public function test_single_content_generation_status_marks_stale_queued_items_as_error(): void
     {
         config()->set('generation.queued_stale_after_seconds', 300);

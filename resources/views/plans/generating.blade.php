@@ -2,20 +2,20 @@
 
 @section('content')
 @php
-    $statusUrl    = route('wizard.progress.plan', $plan);
+    $statusUrl = route('wizard.progress.plan', $plan);
     $generatingUrl = route('plans.generating', ['contentPlan' => $plan->id, 'context' => $context]);
-    $returnUrl    = $returnUrl ?? route('posts.index');
-    $returnLabel  = $returnLabel ?? 'Vai ai contenuti';
-    $counts       = (array) ($progress['counts'] ?? []);
-    $total        = (int) ($counts['total'] ?? 0);
-    $done         = (int) ($counts['done'] ?? 0);
-    $queued       = (int) (($counts['queued'] ?? 0) + ($counts['pending'] ?? 0));
-    $errors       = (int) ($counts['error'] ?? 0);
-    $doneRate     = $total > 0 ? (int) round(($done / $total) * 100) : 0;
-    $etaSeconds   = max(30, ($queued * 55));
-    $recentDone   = (array) ($progress['recent_done'] ?? []);
-    $completed    = (bool) ($progress['completed'] ?? false);
-    $contextMeta  = match ($context) {
+    $returnUrl = $returnUrl ?? route('posts.index');
+    $returnLabel = $returnLabel ?? 'Vai ai contenuti';
+    $counts = (array) ($progress['counts'] ?? []);
+    $total = (int) ($counts['total'] ?? 0);
+    $done = (int) ($counts['done'] ?? 0);
+    $queued = (int) (($counts['queued'] ?? 0) + ($counts['pending'] ?? 0));
+    $errors = (int) ($counts['error'] ?? 0);
+    $doneRate = $total > 0 ? (int) round(($done / $total) * 100) : 0;
+    $etaSeconds = max(30, ($queued * 55));
+    $activeItems = (array) ($progress['active_items'] ?? []);
+    $completed = (bool) ($progress['completed'] ?? false);
+    $contextMeta = match ($context) {
         'quickstart' => [
             'heading' => 'Sto completando la demo iniziale',
             'description' => 'I contenuti demo vengono costruiti uno alla volta in background.',
@@ -31,21 +31,11 @@
     };
 @endphp
 
-<style>
-    @keyframes slide-in-item {
-        from { opacity: 0; transform: translateY(12px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-    .item-slide-in { animation: slide-in-item 0.35s ease both; }
-</style>
-
 <div class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
     <div id="gen-card" class="overflow-hidden rounded-[32px] border border-app bg-white shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
-        {{-- Top gradient bar --}}
         <div class="h-1.5 bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400"></div>
 
         <div class="space-y-6 p-6 sm:p-8">
-            {{-- Header --}}
             <div class="flex items-start justify-between gap-4">
                 <div class="flex items-start gap-4">
                     <div class="relative mt-1 h-12 w-12 shrink-0">
@@ -60,7 +50,6 @@
                         <p class="mt-1 text-sm text-gray-500">{{ $contextMeta['description'] }}</p>
                     </div>
                 </div>
-                {{-- Minimize button --}}
                 <button id="gen-minimize-btn" type="button" title="Minimizza"
                     class="shrink-0 mt-1 inline-flex items-center gap-1.5 rounded-xl border border-app bg-app/50 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:bg-white hover:text-gray-900">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -70,7 +59,6 @@
                 </button>
             </div>
 
-            {{-- Stats --}}
             <div class="rounded-[24px] border border-app bg-app/40 p-5 space-y-4">
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
@@ -89,13 +77,11 @@
                     </div>
                 </div>
 
-                {{-- Progress bar --}}
                 <div class="h-2 overflow-hidden rounded-full bg-white">
                     <div id="gen-bar" class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-emerald-400 transition-[width] duration-500"
                          style="width: {{ max(6, $doneRate) }}%"></div>
                 </div>
 
-                {{-- Counters --}}
                 <div class="grid grid-cols-3 gap-3">
                     <div class="rounded-2xl border border-white/80 bg-white/90 p-3 text-center">
                         <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500">Completati</p>
@@ -113,34 +99,45 @@
                 </div>
             </div>
 
-            {{-- Completed items feed --}}
             <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.20em] text-gray-500 mb-3">Contenuti completati</p>
+                <p class="mb-3 text-xs font-semibold uppercase tracking-[0.20em] text-gray-500">Contenuti da completare</p>
                 <div id="gen-items-list" class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
-                    @forelse($recentDone as $item)
+                    @forelse($activeItems as $item)
                     <div class="flex items-center gap-3 rounded-2xl border border-app bg-white px-4 py-3">
-                        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                            <svg class="h-3.5 w-3.5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full {{ ($item['ai_status'] ?? '') === 'pending' ? 'bg-cyan-100' : 'bg-amber-100' }}">
+                            @if(($item['ai_status'] ?? '') === 'pending')
+                            <svg class="h-3.5 w-3.5 text-cyan-700" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/>
+                            </svg>
+                            @else
+                            <svg class="h-3.5 w-3.5 text-amber-700" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5"/>
+                            </svg>
+                            @endif
                         </span>
                         <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{{ $item['title'] ?? 'Contenuto' }}</span>
                         <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{{ strtoupper($item['platform'] ?? '') }} · {{ strtoupper($item['format'] ?? '') }}</span>
                     </div>
                     @empty
                     <div id="gen-items-empty" class="flex items-center gap-3 rounded-2xl border border-dashed border-app px-4 py-4 text-sm text-gray-400">
-                        <svg class="h-4 w-4 shrink-0 animate-spin text-cyan-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
-                        Il primo contenuto arriva tra poco...
+                        <svg class="h-4 w-4 shrink-0 animate-spin text-cyan-400" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                        </svg>
+                        Nessun contenuto in attesa.
                     </div>
                     @endforelse
                 </div>
             </div>
 
-            {{-- Footer action --}}
             <div id="gen-footer" class="flex items-center justify-between gap-3">
                 <p class="text-sm text-gray-500">Puoi minimizzare e continuare a navigare.</p>
                 <a id="gen-posts-link" href="{{ $returnUrl }}"
                     class="hidden inline-flex items-center gap-2 rounded-2xl bg-gray-950 px-5 py-3 text-sm font-semibold text-white shadow transition hover:bg-gray-800">
                     {{ $returnLabel }}
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"/></svg>
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"/>
+                    </svg>
                 </a>
             </div>
         </div>
@@ -149,34 +146,31 @@
 
 <script>
 (() => {
-    const STATUS_URL     = @json($statusUrl);
-    const RETURN_URL     = @json($returnUrl);
+    const STATUS_URL = @json($statusUrl);
+    const RETURN_URL = @json($returnUrl);
     const GENERATING_URL = @json($generatingUrl);
-    const PLAN_ID        = @json($plan->id);
-    const LS_KEY         = 'socialai:plan-gen';
+    const PLAN_ID = @json($plan->id);
+    const LS_KEY = 'socialai:plan-gen';
+    const initialActiveItems = @json($activeItems);
 
-    const barEl      = document.getElementById('gen-bar');
-    const stageEl    = document.getElementById('gen-stage');
-    const statusEl   = document.getElementById('gen-status');
-    const etaEl      = document.getElementById('gen-eta');
-    const doneEl     = document.getElementById('gen-done');
-    const queuedEl   = document.getElementById('gen-queued');
-    const errorsEl   = document.getElementById('gen-errors');
-    const itemsList  = document.getElementById('gen-items-list');
-    const emptyEl    = document.getElementById('gen-items-empty');
-    const spinnerEl  = document.getElementById('gen-spinner');
-    const minimizeBtn= document.getElementById('gen-minimize-btn');
-    const footerEl   = document.getElementById('gen-footer');
-    const postsLink  = document.getElementById('gen-posts-link');
+    const barEl = document.getElementById('gen-bar');
+    const stageEl = document.getElementById('gen-stage');
+    const statusEl = document.getElementById('gen-status');
+    const etaEl = document.getElementById('gen-eta');
+    const doneEl = document.getElementById('gen-done');
+    const queuedEl = document.getElementById('gen-queued');
+    const errorsEl = document.getElementById('gen-errors');
+    const itemsList = document.getElementById('gen-items-list');
+    const spinnerEl = document.getElementById('gen-spinner');
+    const minimizeBtn = document.getElementById('gen-minimize-btn');
+    const postsLink = document.getElementById('gen-posts-link');
 
-    let pollTimer     = null;
-    let countdownTimer= null;
-    let redirecting   = false;
-    let etaRemaining  = {{ $etaSeconds }};
-    let seenIds       = new Set(@json(array_column($recentDone, 'id')));
-    let isCompleted   = @json($completed);
+    let pollTimer = null;
+    let countdownTimer = null;
+    let redirecting = false;
+    let etaRemaining = {{ $etaSeconds }};
+    let isCompleted = @json($completed);
 
-    /* ── Countdown ticker (ogni secondo) ─────────────────────────── */
     const tickCountdown = () => {
         if (isCompleted || etaRemaining <= 0) return;
         etaRemaining = Math.max(0, etaRemaining - 1);
@@ -184,48 +178,80 @@
     };
 
     const updateEtaDisplay = (seconds) => {
-        if (seconds <= 0) { etaEl.textContent = 'Quasi pronto'; return; }
-        if (seconds < 60) { etaEl.textContent = `${seconds} sec`; return; }
-        const m = Math.floor(seconds / 60), s = seconds % 60;
-        etaEl.textContent = s > 0 ? `${m} min ${s} sec` : `${m} min`;
+        if (seconds <= 0) {
+            etaEl.textContent = 'Quasi pronto';
+            return;
+        }
+
+        if (seconds < 60) {
+            etaEl.textContent = `${seconds} sec`;
+            return;
+        }
+
+        const minutes = Math.floor(seconds / 60);
+        const rest = seconds % 60;
+        etaEl.textContent = rest > 0 ? `${minutes} min ${rest} sec` : `${minutes} min`;
     };
 
-    /* ── Render a new completed item ──────────────────────────────── */
-    const addItem = (item) => {
-        if (emptyEl) emptyEl.remove();
-        const div = document.createElement('div');
-        div.className = 'item-slide-in flex items-center gap-3 rounded-2xl border border-app bg-white px-4 py-3';
-        const platform = String(item.platform || '').toUpperCase();
-        const format   = String(item.format || '').toUpperCase();
-        div.innerHTML = `
-            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                <svg class="h-3.5 w-3.5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
-                </svg>
-            </span>
-            <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">${esc(item.title || 'Contenuto')}</span>
-            <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">${esc(platform)} · ${esc(format)}</span>
-        `;
-        /* Prepend so newest is on top */
-        itemsList.insertBefore(div, itemsList.firstChild);
+    const esc = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    const renderActiveItems = (items) => {
+        if (!itemsList) return;
+
+        if (!Array.isArray(items) || items.length === 0) {
+            itemsList.innerHTML = `
+                <div id="gen-items-empty" class="flex items-center gap-3 rounded-2xl border border-dashed border-app px-4 py-4 text-sm text-gray-400">
+                    <svg class="h-4 w-4 shrink-0 animate-spin text-cyan-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                    Nessun contenuto in attesa.
+                </div>
+            `;
+            return;
+        }
+
+        itemsList.innerHTML = items.map((item) => {
+            const platform = String(item?.platform || '').toUpperCase();
+            const format = String(item?.format || '').toUpperCase();
+            const isPending = String(item?.ai_status || '') === 'pending';
+            const iconWrap = isPending ? 'bg-cyan-100' : 'bg-amber-100';
+            const icon = isPending
+                ? '<svg class="h-3.5 w-3.5 text-cyan-700" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/></svg>'
+                : '<svg class="h-3.5 w-3.5 text-amber-700" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5"/></svg>';
+
+            return `
+                <div class="flex items-center gap-3 rounded-2xl border border-app bg-white px-4 py-3">
+                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${iconWrap}">
+                        ${icon}
+                    </span>
+                    <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">${esc(item?.title || 'Contenuto')}</span>
+                    <span class="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-gray-400">${esc(platform)} · ${esc(format)}</span>
+                </div>
+            `;
+        }).join('');
     };
 
-    const esc = (v) => String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-    /* ── localStorage state ──────────────────────────────────────── */
     const saveState = (done, total, completed) => {
         try {
             localStorage.setItem(LS_KEY, JSON.stringify({
                 planId: PLAN_ID,
                 genUrl: GENERATING_URL,
-                done, total, completed,
+                done,
+                total,
+                completed,
             }));
-        } catch(_) {}
+        } catch (_) {
+        }
     };
 
-    const clearState = () => { try { localStorage.removeItem(LS_KEY); } catch(_) {} };
+    const clearState = () => {
+        try {
+            localStorage.removeItem(LS_KEY);
+        } catch (_) {
+        }
+    };
 
-    /* ── Done state ──────────────────────────────────────────────── */
     const markDone = () => {
         isCompleted = true;
         clearInterval(pollTimer);
@@ -233,42 +259,42 @@
         if (spinnerEl) spinnerEl.classList.remove('animate-spin');
         etaEl.textContent = 'Pronto';
         stageEl.textContent = 'Tutti i contenuti sono pronti';
-        statusEl.textContent = 'Redirect automatico in 2 secondi…';
+        statusEl.textContent = 'Redirect automatico in 2 secondi...';
         if (postsLink) postsLink.classList.remove('hidden');
         clearState();
+
         if (!redirecting) {
             redirecting = true;
             setTimeout(() => { window.location.assign(RETURN_URL); }, 2000);
         }
     };
 
-    /* ── Poll ────────────────────────────────────────────────────── */
     const poll = async () => {
         try {
             const res = await fetch(STATUS_URL, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 cache: 'no-store',
             });
+
             if (!res.ok) return;
+
             const payload = await res.json();
+            const counts = payload.counts || {};
+            const total = Number(counts.total || 0);
+            const done = Number(counts.done || 0);
+            const queued = Number(counts.queued || 0) + Number(counts.pending || 0);
+            const errors = Number(counts.error || 0);
+            const doneRate = total > 0 ? Math.round((done / total) * 100) : 0;
 
-            const counts  = payload.counts || {};
-            const total   = Number(counts.total || 0);
-            const done    = Number(counts.done || 0);
-            const queued  = Number(counts.queued || 0) + Number(counts.pending || 0);
-            const errors  = Number(counts.error || 0);
-            const doneRate= total > 0 ? Math.round((done / total) * 100) : 0;
-
-            /* Update ETA: recalculate from server data, keep ticking from there */
             const serverEta = queued > 0 ? Math.max(5, queued * 55) : 0;
             if (serverEta > 0 && Math.abs(serverEta - etaRemaining) > 30) {
-                etaRemaining = serverEta; /* resync if drift > 30s */
+                etaRemaining = serverEta;
             }
 
-            barEl.style.width  = `${Math.max(6, doneRate)}%`;
-            doneEl.textContent  = String(done);
-            queuedEl.textContent= String(queued);
-            errorsEl.textContent= String(errors);
+            barEl.style.width = `${Math.max(6, doneRate)}%`;
+            doneEl.textContent = String(done);
+            queuedEl.textContent = String(queued);
+            errorsEl.textContent = String(errors);
             errorsEl.classList.toggle('text-red-700', errors > 0);
             errorsEl.classList.toggle('text-gray-950', errors === 0);
 
@@ -279,40 +305,29 @@
                 ? 'Aggiorno copy, prompt e visual senza interrompere il tuo flusso.'
                 : (errors > 0 ? 'Ho finito, ma almeno un contenuto va controllato.' : 'Ho finito.');
 
-            /* New completed items */
-            const recentDone = Array.isArray(payload.recent_done) ? payload.recent_done : [];
-            recentDone.forEach((item) => {
-                if (item && !seenIds.has(item.id)) {
-                    seenIds.add(item.id);
-                    addItem(item);
-                }
-            });
-
+            renderActiveItems(Array.isArray(payload.active_items) ? payload.active_items : []);
             saveState(done, total, !!payload.completed);
 
             if (payload.completed) markDone();
-
-        } catch(_) {
+        } catch (_) {
             statusEl.textContent = 'Connessione lenta, continuo a controllare.';
         }
     };
 
-    /* ── Minimize ────────────────────────────────────────────────── */
     minimizeBtn?.addEventListener('click', () => {
-        /* Save current state so the badge in layout knows about this plan */
-        const done  = Number(doneEl.textContent || 0);
-        const total = Number(doneEl.closest('[class]')?.querySelector('p:last-child')?.textContent?.replace('di ','') || 0);
+        const done = Number(doneEl.textContent || 0);
+        const total = {{ $total }};
         saveState(done, total, isCompleted);
         window.location.assign(document.referrer || '{{ route("dashboard") }}');
     });
 
-    /* ── Init ────────────────────────────────────────────────────── */
     if (isCompleted) {
         markDone();
     } else {
+        renderActiveItems(initialActiveItems);
         saveState({{ $done }}, {{ $total }}, false);
         poll();
-        pollTimer      = setInterval(poll, 3000);
+        pollTimer = setInterval(poll, 3000);
         countdownTimer = setInterval(tickCountdown, 1000);
     }
 })();

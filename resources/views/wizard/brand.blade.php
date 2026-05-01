@@ -1767,7 +1767,9 @@
         const btnBulkDelete = document.getElementById('bulkDeleteBtn');
         const quickstartForms = document.querySelectorAll('form.js-quickstart-generation-submit');
 
-        if (quickstartForms.length > 0 && window.HostupGenerationLoader) {
+        const shouldShowProgressPage = @json(\App\Support\GenerationExecution::shouldShowProgressPage());
+
+        if (quickstartForms.length > 0 && window.HostupGenerationLoader && !shouldShowProgressPage) {
             quickstartForms.forEach((form) => {
                 form.addEventListener('submit', () => {
                     window.HostupGenerationLoader.show({

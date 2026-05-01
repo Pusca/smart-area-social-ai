@@ -758,7 +758,8 @@ function createPage() {
     })();
 
     // Generation loader
-    if (createForm && window.HostupGenerationLoader) {
+    const shouldShowProgressPage = @json(\App\Support\GenerationExecution::shouldShowProgressPage());
+    if (createForm && window.HostupGenerationLoader && !shouldShowProgressPage) {
         const estimate = () => {
             const fmt=(formatEl?.value||'post').toLowerCase();
             const vp=(videoProviderEl?.value||'').toLowerCase();

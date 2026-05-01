@@ -972,7 +972,9 @@
             imageProviderSelect.addEventListener('change', syncImageProvider);
         }
 
-        if (generationForms.length > 0 && window.HostupGenerationLoader) {
+        const shouldShowProgressPage = @json(\App\Support\GenerationExecution::shouldShowProgressPage());
+
+        if (generationForms.length > 0 && window.HostupGenerationLoader && !shouldShowProgressPage) {
             generationForms.forEach((form) => {
                 form.addEventListener('submit', () => {
                     const kind = String(form.getAttribute('data-generation-kind') || 'full');
@@ -995,7 +997,7 @@
             });
         }
 
-        if (feedbackForm && window.HostupGenerationLoader) {
+        if (feedbackForm && window.HostupGenerationLoader && !shouldShowProgressPage) {
             feedbackForm.addEventListener('submit', () => {
                 const selectedAction = Array.from(feedbackActionInputs).find((input) => input.checked)?.value || 'record_only';
                 if (selectedAction !== 'regenerate') {
@@ -1076,4 +1078,3 @@
     })();
 </script>
 @endsection
-

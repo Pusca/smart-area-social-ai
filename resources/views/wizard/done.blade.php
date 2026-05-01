@@ -459,7 +459,9 @@
         }
     };
 
-    if (generateForms.length > 0 && window.HostupGenerationLoader) {
+    const shouldShowProgressPage = @json(\App\Support\GenerationExecution::shouldShowProgressPage());
+
+    if (generateForms.length > 0 && window.HostupGenerationLoader && !shouldShowProgressPage) {
         generateForms.forEach((form) => {
             form.addEventListener('submit', () => {
                 window.HostupGenerationLoader.show({
@@ -482,7 +484,6 @@
 </script>
 @endif
 @endsection
-
 
 
 

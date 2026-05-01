@@ -908,6 +908,24 @@ class PlanWizardController extends Controller
     {
         $counts = $counts ?? $this->planCounts($plan);
 
+        $activeItems = ContentItem::query()
+            ->where('content_plan_id', $plan->id)
+            ->whereIn('ai_status', ['queued', 'pending'])
+            ->orderByRaw("CASE WHEN ai_status = 'pending' THEN 0 ELSE 1 END")
+            ->orderByRaw('CASE WHEN scheduled_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('scheduled_at')
+            ->orderBy('id')
+            ->limit(20)
+            ->get(['id', 'title', 'platform', 'format', 'ai_status'])
+            ->map(fn ($item) => [
+                'id' => (int) $item->id,
+                'title' => (string) ($item->title ?? 'Contenuto'),
+                'platform' => (string) ($item->platform ?? ''),
+                'format' => (string) ($item->format ?? 'post'),
+                'ai_status' => (string) ($item->ai_status ?? ''),
+            ])
+            ->all();
+
         $recentDone = ContentItem::query()
             ->where('content_plan_id', $plan->id)
             ->where('ai_status', 'done')
@@ -928,6 +946,7 @@ class PlanWizardController extends Controller
             'active'      => (($counts['queued'] + $counts['pending']) > 0),
             'completed'   => ($counts['total'] > 0 && ($counts['queued'] + $counts['pending']) === 0),
             'counts'      => $counts,
+            'active_items' => $activeItems,
             'recent_done' => $recentDone,
         ];
     }
