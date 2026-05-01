@@ -126,17 +126,17 @@
 
     {{-- Generati --}}
     <div class="stat-hover dash-card overflow-hidden">
-        <div class="px-5 py-5 sm:px-5 sm:py-5">
+        <div style="padding:1rem 1.25rem;">
             <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">Generati</p>
-                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:#EEF4FE;">
-                    <svg class="h-4 w-4" style="color:#0A2D6F;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#566783;">Generati</p>
+                <span class="flex items-center justify-center rounded-xl" style="width:1.75rem;height:1.75rem;background:#EEF4FE;">
+                    <svg style="width:.875rem;height:.875rem;color:#0A2D6F;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:#07183F;">{{ $doneItems }}</p>
-            <p class="mt-1 text-xs" style="color:#566783;">di {{ $totalItems }} totali</p>
+            <p style="margin-top:.375rem;font-size:1.375rem;font-weight:700;letter-spacing:-.02em;color:#07183F;">{{ $doneItems }}</p>
+            <p style="margin-top:.15rem;font-size:.7rem;color:#566783;">di {{ $totalItems }} totali</p>
         </div>
         <div class="h-1.5 w-full" style="background:#EEF4FE;">
             <div class="h-full" style="width:{{ $aiCompletion }}%;background:linear-gradient(90deg,#0A2D6F,#3BC8FF);"></div>
@@ -145,17 +145,17 @@
 
     {{-- Pubblicati --}}
     <div class="stat-hover dash-card overflow-hidden">
-        <div class="px-5 py-5">
+        <div style="padding:1rem 1.25rem;">
             <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">Pubblicati</p>
-                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:#ecfdf5;">
-                    <svg class="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#566783;">Pubblicati</p>
+                <span class="flex items-center justify-center rounded-xl" style="width:1.75rem;height:1.75rem;background:#ecfdf5;">
+                    <svg style="width:.875rem;height:.875rem;" class="text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:#07183F;">{{ $publishedItems }}</p>
-            <p class="mt-1 text-xs" style="color:#566783;">{{ $publishRate }}% del totale</p>
+            <p style="margin-top:.375rem;font-size:1.375rem;font-weight:700;letter-spacing:-.02em;color:#07183F;">{{ $publishedItems }}</p>
+            <p style="margin-top:.15rem;font-size:.7rem;color:#566783;">{{ $publishRate }}% del totale</p>
         </div>
         <div class="h-1.5 w-full bg-gray-100">
             <div class="h-full bg-emerald-500" style="width:{{ $publishRate }}%"></div>
@@ -164,17 +164,17 @@
 
     {{-- In coda --}}
     <div class="stat-hover dash-card overflow-hidden">
-        <div class="px-5 py-5">
+        <div style="padding:1rem 1.25rem;">
             <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">In coda</p>
-                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:#fffbeb;">
-                    <svg class="h-4 w-4 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#566783;">In coda</p>
+                <span class="flex items-center justify-center rounded-xl" style="width:1.75rem;height:1.75rem;background:#fffbeb;">
+                    <svg style="width:.875rem;height:.875rem;" class="text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:{{ $queuedItems > 0 ? '#b45309' : '#07183F' }};">{{ $queuedItems }}</p>
-            <p class="mt-1 text-xs" style="color:#566783;">in generazione</p>
+            <p style="margin-top:.375rem;font-size:1.375rem;font-weight:700;letter-spacing:-.02em;color:{{ $queuedItems > 0 ? '#b45309' : '#07183F' }};">{{ $queuedItems }}</p>
+            <p style="margin-top:.15rem;font-size:.7rem;color:#566783;">in generazione</p>
         </div>
         <div class="h-1.5 w-full bg-gray-100">
             <div class="h-full bg-amber-400" style="width:{{ min(100, $queueRate) }}%"></div>
@@ -183,17 +183,17 @@
 
     {{-- Errori --}}
     <div class="stat-hover dash-card overflow-hidden">
-        <div class="px-5 py-5">
+        <div style="padding:1rem 1.25rem;">
             <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-widest" style="color:#566783;">Errori</p>
-                <span class="flex h-8 w-8 items-center justify-center rounded-xl" style="background:{{ $errorItems > 0 ? '#fef2f2' : '#f9fafb' }};">
-                    <svg class="h-4 w-4" style="color:{{ $errorItems > 0 ? '#dc2626' : '#9ca3af' }};" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#566783;">Errori</p>
+                <span class="flex items-center justify-center rounded-xl" style="width:1.75rem;height:1.75rem;background:{{ $errorItems > 0 ? '#fef2f2' : '#f9fafb' }};">
+                    <svg style="width:.875rem;height:.875rem;color:{{ $errorItems > 0 ? '#dc2626' : '#9ca3af' }};" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl" style="color:{{ $errorItems > 0 ? '#dc2626' : '#07183F' }};">{{ $errorItems }}</p>
-            <p class="mt-1 text-xs" style="color:#566783;">{{ $errorItems > 0 ? 'da verificare' : 'tutto ok' }}</p>
+            <p style="margin-top:.375rem;font-size:1.375rem;font-weight:700;letter-spacing:-.02em;color:{{ $errorItems > 0 ? '#dc2626' : '#07183F' }};">{{ $errorItems }}</p>
+            <p style="margin-top:.15rem;font-size:.7rem;color:#566783;">{{ $errorItems > 0 ? 'da verificare' : 'tutto ok' }}</p>
         </div>
         <div class="h-1.5 w-full bg-gray-100">
             <div class="h-full" style="width:{{ max(4, $errorRate) }}%;background:{{ $errorItems > 0 ? '#dc2626' : '#e5e7eb' }};"></div>
@@ -334,17 +334,17 @@
                 </div>
             </div>
             <div class="flex gap-3">
-                <div class="flex-1 rounded-2xl px-3 py-4 text-center" style="background:#fffbeb;">
-                    <p class="text-2xl font-bold" style="color:#b45309;">{{ $planItemsQueued }}</p>
-                    <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-wide" style="color:#d97706;">In coda</p>
+                <div class="flex-1 text-center" style="border-radius:.75rem;padding:.5rem .75rem;background:#fffbeb;">
+                    <p style="font-size:.875rem;font-weight:700;color:#b45309;">{{ $planItemsQueued }}</p>
+                    <p style="margin-top:.15rem;font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#d97706;">In coda</p>
                 </div>
-                <div class="flex-1 rounded-2xl px-3 py-4 text-center" style="background:#ecfdf5;">
-                    <p class="text-2xl font-bold text-emerald-700">{{ $planItemsDone }}</p>
-                    <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-600">Pronti</p>
+                <div class="flex-1 text-center" style="border-radius:.75rem;padding:.5rem .75rem;background:#ecfdf5;">
+                    <p style="font-size:.875rem;font-weight:700;color:#047857;">{{ $planItemsDone }}</p>
+                    <p style="margin-top:.15rem;font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#059669;">Pronti</p>
                 </div>
-                <div class="flex-1 rounded-2xl px-3 py-4 text-center" style="background:{{ $planItemsError > 0 ? '#fef2f2' : '#f9fafb' }};">
-                    <p class="text-2xl font-bold" style="color:{{ $planItemsError > 0 ? '#dc2626' : '#9ca3af' }};">{{ $planItemsError }}</p>
-                    <p class="mt-0.5 text-[9px] font-semibold uppercase tracking-wide" style="color:{{ $planItemsError > 0 ? '#ef4444' : '#9ca3af' }};">Errori</p>
+                <div class="flex-1 text-center" style="border-radius:.75rem;padding:.5rem .75rem;background:{{ $planItemsError > 0 ? '#fef2f2' : '#f9fafb' }};">
+                    <p style="font-size:.875rem;font-weight:700;color:{{ $planItemsError > 0 ? '#dc2626' : '#9ca3af' }};">{{ $planItemsError }}</p>
+                    <p style="margin-top:.15rem;font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:{{ $planItemsError > 0 ? '#ef4444' : '#9ca3af' }};">Errori</p>
                 </div>
             </div>
         </div>
