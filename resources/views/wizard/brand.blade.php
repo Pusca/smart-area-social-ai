@@ -283,83 +283,126 @@
     $labelClass = 'mb-1 block text-sm font-semibold text-gray-700';
 @endphp
 
-<section class="w-full space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+<style>
+:root {
+    --bc-navy: #0A2D6F;
+    --bc-cyan: #3BC8FF;
+    --bc-blue: #1498F3;
+    --bc-slate: #64748b;
+    --bc-border: rgba(10,45,111,.1);
+}
+.bc-card {
+    background:#fff;
+    border:1px solid var(--bc-border);
+    border-radius:1.25rem;
+    padding:1.5rem;
+}
+.bc-chip {
+    display:inline-flex;
+    align-items:center;
+    gap:.3rem;
+    border-radius:999px;
+    padding:.3rem .75rem;
+    font-size:.6rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+}
+.bc-chip-ok   { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+.bc-chip-warn { background:#fffbeb; color:#92400e; border:1px solid #fde68a; }
+.bc-chip-info { background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; }
+.bc-chip-cyan { background:#e0f9ff; color:#0e7490; border:1px solid #a5f3fc; }
+.bc-chip-navy { background:rgba(10,45,111,.06); color:var(--bc-navy); border:1px solid var(--bc-border); }
+.bc-section-title {
+    font-size:.6rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    color:var(--bc-slate);
+    margin-bottom:.75rem;
+}
+.bc-h2 { font-size:.9375rem; font-weight:700; color:#07183F; }
+.bc-step-link {
+    display:block;
+    border:1px solid var(--bc-border);
+    border-radius:.875rem;
+    padding:.875rem 1rem;
+    background:#fafbff;
+    text-decoration:none;
+    transition:background 150ms,border-color 150ms;
+}
+.bc-step-link:hover { background:#fff; border-color:var(--bc-blue); }
+.bc-trend-chip {
+    border:1px solid var(--bc-border);
+    border-radius:.875rem;
+    padding:.875rem 1rem;
+    background:#fafbff;
+}
+.bc-sidebar-chip {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:.5rem;
+    border:1px solid var(--bc-border);
+    border-radius:.875rem;
+    padding:.75rem 1rem;
+    background:#fafbff;
+}
+@media(max-width:680px) {
+    .bc-two-col { display:block !important; }
+    .bc-two-col > * + * { margin-top:1rem; }
+    .bc-four-col { grid-template-columns:1fr 1fr !important; }
+    .bc-header-ctas { flex-wrap:wrap; }
+}
+</style>
 
-    <div class="overflow-hidden rounded-3xl border border-gray-200 bg-gradient-to-br from-white via-indigo-50/40 to-cyan-50/40 p-6 shadow-sm lg:p-8">
-        <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr] xl:items-center">
-            <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Brand Center</div>
-                <h1 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
-                    {{ $isOnboardingPending ? 'Attiva la tua prova guidata' : 'Profilo azienda e asset' }}
-                </h1>
-                <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                    {{ $isOnboardingPending
-                        ? 'Ti chiediamo poche informazioni utili e almeno un immagine reale: poi l app prepara una settimana demo con 2 post immagine e 1 reel, pronta da esplorare o rigenerare.'
-                        : 'Gestisci Brand Center, asset visual e strategia di base che alimentano crea, piano editoriale e libreria.' }}
-                </p>
+<section class="w-full space-y-5 px-4 py-6 sm:px-6 lg:px-8" style="max-width:1080px;margin:0 auto;">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 
-                <div class="mt-5 flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                        Completamento {{ $completionRate }}%
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $logos->count() }} logo
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $images->count() }} immagini
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $videos->count() }} video
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $audios->count() }} audio
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $documents->count() }} documenti
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $texts->count() }} note
-                    </span>
-                    <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        {{ $links->count() }} link
-                    </span>
-                    <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
-                        Strategia {{ $strategyStatus }}
-                    </span>
-                </div>
-            </div>
-
-            <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Azioni rapide</div>
-                <div class="mt-3 grid grid-cols-1 gap-2">
-                    <a href="{{ route('calendar') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri pianificazione
-                    </a>
-                    <a href="{{ route('wizard.start') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri piano editoriale
-                    </a>
-                    <a href="{{ route('posts.index') }}" class="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Apri libreria
-                    </a>
-                    <a href="{{ route('dashboard') }}" class="ui-btn-primary justify-center">
-                        Torna alla home
-                    </a>
-                </div>
-            </div>
+{{-- Header --}}
+<div style="margin-bottom:.25rem;">
+    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
+    <div class="bc-header-ctas" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-top:.375rem;">
+        <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;line-height:1.2;">Profilo azienda e asset</h1>
+        <div style="display:flex;align-items:center;gap:.625rem;flex-wrap:wrap;">
+            <button type="submit" form="brandProfileForm"
+                style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#fff;background:#0A2D6F;border:none;cursor:pointer;white-space:nowrap;">
+                <svg style="width:.9rem;height:.9rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Salva Brand Center
+            </button>
+            <a href="{{ route('settings') }}"
+               style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#64748b;background:#f1f5f9;border:1px solid rgba(10,45,111,.1);text-decoration:none;white-space:nowrap;">
+                ← Setup
+            </a>
         </div>
     </div>
+</div>
+
+{{-- Stat chips --}}
+<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem;">
+    <span class="bc-chip {{ $brandReadinessRate >= 80 ? 'bc-chip-ok' : ($brandReadinessRate >= 40 ? 'bc-chip-warn' : 'bc-chip-navy') }}">
+        Readiness {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} · {{ $brandReadinessRate }}%
+    </span>
+    <span class="bc-chip {{ $completionRate >= 80 ? 'bc-chip-ok' : 'bc-chip-navy' }}">Profilo {{ $completionRate }}%</span>
+    @if($logos->count() > 0)<span class="bc-chip bc-chip-navy">{{ $logos->count() }} logo</span>@endif
+    <span class="bc-chip bc-chip-navy">{{ $images->count() }} img · {{ $videos->count() }} video</span>
+    @if($audios->count() > 0)<span class="bc-chip bc-chip-navy">{{ $audios->count() }} audio</span>@endif
+    @if($documents->count() + $texts->count() + $links->count() > 0)
+    <span class="bc-chip bc-chip-navy">{{ $documents->count() + $texts->count() + $links->count() }} doc/note/link</span>
+    @endif
+    <span class="bc-chip {{ $strategyLocked ? 'bc-chip-warn' : 'bc-chip-ok' }}">Strategia {{ $strategyStatus }}</span>
+</div>
 
     @if(session('status'))
-        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div style="border:1px solid #a7f3d0;background:#ecfdf5;border-radius:.875rem;padding:.875rem 1rem;font-size:.8125rem;color:#065f46;">
             {{ session('status') }}
         </div>
     @endif
 
     @if($brandWarnings->isNotEmpty())
-        <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            <p class="font-semibold">Alcuni moduli dinamici non sono disponibili, ma il Brand Center resta utilizzabile.</p>
-            <ul class="mt-2 list-disc space-y-1 pl-5">
+        <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:.875rem;padding:.875rem 1rem;font-size:.8rem;color:#92400e;">
+            <p style="font-weight:700;">Alcuni moduli dinamici non disponibili, ma il Brand Center resta utilizzabile.</p>
+            <ul style="margin-top:.5rem;list-style:disc;padding-left:1.25rem;display:flex;flex-direction:column;gap:.25rem;">
                 @foreach($brandWarnings as $warning)
                     <li>{{ $warning }}</li>
                 @endforeach
@@ -368,9 +411,9 @@
     @endif
 
     @if($errors->any())
-        <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <p class="font-semibold">Controlla i campi richiesti prima di continuare:</p>
-            <ul class="mt-2 list-disc space-y-1 pl-5">
+        <div style="border:1px solid #fecaca;background:#fff5f5;border-radius:.875rem;padding:.875rem 1rem;font-size:.8rem;color:#dc2626;">
+            <p style="font-weight:700;">Controlla i campi richiesti prima di continuare:</p>
+            <ul style="margin-top:.5rem;list-style:disc;padding-left:1.25rem;display:flex;flex-direction:column;gap:.25rem;">
                 @foreach($errors->all() as $error)
                     <li>{{ $error }}</li>
                 @endforeach
@@ -378,119 +421,119 @@
         </div>
     @endif
 
-    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div class="bc-card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
             <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Trend Brief</div>
-                <p class="mt-1 text-sm text-gray-600">Brief trend corrente del tenant, con freshness, confidence e segnali disponibili.</p>
+                <p class="bc-section-title">Trend Brief</p>
+                <p class="bc-h2">Segnali correnti</p>
+                <p style="font-size:.75rem;color:#64748b;margin-top:.25rem;">Freshness, confidence e temi rilevanti per il brand.</p>
             </div>
             @if($trendRefreshRoute)
                 <form action="{{ $trendRefreshRoute }}" method="POST">
                     @csrf
-                    <button type="submit" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                        Aggiorna trend brief
+                    <button type="submit"
+                        style="border:1px solid rgba(10,45,111,.1);background:#fafbff;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;cursor:pointer;">
+                        Aggiorna brief
                     </button>
                 </form>
             @endif
         </div>
 
-        <div class="mt-4 grid gap-3 md:grid-cols-4">
-            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <div class="text-xs text-gray-500">Freshness</div>
-                <div class="mt-1 text-lg font-semibold text-gray-900">
+        <div class="bc-four-col" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.625rem;margin-bottom:1.25rem;">
+            <div class="bc-trend-chip" style="text-align:center;">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Freshness</p>
+                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#07183F;">
                     {{ is_numeric(data_get($trendBrief, 'freshness_score')) ? number_format(((float) data_get($trendBrief, 'freshness_score')) * 100, 0) . '%' : '-' }}
-                </div>
+                </p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <div class="text-xs text-gray-500">Confidence</div>
-                <div class="mt-1 text-lg font-semibold text-gray-900">
+            <div class="bc-trend-chip" style="text-align:center;">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Confidence</p>
+                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#07183F;">
                     {{ is_numeric(data_get($trendBrief, 'confidence_score')) ? number_format(((float) data_get($trendBrief, 'confidence_score')) * 100, 0) . '%' : '-' }}
-                </div>
+                </p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <div class="text-xs text-gray-500">Segnali freschi</div>
-                <div class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($trendFreshness['fresh'] ?? 0) }}</div>
+            <div class="bc-trend-chip" style="text-align:center;">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Segnali freschi</p>
+                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#065f46;">{{ (int) ($trendFreshness['fresh'] ?? 0) }}</p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <div class="text-xs text-gray-500">Segnali in scadenza</div>
-                <div class="mt-1 text-lg font-semibold text-gray-900">{{ (int) ($trendFreshness['expiring'] ?? 0) }}</div>
+            <div class="bc-trend-chip" style="text-align:center;">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">In scadenza</p>
+                <p style="margin-top:.5rem;font-size:1.375rem;font-weight:700;color:#92400e;">{{ (int) ($trendFreshness['expiring'] ?? 0) }}</p>
             </div>
         </div>
 
-        <div class="mt-4 grid gap-3 lg:grid-cols-2">
-            <div class="rounded-xl border border-gray-200 px-4 py-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Temi rilevanti</div>
+        <div class="bc-two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;">
+            <div style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:1rem;background:#fafbff;">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem;">Temi rilevanti</p>
                 @if(!empty($trendThemes))
-                    <div class="mt-3 space-y-2">
+                    <div style="display:flex;flex-direction:column;gap:.5rem;">
                         @foreach(array_slice($trendThemes, 0, 4) as $theme)
-                            <div class="rounded-lg bg-gray-50 px-3 py-2">
-                                <div class="text-sm font-semibold text-gray-900">{{ $theme['title'] ?? $theme['topic'] ?? '-' }}</div>
-                                <div class="mt-1 text-xs text-gray-600">
+                            <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
+                                <p style="font-size:.8rem;font-weight:700;color:#07183F;">{{ $theme['title'] ?? $theme['topic'] ?? '-' }}</p>
+                                <p style="margin-top:.2rem;font-size:.7rem;color:#64748b;">
                                     {{ strtoupper((string) ($theme['platform'] ?? '')) }} · {{ $theme['format_type'] ?? '-' }}
-                                </div>
+                                </p>
                             </div>
                         @endforeach
                     </div>
                 @else
-                    <p class="mt-3 text-sm text-gray-500">Nessun trend brief persistito ancora.</p>
+                    <p style="font-size:.8rem;color:#64748b;">Nessun trend brief persistito ancora.</p>
                 @endif
             </div>
-            <div class="rounded-xl border border-gray-200 px-4 py-3">
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Segnali attivi</div>
-                <div class="mt-3 space-y-2">
+            <div style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:1rem;background:#fafbff;">
+                <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem;">Segnali attivi</p>
+                <div style="display:flex;flex-direction:column;gap:.5rem;">
                     @forelse(array_slice($trendActiveSignals, 0, 4) as $signal)
-                        <div class="rounded-lg bg-gray-50 px-3 py-2">
-                            <div class="flex items-start justify-between gap-3">
+                        <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
+                            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem;">
                                 <div>
-                                    <div class="text-sm font-semibold text-gray-900">{{ $signal['title'] ?? $signal['topic'] ?? '-' }}</div>
-                                    <div class="mt-1 text-xs text-gray-600">
+                                    <p style="font-size:.8rem;font-weight:700;color:#07183F;">{{ $signal['title'] ?? $signal['topic'] ?? '-' }}</p>
+                                    <p style="margin-top:.2rem;font-size:.7rem;color:#64748b;">
                                         {{ strtoupper((string) ($signal['platform'] ?? '')) }} · {{ $signal['format_type'] ?? '-' }} · {{ $signal['source_type'] ?? '-' }}
-                                    </div>
+                                    </p>
                                 </div>
-                                <span class="rounded-full border {{ ($signal['freshness_bucket'] ?? '') === 'fresh' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' }} px-2 py-0.5 text-[11px] font-semibold">
+                                <span class="bc-chip {{ ($signal['freshness_bucket'] ?? '') === 'fresh' ? 'bc-chip-ok' : 'bc-chip-warn' }}" style="flex-shrink:0;">
                                     {{ $signal['freshness_bucket'] ?? 'expiring' }}
                                 </span>
                             </div>
                             @if(!empty($signal['evidence']['matched_hashtags'] ?? []))
-                                <div class="mt-2 text-xs text-gray-500">
-                                    Match hashtag: {{ collect((array) ($signal['evidence']['matched_hashtags'] ?? []))->take(3)->implode(', ') }}
-                                </div>
+                                <p style="margin-top:.375rem;font-size:.7rem;color:#94a3b8;">
+                                    Match: {{ collect((array) ($signal['evidence']['matched_hashtags'] ?? []))->take(3)->implode(', ') }}
+                                </p>
                             @elseif(!empty($signal['evidence']['sample_item_ids'] ?? []))
-                                <div class="mt-2 text-xs text-gray-500">
-                                    Evidenza interna: item {{ collect((array) ($signal['evidence']['sample_item_ids'] ?? []))->take(3)->implode(', ') }}
-                                </div>
+                                <p style="margin-top:.375rem;font-size:.7rem;color:#94a3b8;">
+                                    Item {{ collect((array) ($signal['evidence']['sample_item_ids'] ?? []))->take(3)->implode(', ') }}
+                                </p>
                             @endif
                         </div>
                     @empty
-                        <p class="text-sm text-gray-500">Nessun segnale attivo disponibile.</p>
+                        <p style="font-size:.8rem;color:#64748b;">Nessun segnale attivo.</p>
                     @endforelse
                 </div>
                 @if(!empty($trendSourceBreakdown))
-                    <div class="mt-3 flex flex-wrap gap-2">
+                    <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.375rem;">
                         @foreach($trendSourceBreakdown as $source => $count)
-                            <span class="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700">
-                                {{ $source }}: {{ (int) $count }}
-                            </span>
+                            <span class="bc-chip bc-chip-navy">{{ $source }}: {{ (int) $count }}</span>
                         @endforeach
                     </div>
                 @endif
             </div>
         </div>
 
-        <div class="mt-4 rounded-xl border border-gray-200 px-4 py-3">
-            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Learning Loop</div>
-            <div class="mt-3 grid gap-2 md:grid-cols-3">
-                <div class="rounded-lg bg-gray-50 px-3 py-2">
-                    <div class="text-xs text-gray-500">Hook preferiti</div>
-                    <div class="mt-1 text-sm font-semibold text-gray-900">
+        <div style="margin-top:.75rem;border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:1rem;background:#fafbff;">
+            <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:.75rem;">Learning Loop</p>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;">
+                <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;">Hook preferiti</p>
+                    <p style="margin-top:.375rem;font-size:.8rem;font-weight:700;color:#07183F;">
                         {{ collect((array) data_get($learningProfile, 'preferred_hook_families', []))->take(3)->implode(', ') ?: '-' }}
-                    </div>
+                    </p>
                 </div>
-                <div class="rounded-lg bg-gray-50 px-3 py-2">
-                    <div class="text-xs text-gray-500">CTA preferite</div>
-                    <div class="mt-1 text-sm font-semibold text-gray-900">
+                <div style="border:1px solid rgba(10,45,111,.08);border-radius:.625rem;padding:.625rem .75rem;background:#fff;">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;">CTA preferite</p>
+                    <p style="margin-top:.375rem;font-size:.8rem;font-weight:700;color:#07183F;">
                         {{ collect((array) data_get($learningProfile, 'preferred_cta_styles', []))->take(3)->implode(', ') ?: '-' }}
-                    </div>
+                    </p>
                 </div>
                 <div class="rounded-lg bg-gray-50 px-3 py-2">
                     <div class="text-xs text-gray-500">Formati deboli</div>
@@ -773,52 +816,39 @@
         @endif
     @endif
 
-    <div class="overflow-hidden rounded-3xl border border-indigo-200 bg-gradient-to-br from-white via-indigo-50/60 to-cyan-50/60 p-6 shadow-sm">
-            <div class="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-                <div>
-                    <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Prossimo passo</div>
-                    <h2 class="mt-2 text-2xl font-semibold tracking-tight text-gray-900">Completa il Brand Center e dai più contesto alla macchina</h2>
-                    <p class="mt-3 max-w-2xl text-sm text-gray-600">
-                        Più dettagli aggiungi qui, più Social AI riesce a costruire strategie, prompt e contenuti vicini alla tua attività.
-                        Non serve fare tutto subito: basta completare un blocco alla volta e salvare.
-                    </p>
+    <div class="bc-card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <div>
+                <p class="bc-section-title">Percorso Brand Center</p>
+                <p class="bc-h2">{{ $brandReadinessRate >= 100 ? 'Brand Center completo' : 'Completa il Brand Center' }}</p>
+            </div>
+            <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">{{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree</span>
+        </div>
 
-                    <div class="mt-5 h-2 overflow-hidden rounded-full bg-white/80">
-                        <div class="h-full rounded-full bg-gradient-to-r from-indigo-400 via-cyan-400 to-emerald-400" style="width: {{ max(14, $brandReadinessRate) }}%"></div>
-                    </div>
+        <div style="height:5px;border-radius:999px;background:rgba(10,45,111,.08);overflow:hidden;margin-bottom:1rem;">
+            <div style="height:100%;border-radius:999px;background:linear-gradient(90deg,#3BC8FF,#1498F3,#0A2D6F);width:{{ max(8,$brandReadinessRate) }}%;"></div>
+        </div>
 
-                    <div class="mt-4 flex flex-wrap items-center gap-2">
-                        <span class="inline-flex items-center rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-semibold text-indigo-700">
-                            Brand readiness {{ $brandReadinessRate }}%
-                        </span>
-                        <span class="inline-flex items-center rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-semibold text-gray-700">
-                            {{ $brandReadinessDone }}/{{ $brandReadinessItems->count() }} aree già coperte
-                        </span>
-                        @if($brandReadinessMissing->count() > 0)
-                            <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                                {{ $brandReadinessMissing->count() }} aree da rinforzare
-                            </span>
-                        @endif
-                    </div>
-                </div>
-
-                <div class="grid gap-3 sm:grid-cols-2">
-                    @forelse($brandReadinessMissing->take(4) as $item)
-                        <a href="{{ $item['href'] }}" class="rounded-2xl border border-white/90 bg-white/90 p-4 transition hover:-translate-y-0.5 hover:shadow-sm">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Da completare</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">{{ $item['label'] }}</p>
-                            <p class="mt-1 text-xs leading-5 text-gray-600">{{ $item['hint'] }}</p>
-                        </a>
-                    @empty
-                        <div class="sm:col-span-2 rounded-2xl border border-emerald-200 bg-white/90 p-4">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Profilo ben compilato</p>
-                            <p class="mt-2 text-sm font-semibold text-gray-900">Hai già dato alla macchina una base solida.</p>
-                            <p class="mt-1 text-xs leading-5 text-gray-600">Puoi rifinire i dettagli quando vuoi, ma strategia e contenuti hanno già un contesto utile da cui partire.</p>
-                        </div>
-                    @endforelse
-                </div>
+        @if($brandReadinessMissing->count() > 0)
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.625rem;">
+            @foreach($brandReadinessMissing->take(4) as $item)
+                <a href="{{ $item['href'] }}" class="bc-step-link">
+                    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Da completare</p>
+                    <p style="margin-top:.375rem;font-size:.8125rem;font-weight:700;color:#07183F;">{{ $item['label'] }}</p>
+                    <p style="margin-top:.25rem;font-size:.7rem;color:#64748b;line-height:1.4;">{{ $item['hint'] }}</p>
+                </a>
+            @endforeach
+        </div>
+        @else
+        <div style="border:1px solid #a7f3d0;background:#ecfdf5;border-radius:.875rem;padding:1rem;display:flex;align-items:center;gap:.75rem;">
+            <svg style="width:1.25rem;height:1.25rem;color:#065f46;flex-shrink:0;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div>
+                <p style="font-size:.8125rem;font-weight:700;color:#065f46;">Profilo ben compilato</p>
+                <p style="font-size:.7rem;color:#047857;margin-top:.125rem;">Strategia e contenuti hanno già un contesto utile da cui partire.</p>
             </div>
         </div>
+        @endif
+    </div>
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div class="space-y-6 xl:col-span-2">
@@ -2135,68 +2165,45 @@
             </div>
         </div>
 
-        <div class="self-start space-y-6 xl:sticky xl:top-6">
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Panoramica</h2>
-                <div class="mt-4 space-y-3">
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Setup iniziale</p>
-                        <p class="mt-1 text-sm font-semibold {{ $isOnboardingPending ? 'text-amber-700' : 'text-emerald-700' }}">
-                            {{ $isOnboardingPending ? 'Da completare' : 'Attivo' }}
-                        </p>
+        <div class="self-start space-y-4 xl:sticky xl:top-6">
+            {{-- Panoramica --}}
+            <div class="bc-card">
+                <p class="bc-section-title">Panoramica</p>
+                <div style="display:flex;flex-direction:column;gap:.5rem;">
+                    <div class="bc-sidebar-chip">
+                        <p style="font-size:.75rem;color:#64748b;">Profilo</p>
+                        <span style="font-size:.875rem;font-weight:700;color:#07183F;">{{ $completionRate }}%</span>
                     </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Demo iniziale</p>
-                        <p class="mt-1 text-sm font-semibold text-gray-900">
-                            Non presente
-                        </p>
+                    <div class="bc-sidebar-chip">
+                        <p style="font-size:.75rem;color:#64748b;">Asset totali</p>
+                        <span style="font-size:.875rem;font-weight:700;color:#07183F;">{{ $assets->count() }}</span>
                     </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Completamento campi chiave</p>
-                        <p class="mt-1 text-xl font-semibold text-gray-900">{{ $completionRate }}%</p>
+                    <div class="bc-sidebar-chip">
+                        <p style="font-size:.75rem;color:#64748b;">Piattaforme</p>
+                        <span style="font-size:.875rem;font-weight:700;color:#07183F;">{{ max(0, count($defaultPlatforms)) }}</span>
                     </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Asset totali</p>
-                        <p class="mt-1 text-xl font-semibold text-gray-900">{{ $assets->count() }}</p>
+                    <div class="bc-sidebar-chip">
+                        <p style="font-size:.75rem;color:#64748b;">Strategia</p>
+                        <span class="bc-chip {{ $strategyLocked ? 'bc-chip-warn' : 'bc-chip-ok' }}">{{ $strategyStatus }}</span>
                     </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Piattaforme default</p>
-                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ max(0, count($defaultPlatforms)) }}</p>
-                    </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Stato strategia</p>
-                        <p class="mt-1 text-sm font-semibold {{ $strategyLocked ? 'text-amber-700' : 'text-emerald-700' }}">{{ $strategyStatus }}</p>
-                    </div>
-                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                        <p class="text-xs text-gray-500">Ultimo update strategia</p>
-                        <p class="mt-1 text-sm font-semibold text-gray-900">{{ $strategyUpdatedAt }}</p>
+                    <div class="bc-sidebar-chip">
+                        <p style="font-size:.75rem;color:#64748b;">Ultimo update</p>
+                        <span style="font-size:.7rem;font-weight:600;color:#07183F;">{{ $strategyUpdatedAt }}</span>
                     </div>
                 </div>
             </div>
 
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="text-lg font-semibold text-gray-900">Azioni rapide</h2>
-                <p class="mt-1 text-sm text-gray-600">Salva il Brand Center o vai alle aree collegate.</p>
-                <div class="mt-4 space-y-2">
-                    <button type="submit" form="brandProfileForm" class="ui-btn-primary w-full justify-center">
-                        Salva Brand Center
-                    </button>
-                    <a href="{{ route('wizard.start') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Piano editoriale</p>
-                        <p class="mt-1 text-xs text-gray-600">Imposta strategia, volume e periodo dei contenuti.</p>
-                    </a>
-                    <a href="{{ route('calendar') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Pianifica</p>
-                        <p class="mt-1 text-xs text-gray-600">Controlla distribuzione uscite e copertura dei giorni.</p>
-                    </a>
-                    <a href="{{ route('posts.index') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Libreria contenuti</p>
-                        <p class="mt-1 text-xs text-gray-600">Gestisci post e output AI.</p>
-                    </a>
-                    <a href="{{ route('settings') }}" class="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
-                        <p class="text-sm font-semibold text-gray-900">Setup workspace</p>
-                        <p class="mt-1 text-xs text-gray-600">Torna alla panoramica setup per connessioni, stato e prossimi passi.</p>
-                    </a>
+            {{-- Salva --}}
+            <div class="bc-card">
+                <p class="bc-section-title">Salvataggio</p>
+                <button type="submit" form="brandProfileForm"
+                    style="width:100%;border:none;border-radius:.875rem;padding:.75rem 1rem;font-size:.875rem;font-weight:700;color:#fff;background:#0A2D6F;cursor:pointer;margin-bottom:.75rem;">
+                    Salva Brand Center
+                </button>
+                <div style="display:flex;flex-direction:column;gap:.375rem;">
+                    <a href="{{ route('settings') }}" class="bc-step-link" style="font-size:.8rem;font-weight:700;color:#07183F;">Setup workspace →</a>
+                    <a href="{{ route('calendar') }}" class="bc-step-link" style="font-size:.8rem;font-weight:700;color:#07183F;">Pianifica →</a>
+                    <a href="{{ route('posts.index') }}" class="bc-step-link" style="font-size:.8rem;font-weight:700;color:#07183F;">Libreria →</a>
                 </div>
             </div>
         </div>
@@ -2210,21 +2217,16 @@
         $alterEgos = collect($alterEgos);
     }
 ?>
-<div id="alter-ego-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+<div id="alter-ego-section" class="bc-card" style="max-width:1080px;margin:0 auto 1.5rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
         <div>
-            <div class="flex items-center gap-2">
-                <div class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-100 to-cyan-100">
-                    <svg class="h-4 w-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zm-4 7a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                    </svg>
-                </div>
-                <h2 class="text-lg font-semibold text-gray-900">Alter Ego Digitale</h2>
-            </div>
-            <p class="mt-1 text-sm text-gray-500">La voce narrativa e l'identità visiva della persona rappresentata. L'AI la usa come riferimento per ogni contenuto generato.</p>
+            <p class="bc-section-title">Brand Center</p>
+            <p class="bc-h2" style="font-size:1.125rem;">Alter Ego Digitale</p>
+            <p style="font-size:.75rem;color:#64748b;margin-top:.25rem;">Voce narrativa e identità visiva della persona. L'AI la usa come riferimento per ogni contenuto.</p>
         </div>
-        <a href="{{ route('alter-ego.create') }}" class="inline-flex items-center gap-1.5 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        <a href="{{ route('alter-ego.create') }}"
+           style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#fff;background:#0A2D6F;text-decoration:none;white-space:nowrap;">
+            <svg style="width:.875rem;height:.875rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Nuovo alter ego
         </a>
     </div>
