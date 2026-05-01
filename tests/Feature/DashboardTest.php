@@ -83,7 +83,7 @@ class DashboardTest extends TestCase
         $this->actingAs($user)
             ->get('/dashboard')
             ->assertOk()
-            ->assertSee('Apri generazioni')
+            ->assertSee('Apri')
             ->assertSee(route('posts.generation.index'), false);
     }
 

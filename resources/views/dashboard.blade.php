@@ -174,17 +174,17 @@
                 </span>
             </div>
             <p style="margin-top:.375rem;font-size:1.375rem;font-weight:700;letter-spacing:-.02em;color:{{ $queuedItems > 0 ? '#b45309' : '#07183F' }};">{{ $queuedItems }}</p>
-            <p style="margin-top:.15rem;font-size:.7rem;color:#566783;">in generazione</p>
-            @if($queuedItems > 0)
-                <a href="{{ route('posts.generation.index') }}" class="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style="color:#b45309;text-decoration:none;">
-                    Apri generazioni
-                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/>
-                    </svg>
-                </a>
-            @else
-                <p style="margin-top:.65rem;font-size:.65rem;color:#94a3b8;">Nessuna lavorazione attiva</p>
-            @endif
+            <div class="mt-1 flex items-center justify-between gap-2">
+                <p style="font-size:.7rem;color:#566783;">in generazione</p>
+                @if($queuedItems > 0)
+                    <a href="{{ route('posts.generation.index') }}" class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style="color:#b45309;text-decoration:none;">
+                        Apri
+                        <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/>
+                        </svg>
+                    </a>
+                @endif
+            </div>
         </div>
         <div class="h-1.5 w-full bg-gray-100">
             <div class="h-full bg-amber-400" style="width:{{ min(100, $queueRate) }}%"></div>

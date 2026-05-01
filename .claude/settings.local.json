@@ -37,7 +37,26 @@
       "Bash(grep -E \"\\\\.php$\")",
       "Bash(grep -l \"ContentItem\\\\|BrandAsset\\\\|AssetVariable\" /c/dev/smart-area-social-ai/app/Models/*.php)",
       "Bash(grep -n 'BuildGenerationContext\\\\|buildGenerationContext\\\\|generationContext\\\\|generation_context\\\\|$context\\\\[' C:/dev/smart-area-social-ai/app/Jobs/GenerateAiForContentItem.php)",
-      "Bash(awk -F: '{print $1}')"
+      "Bash(awk -F: '{print $1}')",
+      "Bash(gh pr:*)",
+      "Bash(gh auth:*)",
+      "Bash(git remote:*)",
+      "Bash(python -c \"import sys,json; routes=[r['name'] for r in json.load\\(sys.stdin\\) if r.get\\('name'\\)]; print\\('\\\\n'.join\\(sorted\\(routes\\)\\)\\)\")",
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(sort -u grep -roh \"route\\('[^']*'\\)\" resources/views/ --include=\"*.blade.php\")",
+      "Bash(find:*)",
+      "Bash(ls /c/dev/smart-area-social-ai/app/Http/Controllers/*.php)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(grep -n '$logosCount\\\\|$imagesCount\\\\|$knowledgeAssetsCount\\\\|$assetVariablesCount\\\\|$activeSocialAccounts' resources/views/settings.blade.php)",
+      "Bash(grep -v \"^$\")",
+      "Bash(awk '{print $1, $2}')",
+      "Bash(git stash:*)",
+      "Bash(grep:*)",
+      "Bash(sqlite3:*)",
+      "Bash(ls -1 /c/dev/smart-area-social-ai/app/Services/AI/Pipeline/*.php)",
+      "Bash(awk '{print $2}')",
+      "Bash(python3:*)",
+      "Bash(node:*)"
     ]
   }
 }
