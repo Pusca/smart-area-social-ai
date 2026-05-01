@@ -340,10 +340,43 @@
 <section class="w-full space-y-5 px-4 py-6 sm:px-6 lg:px-8" style="max-width:1080px;margin:0 auto;">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 
-{{-- Header --}}
-<div style="margin-bottom:.25rem;">
-    <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
-    <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;line-height:1.2;margin-top:.375rem;">{{ $profile?->business_name ?: 'Profilo azienda' }}</h1>
+{{-- Pipeline header --}}
+@php
+$pipelineSteps = [
+    ['num'=>'01','label'=>'Chi sei','sub'=>'Nome, settore, servizi, target','href'=>'#brand-profile-section','done'=> filled($profile?->business_name) && filled($profile?->services)],
+    ['num'=>'02','label'=>'I tuoi materiali','sub'=>'Logo, immagini, video','href'=>'#brand-assets-section','done'=> $assets->count() > 0],
+    ['num'=>'03','label'=>'Come comunichi','sub'=>'Tono, piattaforme, frequenza','href'=>'#brand-defaults-section','done'=> filled($profile?->default_goal)],
+    ['num'=>'04','label'=>'Strategia','sub'=>'Obiettivi e stile visivo','href'=>'#brand-strategy-section','done'=> $strategy !== null],
+];
+$pipelineDone = collect($pipelineSteps)->filter(fn($s)=>$s['done'])->count();
+@endphp
+
+<div style="margin-bottom:1.5rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
+        <div>
+            <p style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#64748b;">Brand Center</p>
+            <h1 style="font-size:1.375rem;font-weight:700;color:#07183F;margin-top:.375rem;">{{ $profile?->business_name ?: 'Configura il tuo brand' }}</h1>
+        </div>
+        <p style="font-size:.75rem;color:#64748b;">{{ $pipelineDone }}/4 step completati</p>
+    </div>
+
+    {{-- Pipeline steps --}}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.625rem;">
+        @foreach($pipelineSteps as $step)
+        <a href="{{ $step['href'] }}" style="display:block;text-decoration:none;border:1px solid {{ $step['done'] ? '#a7f3d0' : 'rgba(10,45,111,.1)' }};border-radius:1rem;padding:.875rem 1rem;background:{{ $step['done'] ? '#ecfdf5' : '#fafbff' }};transition:border-color 150ms;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+                <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:{{ $step['done'] ? '#065f46' : '#64748b' }};">{{ $step['num'] }}</span>
+                @if($step['done'])
+                <svg style="width:.875rem;height:.875rem;color:#065f46;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                @else
+                <div style="width:.625rem;height:.625rem;border-radius:999px;border:2px solid rgba(10,45,111,.2);"></div>
+                @endif
+            </div>
+            <p style="font-size:.8125rem;font-weight:700;color:{{ $step['done'] ? '#065f46' : '#07183F' }};line-height:1.2;">{{ $step['label'] }}</p>
+            <p style="font-size:.7rem;color:{{ $step['done'] ? '#047857' : '#64748b' }};margin-top:.2rem;">{{ $step['sub'] }}</p>
+        </a>
+        @endforeach
+    </div>
 </div>
 
 
@@ -376,46 +409,26 @@
     @endif
 
 
-    @if($brandReadinessMissing->isNotEmpty())
-    <div class="bc-card">
-        <p style="font-size:.875rem;font-weight:700;color:#07183F;margin-bottom:.875rem;">Cosa manca ancora</p>
-        <div style="display:flex;flex-direction:column;gap:.5rem;">
-            @foreach($brandReadinessMissing as $item)
-                <a href="{{ $item['href'] }}" class="bc-step-link" style="display:flex;align-items:center;gap:.875rem;">
-                    <div style="width:1.25rem;height:1.25rem;border-radius:999px;border:2px solid rgba(10,45,111,.2);flex-shrink:0;"></div>
-                    <div>
-                        <p style="font-size:.875rem;font-weight:700;color:#07183F;">{{ $item['label'] }}</p>
-                        <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">{{ $item['hint'] }}</p>
-                    </div>
-                </a>
-            @endforeach
-        </div>
-    </div>
-    @endif
-
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div class="space-y-6 xl:col-span-2">
             <form id="brandProfileForm" method="POST" action="{{ route('profile.brand.store') }}" enctype="multipart/form-data" class="flex flex-col gap-6">
                 @csrf
                 <input type="hidden" name="strategy_action" id="strategy_action" value="save">
 
-                <div class="order-0" style="display:flex;flex-wrap:wrap;gap:.5rem;">
-                    <a href="#brand-assets-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Materiali</a>
-                    <a href="#brand-defaults-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Impostazioni</a>
-                    <a href="#brand-strategy-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Strategia</a>
-                    <a href="#brand-profile-section" style="border:1px solid rgba(10,45,111,.1);border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#07183F;background:#fafbff;text-decoration:none;">↓ Dati aziendali</a>
-                </div>
-
-                <details id="brand-profile-section" class="order-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($companySectionOpen) open @endif>
-                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
-                        <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Dati aziendali di base</h2>
-                            <p class="mt-1 text-sm text-gray-600">Anagrafica, posizionamento e contesto del brand. In genere li tocchi molto meno spesso.</p>
+                <details id="brand-profile-section" class="order-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($companySectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-4 p-5" style="border-left:4px solid #0A2D6F;">
+                        <div style="display:flex;align-items:center;gap:1rem;">
+                            <span style="font-size:.7rem;font-weight:700;color:#0A2D6F;background:rgba(10,45,111,.08);border-radius:999px;padding:.3rem .625rem;white-space:nowrap;flex-shrink:0;">01</span>
+                            <div>
+                                <p style="font-size:.9375rem;font-weight:700;color:#07183F;">Chi sei</p>
+                                <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Nome, settore, servizi che offri, cliente ideale, CTA.</p>
+                            </div>
                         </div>
-                        <div class="max-w-xs text-right text-xs text-gray-600">
-                            <p class="font-semibold text-gray-900">{{ $companySummary->isNotEmpty() ? $companySummary->implode(' - ') : 'Da completare' }}</p>
-                            <p class="mt-1">Tenuti in basso per alleggerire il flusso operativo di tutti i giorni.</p>
-                        </div>
+                        @if(filled($profile?->business_name) && filled($profile?->services))
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Compilato</span>
+                        @else
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da fare</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -497,16 +510,20 @@
                     </div>
                 </details>
 
-                <details id="brand-defaults-section" class="order-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($defaultsSectionOpen) open @endif>
-                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
-                        <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Default contenuti</h2>
-                            <p class="mt-1 text-sm text-gray-600">Valori usati per precompilare nuovi piani editoriali e contenuti.</p>
+                <details id="brand-defaults-section" class="order-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($defaultsSectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-4 p-5" style="border-left:4px solid #0A2D6F;">
+                        <div style="display:flex;align-items:center;gap:1rem;">
+                            <span style="font-size:.7rem;font-weight:700;color:#0A2D6F;background:rgba(10,45,111,.08);border-radius:999px;padding:.3rem .625rem;white-space:nowrap;flex-shrink:0;">03</span>
+                            <div>
+                                <p style="font-size:.9375rem;font-weight:700;color:#07183F;">Come vuoi comunicare</p>
+                                <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Tono di voce, piattaforme social, formati e frequenza di pubblicazione.</p>
+                            </div>
                         </div>
-                        <div class="max-w-xs text-right text-xs text-gray-600">
-                            <p class="font-semibold text-gray-900">{{ ucfirst($tone) }} / {{ old('default_posts_per_week', $profile?->default_posts_per_week ?? 5) }} post/settimana</p>
-                            <p class="mt-1">{{ $defaultFormatSummary !== '' ? $defaultFormatSummary : 'Formati da impostare' }}</p>
-                        </div>
+                        @if(filled($profile?->default_goal))
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Compilato</span>
+                        @else
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da fare</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -637,18 +654,20 @@
                     </div>
                 </details>
 
-                <details id="brand-strategy-section" class="order-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($strategySectionOpen) open @endif>
-                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
-                        <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Strategy Studio</h2>
-                            <p class="mt-1 text-sm text-gray-600">Strategia base usata in ogni prompt singolo e nei piani completi.</p>
+                <details id="brand-strategy-section" class="order-4 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($strategySectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-4 p-5" style="border-left:4px solid #0A2D6F;">
+                        <div style="display:flex;align-items:center;gap:1rem;">
+                            <span style="font-size:.7rem;font-weight:700;color:#0A2D6F;background:rgba(10,45,111,.08);border-radius:999px;padding:.3rem .625rem;white-space:nowrap;flex-shrink:0;">04</span>
+                            <div>
+                                <p style="font-size:.9375rem;font-weight:700;color:#07183F;">Strategia</p>
+                                <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Obiettivi, KPI, stile visivo e ritmo di pubblicazione.</p>
+                            </div>
                         </div>
-                        <div class="flex flex-col items-end gap-2 text-right">
-                            <span class="inline-flex items-center rounded-full border {{ $strategyLocked ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' }} px-2.5 py-1 text-xs font-semibold">
-                                {{ $strategyStatus }}
-                            </span>
-                            <span class="text-xs text-gray-500">Aggiornata {{ $strategyUpdatedAt }}</span>
-                        </div>
+                        @if($strategy)
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Configurata</span>
+                        @else
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da fare</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -759,17 +778,20 @@
                     </div>
                 </details>
 
-                <details id="brand-assets-section" class="order-1 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($uploadSectionOpen) open @endif>
-                    <summary class="flex cursor-pointer list-none items-start justify-between gap-4 p-6">
-                        <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Materiali brand</h2>
-                            <p class="mt-1 text-sm text-gray-600">Logo, foto, video, audio, documenti, note e link che l AI usera come patrimonio cliente per grounding, coerenza e conoscenza operativa.</p>
+                <details id="brand-assets-section" class="order-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm" @if($uploadSectionOpen) open @endif>
+                    <summary class="flex cursor-pointer list-none items-center justify-between gap-4 p-5" style="border-left:4px solid #0A2D6F;">
+                        <div style="display:flex;align-items:center;gap:1rem;">
+                            <span style="font-size:.7rem;font-weight:700;color:#0A2D6F;background:rgba(10,45,111,.08);border-radius:999px;padding:.3rem .625rem;white-space:nowrap;flex-shrink:0;">02</span>
+                            <div>
+                                <p style="font-size:.9375rem;font-weight:700;color:#07183F;">I tuoi materiali</p>
+                                <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Carica logo, foto e video del brand. Più ne carichi, meglio lavora l'AI.</p>
+                            </div>
                         </div>
-                        <div class="text-right text-xs text-gray-600">
-                            <p class="font-semibold text-gray-900">{{ $logos->count() }} logo / {{ $images->count() }} immagini / {{ $videos->count() }} video / {{ $audios->count() }} audio</p>
-                            <p class="mt-1">{{ $documents->count() }} documenti / {{ $texts->count() }} note / {{ $links->count() }} link</p>
-                            <p class="mt-1">Apri solo quando devi caricare, aggiornare o arricchire il dossier brand.</p>
-                        </div>
+                        @if($assets->count() > 0)
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">{{ $assets->count() }} file</span>
+                        @else
+                        <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#fafbff;color:#64748b;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">Da caricare</span>
+                        @endif
                     </summary>
 
                     <div class="border-t border-gray-100 p-6">
@@ -832,23 +854,23 @@
                 </div>
             </form>
 
-            <div id="brand-assets-library-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Libreria asset</h2>
-                        <p class="mt-1 text-sm text-gray-600">Archivio unico dei file e delle conoscenze gia caricate e riusate dal sistema come dossier cliente. Qui controlli media, documenti, note operative e link di riferimento, con selezione multipla dove disponibile.</p>
-                    </div>
-
+            <div id="brand-assets-library-section" class="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem 1.5rem;border-bottom:1px solid rgba(10,45,111,.08);">
+                    <p style="font-size:.9375rem;font-weight:700;color:#07183F;">Materiali caricati</p>
                     @if($assets->count() > 0)
-                        <div class="flex flex-wrap items-center gap-2">
+                    <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:rgba(10,45,111,.06);color:#0A2D6F;border:1px solid rgba(10,45,111,.1);border-radius:999px;padding:.3rem .75rem;">{{ $assets->count() }} file</span>
+                    @endif
+                </div>
+                <div style="padding:1.25rem 1.5rem;">
+                    @if($assets->count() > 0)
+                        <div class="flex flex-wrap items-center gap-2" style="margin-bottom:1rem;">
                             <button type="button" id="selectAllAssets" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Seleziona tutti</button>
                             <button type="button" id="clearAllAssets" class="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Deseleziona</button>
                             <button type="button" id="bulkDeleteBtn" data-bulk-url="{{ route('profile.brand.assets.destroy') }}" class="inline-flex items-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">Elimina selezionati</button>
                         </div>
                     @endif
-                </div>
 
-                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+                <div class="mt-0 grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
                     <div class="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Logo</p>
                         <p class="mt-2 text-sm font-semibold text-gray-900">{{ $logos->count() }} file</p>
@@ -1159,20 +1181,23 @@
                         </details>
                     </div>
                 @endif
+                </div>
             </div>
 
-            <div id="brand-variables-section" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-900">Variabili asset</h2>
-                        <p class="mt-1 text-sm text-gray-600">
-                            Raggruppa foto, logo, video e audio in riferimenti riutilizzabili. Le variabili aiutano l AI a riconoscere meglio persone, prodotti, luoghi e contenuti ricorrenti del cliente.
-                        </p>
+            <div id="brand-variables-section" class="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1.25rem 1.5rem;border-left:4px solid #3BC8FF;">
+                    <div style="display:flex;align-items:center;gap:1rem;">
+                        <span style="font-size:.7rem;font-weight:700;color:#0e7490;background:#e0f9ff;border-radius:999px;padding:.3rem .625rem;white-space:nowrap;flex-shrink:0;">05</span>
+                        <div>
+                            <p style="font-size:.9375rem;font-weight:700;color:#07183F;">Persone e prodotti ricorrenti</p>
+                            <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">Definisci i soggetti fissi: persone, luoghi, prodotti. L'AI li userà come riferimento coerente.</p>
+                        </div>
                     </div>
-                    <span class="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
-                        {{ count($assetVariableCatalog) }} variabili attive
-                    </span>
+                    @if($assetVariables->isNotEmpty())
+                    <span style="font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;background:#e0f9ff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:.3rem .75rem;flex-shrink:0;">{{ $assetVariables->count() }} definiti</span>
+                    @endif
                 </div>
+                <div style="padding:0 1.5rem 1.5rem;">
 
                 <details class="mt-4 overflow-hidden rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-indigo-50" @if($guidedPersonaSectionOpen) open @endif>
                     <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-5">
@@ -1671,6 +1696,7 @@
                         @endforeach
                     </div>
                 @endif
+                </div>
             </div>
         </div>
 
@@ -1697,19 +1723,21 @@
         $alterEgos = collect($alterEgos);
     }
 ?>
-<div id="alter-ego-section" class="bc-card" style="max-width:1080px;margin:0 auto 1.5rem;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem;">
-        <div>
-            <p class="bc-section-title">Brand Center</p>
-            <p class="bc-h2" style="font-size:1.125rem;">Alter Ego Digitale</p>
-            <p style="font-size:.75rem;color:#64748b;margin-top:.25rem;">Voce narrativa e identità visiva della persona. L'AI la usa come riferimento per ogni contenuto.</p>
+<div id="alter-ego-section" style="max-width:1080px;margin:0 auto 1.5rem;background:#fff;border:1px solid rgba(10,45,111,.1);border-radius:1.25rem;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1.25rem 1.5rem;border-left:4px solid #3BC8FF;">
+        <div style="display:flex;align-items:center;gap:1rem;">
+            <span style="font-size:.7rem;font-weight:700;color:#0e7490;background:#e0f9ff;border-radius:999px;padding:.3rem .625rem;white-space:nowrap;flex-shrink:0;">06</span>
+            <div>
+                <p style="font-size:.9375rem;font-weight:700;color:#07183F;">Alter Ego</p>
+                <p style="font-size:.75rem;color:#64748b;margin-top:.125rem;">La persona digitale del brand — voce, volto, carattere. L'AI la usa per ogni contenuto generato.</p>
+            </div>
         </div>
         <a href="{{ route('alter-ego.create') }}"
-           style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#fff;background:#0A2D6F;text-decoration:none;white-space:nowrap;">
-            <svg style="width:.875rem;height:.875rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Nuovo alter ego
+           style="display:inline-flex;align-items:center;gap:.4rem;border-radius:.875rem;padding:.5rem 1rem;font-size:.8rem;font-weight:700;color:#fff;background:#0A2D6F;text-decoration:none;white-space:nowrap;flex-shrink:0;">
+            + Nuovo
         </a>
     </div>
+    <div style="padding:0 1.5rem 1.5rem;">
 
     @if($alterEgos->isEmpty())
         <div class="mt-5 flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center">
@@ -1764,6 +1792,7 @@
             <a href="{{ route('alter-ego.index') }}" class="text-sm font-semibold text-indigo-600 hover:text-indigo-800">Gestisci tutti gli alter ego →</a>
         </div>
     @endif
+    </div>
 </div>
 
 @include('partials.generation-loader')
