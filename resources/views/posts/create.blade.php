@@ -653,8 +653,10 @@ function createPage() {
         mode: @json($initialMode),
         setMode(m) {
             this.mode = m;
-            window.scrollTo({ top: 0, behavior: 'instant' });
-            this.$nextTick(() => document.getElementById('generation_brief')?.focus());
+            this.$nextTick(() => {
+                window.scrollTo({ top: 0, behavior: 'instant' });
+                document.getElementById('generation_brief')?.focus({ preventScroll: true });
+            });
         },
     };
 }
