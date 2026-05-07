@@ -12,4 +12,9 @@ return [
     'style' => (float) env('ELEVENLABS_VOICE_STYLE', 0.15),
     'use_speaker_boost' => (bool) env('ELEVENLABS_USE_SPEAKER_BOOST', true),
     'clone_description' => env('ELEVENLABS_CLONE_DESCRIPTION', 'Voce persona caricata dal Brand Center per voiceover reel'),
+    // Voce ElevenLabs usata come default TTS (quando nessuna voce persona è disponibile).
+    // Impostare ELEVENLABS_DEFAULT_VOICE_ID nel .env con l'ID di una voce ElevenLabs
+    // multilingue italiana (es. "Rachel" = 21m00Tcm4TlvDq8ikWAM, o qualsiasi altra voce custom).
+    // Se vuoto, il fallback rimane OpenAI TTS.
+    'default_voice_id' => env('ELEVENLABS_DEFAULT_VOICE_ID', ''),
 ];

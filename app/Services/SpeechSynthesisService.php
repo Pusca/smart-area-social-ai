@@ -101,15 +101,35 @@ class SpeechSynthesisService
             return null;
         }
 
+        // Preferisce ElevenLabs (eleven_multilingual_v2 gestisce l'italiano automaticamente)
+        // quando è configurata con una voce default esplicita.
+        $defaultVoiceId = trim((string) (config('elevenlabs.default_voice_id') ?: ''));
+        if ($defaultVoiceId !== '' && $this->elevenLabs->isConfigured()) {
+            try {
+                $bytes = $this->elevenLabs->generateSpeechMp3($text, $defaultVoiceId);
+
+                return [
+                    'bytes'    => $bytes,
+                    'provider' => 'elevenlabs',
+                    'voice_id' => $defaultVoiceId,
+                    'extension' => 'mp3',
+                    'source'   => 'elevenlabs_default_tts',
+                    'label'    => 'Voce ElevenLabs standard',
+                ];
+            } catch (\Throwable) {
+                // Fallback su OpenAI se ElevenLabs fallisce
+            }
+        }
+
         $bytes = $this->openAi->generateSpeechMp3($text);
 
         return [
-            'bytes' => $bytes,
+            'bytes'    => $bytes,
             'provider' => 'openai',
             'voice_id' => null,
             'extension' => 'mp3',
-            'source' => 'openai_tts',
-            'label' => 'Voce sintetica standard',
+            'source'   => 'openai_tts',
+            'label'    => 'Voce sintetica standard',
         ];
     }
 
