@@ -626,27 +626,46 @@ class RunwayService
     }
 
     /**
-     * Map common aspect ratio strings to Runway's image ratio format.
-     * Runway text_to_image uses short ratios like "1:1", "16:9", "9:16", "4:5", "3:2" etc.
+     * Map common aspect ratio strings to Runway text_to_image pixel-dimension format.
+     * Runway /v1/text_to_image uses pixel dimensions like "1024:1024", not short "1:1".
      */
     private function mapRatioToRunwayImage(string $ratio): string
     {
         $ratio = strtolower(trim($ratio));
-        // Already in short format
-        if (preg_match('/^\d+:\d+$/', $ratio)) {
+
+        // Direct pixel-dimension passthrough (already in correct format)
+        if (preg_match('/^\d{3,4}:\d{3,4}$/', $ratio)) {
             return $ratio;
         }
-        // Long Runway video format → short
-        $longToShort = [
-            '720:1280'  => '9:16',
-            '1280:720'  => '16:9',
-            '960:960'   => '1:1',
-            '1104:832'  => '4:3',
-            '832:1104'  => '3:4',
-            '1584:672'  => '21:9',
+
+        // Short ratio → Runway image pixel dimensions
+        $map = [
+            '1:1'   => '1024:1024',
+            '4:5'   => '880:1100',
+            '9:16'  => '768:1360',
+            '16:9'  => '1360:768',
+            '3:2'   => '1168:880',  // closest to 3:2
+            '2:3'   => '880:1168',
+            '4:3'   => '1168:880',
+            '3:4'   => '880:1168',
+            '21:9'  => '1440:672',
         ];
 
-        return $longToShort[$ratio] ?? '1:1';
+        if (isset($map[$ratio])) {
+            return $map[$ratio];
+        }
+
+        // Long Runway video format → image pixel dimensions
+        $videoToImage = [
+            '720:1280'  => '768:1360',
+            '1280:720'  => '1360:768',
+            '960:960'   => '1024:1024',
+            '1104:832'  => '1168:880',
+            '832:1104'  => '880:1168',
+            '1584:672'  => '1440:672',
+        ];
+
+        return $videoToImage[$ratio] ?? '1024:1024';
     }
 
     private function normalizeDurationForModel(int $seconds, string $model): int
