@@ -42,8 +42,7 @@ class LumaClient
 
         return Http::withHeaders([
             'Authorization' => 'Bearer ' . $this->apiKey,
-            'Content-Type'  => 'application/json',
-        ])->timeout($this->timeout);
+        ])->asJson()->timeout($this->timeout);
     }
 
     private function assertSuccess(Response $response, string $context): void
