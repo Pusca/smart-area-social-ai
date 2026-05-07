@@ -30,26 +30,25 @@ class LumaImageService
         string $aspectRatio = '1:1',
         bool   $fast = false,
     ): string {
-        $model   = $fast
-            ? (string) config('luma.image.model_fast', 'photon-flash-1')
-            : (string) config('luma.image.model_default', 'photon-1');
-
-        $referenceMode = $this->resolveReferenceMode($referenceUrls);
-
         $payload = $this->builder->imagePayload(
             prompt:        $prompt,
-            model:         $model,
             aspectRatio:   $aspectRatio,
             referenceUrls: $referenceUrls,
-            referenceMode: $referenceMode,
         );
 
-        $response   = $this->client->post('/dream-machine/v1/generations/image', $payload);
+        $response   = $this->client->post('/v1/generations', $payload);
         $generation = $this->poll((string) ($response['id'] ?? ''));
 
-        $imageUrl = (string) data_get($generation, 'assets.image', '');
+        // Luma Agents returns the image URL in different possible locations
+        $imageUrl = (string) (
+            data_get($generation, 'output.url') ?:
+            data_get($generation, 'assets.image') ?:
+            data_get($generation, 'result.url') ?:
+            data_get($generation, 'url') ?:
+            ''
+        );
         if ($imageUrl === '') {
-            throw new RuntimeException('Luma image generation completed but no image URL in response.');
+            throw new RuntimeException('Luma Agents image generation completed but no image URL in response. Full response: ' . json_encode($generation));
         }
 
         return $this->downloadBinary($imageUrl);
@@ -68,16 +67,16 @@ class LumaImageService
         $pollInterval = (int) config('luma.poll_interval', 5);
 
         for ($i = 0; $i < $maxAttempts; $i++) {
-            $result = $this->client->get('/dream-machine/v1/generations/' . $id);
-            $state  = (string) ($result['state'] ?? '');
+            $result = $this->client->get('/v1/generations/' . $id);
+            $state  = strtolower((string) ($result['state'] ?? $result['status'] ?? ''));
 
-            if ($state === 'completed') {
+            if (in_array($state, ['completed', 'succeeded', 'success', 'done'], true)) {
                 return $result;
             }
 
-            if ($state === 'failed') {
-                $reason = (string) data_get($result, 'failure_reason', 'unknown');
-                throw new RuntimeException("Luma image generation failed: {$reason}");
+            if (in_array($state, ['failed', 'error', 'cancelled'], true)) {
+                $reason = (string) data_get($result, 'failure_reason', data_get($result, 'error', 'unknown'));
+                throw new RuntimeException("Luma Agents image generation failed: {$reason}");
             }
 
             sleep($pollInterval);
@@ -95,20 +94,4 @@ class LumaImageService
         return $response->body();
     }
 
-    /**
-     * Pick the best reference mode based on available URLs.
-     * When URLs represent people/brand identity → character_ref.
-     * Single URL as style source → style_ref.
-     */
-    private function resolveReferenceMode(array $referenceUrls): string
-    {
-        if (empty($referenceUrls)) {
-            return 'image_ref';
-        }
-        // Multiple references → likely identity/character lock
-        if (count($referenceUrls) > 1) {
-            return 'character_ref';
-        }
-        return 'image_ref';
-    }
 }

@@ -5,34 +5,34 @@ namespace App\Services\Luma;
 class LumaPayloadBuilder
 {
     /**
-     * Build payload for POST /dream-machine/v1/generations/image
+     * Build payload for POST /v1/generations (Luma Agents — uni-1 model)
+     *
+     * Generation:  { prompt, aspect_ratio }
+     * Edit:        { type: "image_edit", prompt, source: { url } }
      *
      * @param  string        $prompt
-     * @param  string        $model          photon-1 | photon-flash-1
      * @param  string        $aspectRatio    e.g. "1:1", "9:16", "16:9"
-     * @param  list<string>  $referenceUrls  Public URLs for character_ref / image_ref
-     * @param  string        $referenceMode  character_ref | image_ref | style_ref | modify_image_ref
+     * @param  list<string>  $referenceUrls  Public URLs — first is used as source for image_edit
      */
     public function imagePayload(
         string $prompt,
-        string $model,
         string $aspectRatio = '1:1',
         array  $referenceUrls = [],
-        string $referenceMode = 'character_ref',
     ): array {
-        $payload = [
-            'model'        => $model,
+        // If we have reference images, use image_edit mode with the first reference as source
+        if (!empty($referenceUrls)) {
+            return [
+                'type'         => 'image_edit',
+                'prompt'       => $prompt,
+                'aspect_ratio' => $aspectRatio,
+                'source'       => ['url' => $referenceUrls[0]],
+            ];
+        }
+
+        return [
             'prompt'       => $prompt,
             'aspect_ratio' => $aspectRatio,
         ];
-
-        if (!empty($referenceUrls)) {
-            // Luma supports up to 4 reference images for character_ref
-            $urls = array_values(array_slice($referenceUrls, 0, 4));
-            $payload[$referenceMode] = ['images' => array_map(fn ($u) => ['url' => $u], $urls)];
-        }
-
-        return $payload;
     }
 
     /**
