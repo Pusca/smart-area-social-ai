@@ -815,82 +815,98 @@ function createPage() {
 
 // ── Voice input ────────────────────────────────────────────────────────────
 (function () {
-    const btn    = document.getElementById('voice-mic-btn');
-    const brief  = document.getElementById('generation_brief');
-    const status = document.getElementById('voice-status-label');
+    const btn      = document.getElementById('voice-mic-btn');
+    const brief    = document.getElementById('generation_brief');
+    const status   = document.getElementById('voice-status-label');
     const iconMic  = document.getElementById('voice-icon-mic');
     const iconStop = document.getElementById('voice-icon-stop');
     if (!btn || !brief) return;
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-        btn.title = 'Dettatura vocale non supportata in questo browser';
+        btn.title = 'Dettatura vocale non supportata — usa Chrome o Edge';
         btn.style.opacity = '.35';
         btn.style.cursor = 'not-allowed';
         btn.addEventListener('click', () => alert('Il tuo browser non supporta la dettatura vocale.\nUsa Chrome o Edge per questa funzione.'));
         return;
     }
 
-    const rec = new SR();
-    rec.lang = 'it-IT';
-    rec.continuous = true;
-    rec.interimResults = true;
+    let rec         = null;
+    let recording   = false;
+    let accumulated = '';   // testo confermato accumulato durante la sessione
+    let restartTimer = null;
 
-    let recording = false;
-    let sessionBase = '';   // text in textarea when recording started
-    let interim = '';
-
-    const setRecording = (active) => {
-        recording = active;
+    const setUI = (active) => {
         btn.classList.toggle('is-recording', active);
         iconMic.style.display  = active ? 'none' : '';
         iconStop.style.display = active ? '' : 'none';
         status.classList.toggle('is-visible', active);
-        brief.style.borderBottom = active ? '2px solid #dc2626' : '';
     };
 
-    rec.onresult = (e) => {
-        interim = '';
-        let final = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-            const t = e.results[i][0].transcript;
-            if (e.results[i].isFinal) final += t;
-            else interim += t;
-        }
-        if (final) sessionBase += (sessionBase && !sessionBase.endsWith(' ') ? ' ' : '') + final.trim();
-        brief.value = sessionBase + (interim ? ' ' + interim : '');
-        brief.dispatchEvent(new Event('input', { bubbles: true }));
+    // Ricrea sempre una nuova istanza: riusare la stessa dopo stop() causa
+    // errori "already started" o sessioni zombie su Chrome.
+    const makeRec = () => {
+        const r = new SR();
+        r.lang = 'it-IT';
+        r.continuous = false;       // false + restart manuale = più stabile di continuous:true
+        r.interimResults = true;
+        r.maxAlternatives = 1;
+
+        r.onresult = (e) => {
+            let interim = '';
+            for (let i = 0; i < e.results.length; i++) {
+                const t = e.results[i][0].transcript;
+                if (e.results[i].isFinal) {
+                    const word = t.trim();
+                    if (word) accumulated += (accumulated && !accumulated.endsWith(' ') ? ' ' : '') + word;
+                } else {
+                    interim += t;
+                }
+            }
+            brief.value = accumulated + (interim ? (accumulated ? ' ' : '') + interim : '');
+            brief.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        r.onend = () => {
+            // Se l'utente non ha fermato volontariamente, riparte dopo breve pausa
+            if (!recording) return;
+            restartTimer = setTimeout(() => { if (recording) startListening(); }, 120);
+        };
+
+        r.onerror = (e) => {
+            if (e.error === 'no-speech' || e.error === 'aborted') return;
+            recording = false;
+            setUI(false);
+            if (e.error === 'not-allowed') {
+                alert('Permesso microfono negato.\nConsenti l\'accesso al microfono nelle impostazioni del browser.');
+            }
+        };
+
+        return r;
     };
 
-    rec.onend = () => {
-        if (recording) {
-            // Continuous mode ended unexpectedly (e.g. silence timeout) — restart
-            try { rec.start(); } catch (_) { setRecording(false); }
+    const startListening = () => {
+        rec = makeRec();
+        try { rec.start(); } catch (_) {
+            if (recording) restartTimer = setTimeout(startListening, 200);
         }
     };
 
-    rec.onerror = (e) => {
-        if (e.error === 'no-speech') return; // ignore silence
-        setRecording(false);
-        if (e.error === 'not-allowed' || e.error === 'denied') {
-            alert('Permesso microfono negato.\nConsenti l\'accesso al microfono nelle impostazioni del browser.');
-        }
+    const stopListening = () => {
+        recording = false;
+        clearTimeout(restartTimer);
+        setUI(false);
+        if (rec) { try { rec.abort(); } catch (_) {} rec = null; }
     };
 
     btn.addEventListener('click', () => {
         if (!recording) {
-            sessionBase = brief.value;
-            interim = '';
-            try {
-                rec.start();
-                setRecording(true);
-            } catch (err) {
-                alert('Impossibile avviare la dettatura: ' + err.message);
-            }
+            accumulated = brief.value.trimEnd();
+            recording   = true;
+            setUI(true);
+            startListening();
         } else {
-            recording = false;
-            rec.stop();
-            setRecording(false);
+            stopListening();
         }
     });
 })();
