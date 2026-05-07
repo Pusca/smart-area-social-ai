@@ -94,21 +94,28 @@ class RunwayService
         $ratio = $this->normalizeRatio((string) (config('runway.video_ratio') ?: ''), $size);
         $safePrompt = $this->normalizePrompt($prompt);
 
+        $hasImage = is_string($inputReferenceAbsolutePath)
+            && $inputReferenceAbsolutePath !== ''
+            && is_file($inputReferenceAbsolutePath);
+
         $payload = [
-            'model' => $model,
+            'model'      => $model,
             'promptText' => $safePrompt,
-            'duration' => $seconds,
+            'duration'   => $seconds,
         ];
 
         if ($ratio !== '') {
             $payload['ratio'] = $ratio;
         }
 
-        if (is_string($inputReferenceAbsolutePath) && $inputReferenceAbsolutePath !== '' && is_file($inputReferenceAbsolutePath)) {
+        if ($hasImage) {
             $payload['promptImage'] = $this->toImageDataUri($inputReferenceAbsolutePath);
         }
 
-        $url = $this->createUrl();
+        // image_to_video requires a promptImage — fall back to text_to_video when none is available
+        $url = $hasImage
+            ? $this->createUrl()
+            : $this->baseUrl() . '/v1/text_to_video';
         $timeout = (int) (config('runway.timeout_create') ?: 60);
         $res = $this->request($timeout)->retry(1, 350)->post($url, $payload);
 
