@@ -246,6 +246,37 @@
 }
 .cr-breadcrumb:hover { background: rgba(10,45,111,0.12); }
 
+/* ── Voice mic button ── */
+.voice-mic-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.75rem; height: 1.75rem;
+    border-radius: 50%;
+    border: none; cursor: pointer;
+    background: rgba(10,45,111,0.07);
+    color: var(--slate);
+    transition: background 150ms, color 150ms, box-shadow 150ms;
+    flex-shrink: 0;
+    padding: 0;
+}
+.voice-mic-btn:hover { background: rgba(10,45,111,0.13); color: var(--navy); }
+.voice-mic-btn.is-recording {
+    background: #fee2e2;
+    color: #dc2626;
+    box-shadow: 0 0 0 0 rgba(220,38,38,.5);
+    animation: voice-pulse 1s ease-out infinite;
+}
+@keyframes voice-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(220,38,38,.45); }
+    70%  { box-shadow: 0 0 0 7px rgba(220,38,38,0); }
+    100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+}
+.voice-status {
+    font-size: .67rem; font-weight: 600;
+    color: #dc2626;
+    display: none;
+}
+.voice-status.is-visible { display: inline; }
+
 /* ── Grid scelte responsive ── */
 .cr-choice-grid {
     display: grid;
@@ -379,7 +410,21 @@
             {{-- ── Brief ── --}}
             <div class="cr-card">
                 <div class="cr-section">
-                    <label class="cr-field-label">Brief di generazione</label>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-xs);">
+                        <label class="cr-field-label" for="generation_brief" style="margin-bottom:0;">Brief di generazione</label>
+                        <div style="display:flex;align-items:center;gap:.5rem;">
+                            <span id="voice-status-label" class="voice-status">● Registrazione…</span>
+                            <button type="button" id="voice-mic-btn" class="voice-mic-btn" title="Dettatura vocale" aria-label="Dettatura vocale">
+                                <svg id="voice-icon-mic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="9" y="2" width="6" height="11" rx="3"/>
+                                    <path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="21" x2="12" y2="17"/><line x1="8" y1="21" x2="16" y2="21"/>
+                                </svg>
+                                <svg id="voice-icon-stop" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:none;">
+                                    <rect x="5" y="5" width="14" height="14" rx="2"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
                     <textarea
                         id="generation_brief"
                         name="generation_brief"
@@ -519,9 +564,9 @@
             </details>
             @endif
 
-            {{-- ── Motori AI (Luma — provider fisso) ── --}}
-            <input type="hidden" name="image_provider" value="luma">
-            <input type="hidden" name="video_provider" value="luma">
+            {{-- ── Motori AI (Runway — provider fisso) ── --}}
+            <input type="hidden" name="image_provider" value="runway">
+            <input type="hidden" name="video_provider" value="runway">
             <details class="cr-accordion advanced-only" id="provider-settings-details" x-show="mode === 'reel'">
                 <summary>
                     <span>Durata video</span>
@@ -529,13 +574,12 @@
                 </summary>
                 <div class="cr-accordion-body">
                     <div>
-                        <label class="cr-field-label">Durata</label>
+                        <label class="cr-field-label">Durata (Runway gen4.5)</label>
                         <div class="cr-field-wrap">
                             <select id="video_duration_seconds_requested" name="video_duration_seconds_requested"
                                 style="width:100%;background:transparent;border:none;outline:none;box-shadow:none;border-radius:0;padding:0;font-size:.875rem;color:#1e3a5f;appearance:none;cursor:pointer;">
-                                <option value="5" @selected(($defaultVideoDurationSeconds ?: 5) == 5)>5 secondi</option>
-                                <option value="10" @selected(($defaultVideoDurationSeconds ?: 5) == 10)>10 secondi</option>
-                                <option value="15" @selected(($defaultVideoDurationSeconds ?: 5) == 15)>15 secondi</option>
+                                <option value="5"  @selected(($defaultVideoDurationSeconds ?: 5) <= 7)>5 secondi</option>
+                                <option value="10" @selected(($defaultVideoDurationSeconds ?: 5) > 7)>10 secondi</option>
                             </select>
                         </div>
                     </div>
@@ -767,6 +811,88 @@ function createPage() {
             });
         });
     }
+})();
+
+// ── Voice input ────────────────────────────────────────────────────────────
+(function () {
+    const btn    = document.getElementById('voice-mic-btn');
+    const brief  = document.getElementById('generation_brief');
+    const status = document.getElementById('voice-status-label');
+    const iconMic  = document.getElementById('voice-icon-mic');
+    const iconStop = document.getElementById('voice-icon-stop');
+    if (!btn || !brief) return;
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        btn.title = 'Dettatura vocale non supportata in questo browser';
+        btn.style.opacity = '.35';
+        btn.style.cursor = 'not-allowed';
+        btn.addEventListener('click', () => alert('Il tuo browser non supporta la dettatura vocale.\nUsa Chrome o Edge per questa funzione.'));
+        return;
+    }
+
+    const rec = new SR();
+    rec.lang = 'it-IT';
+    rec.continuous = true;
+    rec.interimResults = true;
+
+    let recording = false;
+    let sessionBase = '';   // text in textarea when recording started
+    let interim = '';
+
+    const setRecording = (active) => {
+        recording = active;
+        btn.classList.toggle('is-recording', active);
+        iconMic.style.display  = active ? 'none' : '';
+        iconStop.style.display = active ? '' : 'none';
+        status.classList.toggle('is-visible', active);
+        brief.style.borderBottom = active ? '2px solid #dc2626' : '';
+    };
+
+    rec.onresult = (e) => {
+        interim = '';
+        let final = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) final += t;
+            else interim += t;
+        }
+        if (final) sessionBase += (sessionBase && !sessionBase.endsWith(' ') ? ' ' : '') + final.trim();
+        brief.value = sessionBase + (interim ? ' ' + interim : '');
+        brief.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    rec.onend = () => {
+        if (recording) {
+            // Continuous mode ended unexpectedly (e.g. silence timeout) — restart
+            try { rec.start(); } catch (_) { setRecording(false); }
+        }
+    };
+
+    rec.onerror = (e) => {
+        if (e.error === 'no-speech') return; // ignore silence
+        setRecording(false);
+        if (e.error === 'not-allowed' || e.error === 'denied') {
+            alert('Permesso microfono negato.\nConsenti l\'accesso al microfono nelle impostazioni del browser.');
+        }
+    };
+
+    btn.addEventListener('click', () => {
+        if (!recording) {
+            sessionBase = brief.value;
+            interim = '';
+            try {
+                rec.start();
+                setRecording(true);
+            } catch (err) {
+                alert('Impossibile avviare la dettatura: ' + err.message);
+            }
+        } else {
+            recording = false;
+            rec.stop();
+            setRecording(false);
+        }
+    });
 })();
 </script>
 @endsection
