@@ -96,6 +96,17 @@ return [
         'runway' => [
             'credential_paths' => ['runway.api_key'],
             'areas' => [
+                'image' => [
+                    'reference_aware' => true,
+                    'strict_asset_mode' => false,
+                    'fallbacks' => [],
+                    'model_config' => 'runway.image_model',
+                    'aspect_ratios' => ['1:1', '4:5', '9:16', '16:9', '3:2', '2:3'],
+                    'timeouts' => [
+                        'request' => 'runway.timeout_create',
+                        'poll' => 'runway.poll_timeout',
+                    ],
+                ],
                 'video' => [
                     'reference_aware' => true,
                     'image_to_video' => true,

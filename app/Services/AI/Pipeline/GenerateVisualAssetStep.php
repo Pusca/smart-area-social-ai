@@ -290,7 +290,19 @@ class GenerateVisualAssetStep
                     $attemptPrompt .= ' ' . $job->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
 
                     $resolvedImageProvider = $job->resolveImageProvider((array) ($item->ai_meta ?? []));
-                    if ($resolvedImageProvider === 'luma') {
+                    if ($resolvedImageProvider === 'runway') {
+                        $runwayRefUrls = $this->resolveLumaPublicUrls($selectedBrandImagePaths); // reuse public URL resolver
+                        $runwayAspect  = $this->resolveLumaAspectRatio($item, false);
+                        $runwayBytes   = $this->runway->generateImage(
+                            prompt:        $attemptPrompt,
+                            referenceUrls: $runwayRefUrls,
+                            ratio:         $runwayAspect,
+                        );
+                        $img = ['b64' => base64_encode($runwayBytes)];
+                        $imageSourceMode  = !empty($runwayRefUrls) ? 'brand_image_edit' : 'text_to_image';
+                        $brandSourcesUsed = array_values(array_slice($selectedBrandImagePaths, 0, 4));
+                        $brandSourceUsed  = $brandSourcesUsed[0] ?? null;
+                    } elseif ($resolvedImageProvider === 'luma') {
                         $lumaRefUrls  = $this->resolveLumaPublicUrls($selectedBrandImagePaths);
                         $lumaAspect   = $this->resolveLumaAspectRatio($item, false);
                         $lumaBytes    = $this->lumaImage->generate(

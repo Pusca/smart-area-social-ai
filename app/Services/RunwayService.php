@@ -51,6 +51,16 @@ class RunwayService
         return $this->baseUrl() . $endpoint;
     }
 
+    private function imageCreateUrl(): string
+    {
+        $endpoint = (string) (config('runway.image_create_endpoint') ?: '/v1/text_to_image');
+        if (!str_starts_with($endpoint, '/')) {
+            $endpoint = '/' . $endpoint;
+        }
+
+        return $this->baseUrl() . $endpoint;
+    }
+
     private function retrieveUrl(string $id): string
     {
         $endpoint = (string) (config('runway.retrieve_endpoint') ?: '/v1/tasks/{id}');
@@ -125,6 +135,87 @@ class RunwayService
             'id' => $id,
             'raw' => $data,
         ];
+    }
+
+    /**
+     * Submit a text-to-image task and return the task ID.
+     *
+     * @param  list<string>  $referenceUrls  Public URLs for character/style reference (gen4_image only)
+     * @return array{id:string,raw:array}
+     */
+    public function createImageJob(string $prompt, array $referenceUrls = [], string $ratio = ''): array
+    {
+        $model      = strtolower(trim((string) (config('runway.image_model') ?: 'gen4_image')));
+        $ratio      = $ratio !== '' ? $ratio : (string) (config('runway.image_ratio') ?: '1:1');
+        $mappedRatio = $this->mapRatioToRunwayImage($ratio);
+        $safePrompt = $this->normalizePrompt($prompt);
+
+        $payload = [
+            'model'      => $model,
+            'promptText' => $safePrompt,
+            'ratio'      => $mappedRatio,
+        ];
+
+        // gen4_image supports referenceImages for character/style locking
+        if (!empty($referenceUrls) && str_starts_with($model, 'gen4_image')) {
+            $refs = [];
+            foreach (array_slice($referenceUrls, 0, 4) as $url) {
+                if (is_string($url) && $url !== '') {
+                    $refs[] = ['uri' => $url, 'tag' => 'character'];
+                }
+            }
+            if (!empty($refs)) {
+                $payload['referenceImages'] = $refs;
+            }
+        }
+
+        $url     = $this->imageCreateUrl();
+        $timeout = (int) (config('runway.timeout_create') ?: 60);
+        $res     = $this->request($timeout)->retry(1, 350)->post($url, $payload);
+
+        if (!$res->successful()) {
+            throw new RuntimeException("Runway image create error ({$res->status()}) URL={$url} BODY=" . $res->body());
+        }
+
+        $data = $res->json();
+        if (!is_array($data)) {
+            throw new RuntimeException('Invalid Runway image create response.');
+        }
+
+        $id = trim((string) (
+            $data['id']
+            ?? data_get($data, 'task.id')
+            ?? data_get($data, 'taskId')
+            ?? ''
+        ));
+        if ($id === '') {
+            throw new RuntimeException('Missing Runway image task id in create response.');
+        }
+
+        return ['id' => $id, 'raw' => $data];
+    }
+
+    /**
+     * Poll until the image task completes, then return raw binary image bytes.
+     */
+    public function generateImage(string $prompt, array $referenceUrls = [], string $ratio = ''): string
+    {
+        $job    = $this->createImageJob($prompt, $referenceUrls, $ratio);
+        $result = $this->waitForVideoCompletion($job['id']); // same polling logic
+        return $this->downloadImageContent($result);
+    }
+
+    /**
+     * @param  array<string, mixed>  $jobPayload
+     */
+    public function downloadImageContent(array $jobPayload): string
+    {
+        $url = $this->extractImageUrl($jobPayload);
+        if ($url === '') {
+            throw new RuntimeException('Runway image completed payload missing image URL. Full payload: ' . json_encode($jobPayload));
+        }
+
+        return $this->downloadBinary($url, (int) (config('runway.timeout_download') ?: 240));
     }
 
     /**
@@ -505,6 +596,57 @@ class RunwayService
         }
 
         return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractImageUrl(array $payload): string
+    {
+        $candidates = [
+            'output.0.url',
+            'output.0.image_url',
+            'output.image_url',
+            'image_url',
+            'result.image_url',
+            'artifacts.0.url',
+            'assets.0.url',
+            'task.output.0.url',
+        ];
+
+        foreach ($candidates as $path) {
+            $value = trim((string) data_get($payload, $path, ''));
+            if ($this->isLikelyImageUrl($value)) {
+                return $value;
+            }
+        }
+
+        // Fallback: first URL that looks like an image
+        return $this->findFirstUrlRecursive($payload, false);
+    }
+
+    /**
+     * Map common aspect ratio strings to Runway's image ratio format.
+     * Runway text_to_image uses short ratios like "1:1", "16:9", "9:16", "4:5", "3:2" etc.
+     */
+    private function mapRatioToRunwayImage(string $ratio): string
+    {
+        $ratio = strtolower(trim($ratio));
+        // Already in short format
+        if (preg_match('/^\d+:\d+$/', $ratio)) {
+            return $ratio;
+        }
+        // Long Runway video format → short
+        $longToShort = [
+            '720:1280'  => '9:16',
+            '1280:720'  => '16:9',
+            '960:960'   => '1:1',
+            '1104:832'  => '4:3',
+            '832:1104'  => '3:4',
+            '1584:672'  => '21:9',
+        ];
+
+        return $longToShort[$ratio] ?? '1:1';
     }
 
     private function normalizeDurationForModel(int $seconds, string $model): int
