@@ -158,9 +158,10 @@ class RunwayService
         $safePrompt = $this->normalizePrompt($prompt);
 
         $payload = [
-            'model'      => $model,
-            'promptText' => $safePrompt,
-            'ratio'      => $mappedRatio,
+            'model'          => $model,
+            'promptText'     => $safePrompt,
+            'ratio'          => $mappedRatio,
+            'negativePrompt' => 'text, letters, words, typography, captions, subtitles, watermarks, logos, numbers, signage, labels, inscriptions, writing, script, printed text',
         ];
 
         // gen4_image supports referenceImages for character/style locking

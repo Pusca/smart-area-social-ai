@@ -149,6 +149,9 @@ class GenerateVisualAssetStep
                         'skip_playback_postprocess' => false,
                     ];
                 } else {
+                // Augment the video prompt with explicit narrative structure for Runway gen4.5
+                $videoPrompt = $prompt
+                    . ' STRUTTURA NARRATIVA OBBLIGATORIA: il video deve avere un INIZIO forte e visivamente chiaro (opening shot impattante nei primissimi frame), uno SVILUPPO centrale coerente con il messaggio, e una FINE memorabile e definita (payoff visivo netto, il clip deve concludersi su un frame intenzionale, non interrompersi su un momento generico). Ogni clip deve essere un arco narrativo completo: apertura → azione → chiusura. NON lasciare il video in sospeso.';
                 $videoResult = $job->generateVideoAsset(
                     openAi: $this->openAi,
                     nanoBanana: $this->nanoBanana,
@@ -156,7 +159,7 @@ class GenerateVisualAssetStep
                     kling: $this->kling,
                     googleVeo: $this->googleVeo,
                     item: $item,
-                    prompt: $prompt,
+                    prompt: $videoPrompt,
                     selectedBrandImageAbs: is_string($selectedBrandImageAbs) ? $selectedBrandImageAbs : null,
                     selectedBrandImageAbsList: $selectedBrandImageAbsList,
                     selectedBrandImagePath: is_string($selectedBrandImage) ? $selectedBrandImage : null,
