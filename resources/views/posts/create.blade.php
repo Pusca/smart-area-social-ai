@@ -274,6 +274,7 @@
     font-size: .67rem; font-weight: 600;
     color: #dc2626;
     display: none;
+    white-space: nowrap;
 }
 .voice-status.is-visible { display: inline; }
 
@@ -413,7 +414,7 @@
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-xs);">
                         <label class="cr-field-label" for="generation_brief" style="margin-bottom:0;">Brief di generazione</label>
                         <div style="display:flex;align-items:center;gap:.5rem;">
-                            <span id="voice-status-label" class="voice-status">● Registrazione…</span>
+                            <span id="voice-status-label" class="voice-status"></span>
                             <button type="button" id="voice-mic-btn" class="voice-mic-btn" title="Dettatura vocale" aria-label="Dettatura vocale">
                                 <svg id="voice-icon-mic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <rect x="9" y="2" width="6" height="11" rx="3"/>
@@ -813,7 +814,7 @@ function createPage() {
     }
 })();
 
-// ── Voice input ────────────────────────────────────────────────────────────
+// ── Voice input (MediaRecorder + Whisper) ──────────────────────────────────
 (function () {
     const btn      = document.getElementById('voice-mic-btn');
     const brief    = document.getElementById('generation_brief');
@@ -822,92 +823,103 @@ function createPage() {
     const iconStop = document.getElementById('voice-icon-stop');
     if (!btn || !brief) return;
 
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-        btn.title = 'Dettatura vocale non supportata — usa Chrome o Edge';
+    const TRANSCRIBE_URL = '{{ route('ai.voice.transcribe') }}';
+    const CSRF = document.querySelector('meta[name="csrf-token"]')?.content
+              || document.querySelector('input[name="_token"]')?.value
+              || '';
+
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        btn.title = 'Microfono non supportato in questo browser';
         btn.style.opacity = '.35';
-        btn.style.cursor = 'not-allowed';
-        btn.addEventListener('click', () => alert('Il tuo browser non supporta la dettatura vocale.\nUsa Chrome o Edge per questa funzione.'));
+        btn.style.cursor  = 'not-allowed';
         return;
     }
 
-    let rec         = null;
-    let recording   = false;
-    let accumulated = '';   // testo confermato accumulato durante la sessione
-    let restartTimer = null;
+    let mediaRecorder = null;
+    let micStream     = null;
+    let audioChunks   = [];
+    let recording     = false;
+    let sending       = false;
 
-    const setUI = (active) => {
-        btn.classList.toggle('is-recording', active);
-        iconMic.style.display  = active ? 'none' : '';
-        iconStop.style.display = active ? '' : 'none';
-        status.classList.toggle('is-visible', active);
+    const setUI = (state) => {
+        // state: 'idle' | 'recording' | 'processing'
+        btn.classList.toggle('is-recording', state === 'recording');
+        iconMic.style.display  = state === 'idle'       ? '' : 'none';
+        iconStop.style.display = state === 'recording'  ? '' : 'none';
+        status.classList.toggle('is-visible', state !== 'idle');
+        status.textContent = state === 'recording' ? '● Registrazione…' : '⏳ Trascrizione…';
+        btn.disabled = state === 'processing';
     };
 
-    // Ricrea sempre una nuova istanza: riusare la stessa dopo stop() causa
-    // errori "already started" o sessioni zombie su Chrome.
-    const makeRec = () => {
-        const r = new SR();
-        r.lang = 'it-IT';
-        r.continuous = false;       // false + restart manuale = più stabile di continuous:true
-        r.interimResults = true;
-        r.maxAlternatives = 1;
-
-        r.onresult = (e) => {
-            let interim = '';
-            for (let i = 0; i < e.results.length; i++) {
-                const t = e.results[i][0].transcript;
-                if (e.results[i].isFinal) {
-                    const word = t.trim();
-                    if (word) accumulated += (accumulated && !accumulated.endsWith(' ') ? ' ' : '') + word;
-                } else {
-                    interim += t;
-                }
-            }
-            brief.value = accumulated + (interim ? (accumulated ? ' ' : '') + interim : '');
-            brief.dispatchEvent(new Event('input', { bubbles: true }));
-        };
-
-        r.onend = () => {
-            // Se l'utente non ha fermato volontariamente, riparte dopo breve pausa
-            if (!recording) return;
-            restartTimer = setTimeout(() => { if (recording) startListening(); }, 120);
-        };
-
-        r.onerror = (e) => {
-            if (e.error === 'no-speech' || e.error === 'aborted') return;
-            recording = false;
-            setUI(false);
-            if (e.error === 'not-allowed') {
-                alert('Permesso microfono negato.\nConsenti l\'accesso al microfono nelle impostazioni del browser.');
-            }
-        };
-
-        return r;
+    const stopStream = () => {
+        if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
     };
 
-    const startListening = () => {
-        rec = makeRec();
-        try { rec.start(); } catch (_) {
-            if (recording) restartTimer = setTimeout(startListening, 200);
-        }
+    const startRecording = () => {
+        navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        }).then(stream => {
+            micStream   = stream;
+            audioChunks = [];
+            const mime  = ['audio/webm;codecs=opus','audio/webm','audio/ogg','audio/mp4','']
+                .find(t => t === '' || MediaRecorder.isTypeSupported(t));
+            mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+            mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                stopStream();
+                const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                audioChunks = [];
+                if (blob.size === 0) { setUI('idle'); return; }
+                sendAudio(blob);
+            };
+            mediaRecorder.start(500);
+            recording = true;
+            setUI('recording');
+        }).catch(() => {
+            setUI('idle');
+            alert('Permesso microfono negato. Controlla le impostazioni del browser.');
+        });
     };
 
-    const stopListening = () => {
+    const stopRecording = () => {
         recording = false;
-        clearTimeout(restartTimer);
-        setUI(false);
-        if (rec) { try { rec.abort(); } catch (_) {} rec = null; }
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        else { stopStream(); setUI('idle'); }
+    };
+
+    const sendAudio = async (blob) => {
+        if (sending) return;
+        sending = true;
+        setUI('processing');
+        const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'mp4' : 'webm';
+        const fd  = new FormData();
+        fd.append('audio', blob, 'brief.' + ext);
+        try {
+            const res  = await fetch(TRANSCRIBE_URL, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+                body: fd,
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || data.message || 'Errore trascrizione');
+            if (data.transcript) {
+                const existing = brief.value.trimEnd();
+                brief.value = existing ? existing + ' ' + data.transcript : data.transcript;
+                brief.dispatchEvent(new Event('input', { bubbles: true }));
+                brief.focus();
+            }
+        } catch (e) {
+            alert('Dettatura non riuscita: ' + e.message);
+        } finally {
+            sending = false;
+            setUI('idle');
+        }
     };
 
     btn.addEventListener('click', () => {
-        if (!recording) {
-            accumulated = brief.value.trimEnd();
-            recording   = true;
-            setUI(true);
-            startListening();
-        } else {
-            stopListening();
-        }
+        if (sending) return;
+        if (!recording) startRecording();
+        else stopRecording();
     });
 })();
 </script>

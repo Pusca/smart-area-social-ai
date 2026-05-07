@@ -58,6 +58,7 @@ Route::middleware(['auth', 'verified', 'resolveActiveTenant', 'hasTenant'])->gro
     Route::post('/ai/brand/transcribe-chat', [BrandAiController::class, 'transcribeAndChat'])->name('ai.brand.transcribe-chat');
     Route::post('/ai/brand/apply', [BrandAiController::class, 'apply'])->name('ai.brand.apply');
     Route::post('/ai/brand/onboarding-complete', [BrandAiController::class, 'onboardingComplete'])->name('ai.brand.onboarding-complete');
+    Route::post('/ai/voice/transcribe', [BrandAiController::class, 'transcribeBrief'])->name('ai.voice.transcribe');
 });
 
 // ── App principale (protetta da onboarding) ───────────────────────────────────

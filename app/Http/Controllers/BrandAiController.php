@@ -85,6 +85,34 @@ class BrandAiController extends Controller
     }
 
     /**
+     * POST /ai/voice/transcribe
+     * Trascrive audio (Whisper) e restituisce solo il testo — nessun salvataggio.
+     * Usato dalla dettatura vocale nel form di creazione contenuto.
+     */
+    public function transcribeBrief(Request $request): JsonResponse
+    {
+        $request->validate([
+            'audio' => ['required', 'file', 'max:25600'],
+        ]);
+
+        try {
+            $file       = $request->file('audio');
+            $ext        = strtolower($file->getClientOriginalExtension() ?: 'webm');
+            $transcript = $this->parser->transcribe($file->getPathname(), 'audio.' . $ext);
+
+            if (empty($transcript)) {
+                return response()->json(['error' => 'Nessun parlato rilevato. Riprova.'], 422);
+            }
+
+            return response()->json(['transcript' => $transcript]);
+
+        } catch (\Throwable $e) {
+            Log::error('BrandAiController::transcribeBrief', ['error' => $e->getMessage()]);
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * POST /ai/brand/apply
      * Salva i dati estratti nel TenantProfile (uso dal brand center).
      */
