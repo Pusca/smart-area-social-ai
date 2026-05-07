@@ -110,11 +110,11 @@ return [
                 'video' => [
                     'reference_aware' => true,
                     'image_to_video' => true,
-                    'text_to_video' => false,
+                    'text_to_video' => true,
                     'native_audio' => false,
                     'requires_mux' => true,
                     'strict_asset_mode' => true,
-                    'fallbacks' => ['openai', 'kling'],
+                    'fallbacks' => [],
                     'model_config' => 'runway.model',
                     'model_aliases' => [
                         'gen4_turbo' => 'gen4.5',

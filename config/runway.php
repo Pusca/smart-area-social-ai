@@ -26,4 +26,10 @@ return [
     'poll_interval' => (int) env('RUNWAY_VIDEO_POLL_INTERVAL', 8),
     'poll_timeout' => (int) env('RUNWAY_VIDEO_POLL_TIMEOUT', 420),
     'playback_trim_seconds' => (float) env('RUNWAY_PLAYBACK_TRIM_SECONDS', 0.35),
+
+    // TTS — usa ElevenLabs via Runway (/v1/text_to_speech, model eleven_multilingual_v2)
+    // Preset disponibili (49): Maya, Lara, Rachel, Lisa, Miriam, Marlene, Martin, ...
+    // Scegliere una voce con accento neutro europeo adatta all'italiano.
+    'tts_preset_voice' => env('RUNWAY_TTS_VOICE', 'Lara'),
+    'tts_max_chars' => (int) env('RUNWAY_TTS_MAX_CHARS', 900),
 ];

@@ -204,6 +204,82 @@ class RunwayService
     }
 
     /**
+     * Generate speech MP3 via Runway's ElevenLabs proxy (/v1/text_to_speech).
+     * Model: eleven_multilingual_v2 — gestisce l'italiano automaticamente.
+     * Returns raw MP3 bytes.
+     */
+    public function generateSpeechMp3(string $text, ?string $presetVoice = null): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        if ($text === '') {
+            throw new RuntimeException('Missing text for Runway TTS.');
+        }
+
+        $limit = max(100, min(900, (int) (config('runway.tts_max_chars') ?: 900)));
+        if (mb_strlen($text, 'UTF-8') > $limit) {
+            $text = trim(mb_substr($text, 0, $limit, 'UTF-8'));
+        }
+
+        $voice = trim((string) ($presetVoice ?: config('runway.tts_preset_voice') ?: 'Lara'));
+
+        $payload = [
+            'model'      => 'eleven_multilingual_v2',
+            'promptText' => $text,
+            'voice'      => [
+                'type'     => 'runway-preset',
+                'presetId' => $voice,
+            ],
+        ];
+
+        $url     = $this->baseUrl() . '/v1/text_to_speech';
+        $timeout = (int) (config('runway.timeout_create') ?: 60);
+        $res     = $this->request($timeout)->post($url, $payload);
+
+        if (!$res->successful()) {
+            throw new RuntimeException("Runway TTS create error ({$res->status()}) BODY=" . $res->body());
+        }
+
+        $data = $res->json();
+        $id   = trim((string) ($data['id'] ?? data_get($data, 'task.id', '') ?? ''));
+        if ($id === '') {
+            throw new RuntimeException('Missing Runway TTS task id in response.');
+        }
+
+        $result   = $this->waitForVideoCompletion($id);
+        $audioUrl = $this->extractAudioUrl($result);
+        if ($audioUrl === '') {
+            throw new RuntimeException('Runway TTS completed but no audio URL found. Payload: ' . json_encode($result));
+        }
+
+        return $this->downloadBinary($audioUrl, (int) (config('runway.timeout_download') ?: 240));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractAudioUrl(array $payload): string
+    {
+        $candidates = [
+            'output.0.url',
+            'output.0.audio_url',
+            'output.audio_url',
+            'audio_url',
+            'artifacts.0.url',
+            'task.output.0.url',
+        ];
+
+        foreach ($candidates as $path) {
+            $value = trim((string) data_get($payload, $path, ''));
+            if ($value !== '' && filter_var($value, FILTER_VALIDATE_URL)) {
+                return $value;
+            }
+        }
+
+        // Fallback: primo URL valido nel payload
+        return $this->findFirstUrlRecursive($payload, false);
+    }
+
+    /**
      * Poll until the image task completes, then return raw binary image bytes.
      */
     public function generateImage(string $prompt, array $referenceUrls = [], string $ratio = ''): string

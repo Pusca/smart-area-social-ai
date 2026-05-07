@@ -12,7 +12,8 @@ class SpeechSynthesisService
 {
     public function __construct(
         private readonly OpenAiService $openAi,
-        private readonly ElevenLabsService $elevenLabs
+        private readonly ElevenLabsService $elevenLabs,
+        private readonly RunwayService $runway,
     ) {
     }
 
@@ -101,8 +102,23 @@ class SpeechSynthesisService
             return null;
         }
 
-        // Preferisce ElevenLabs (eleven_multilingual_v2 gestisce l'italiano automaticamente)
-        // quando è configurata con una voce default esplicita.
+        // Preferisce Runway TTS (ElevenLabs eleven_multilingual_v2 via Runway)
+        // — gestisce l'italiano automaticamente con voce preset configurabile.
+        try {
+            $bytes = $this->runway->generateSpeechMp3($text);
+
+            return [
+                'bytes'     => $bytes,
+                'provider'  => 'runway',
+                'voice_id'  => config('runway.tts_preset_voice') ?: 'Lara',
+                'extension' => 'mp3',
+                'source'    => 'runway_elevenlabs_tts',
+                'label'     => 'Voce ElevenLabs via Runway',
+            ];
+        } catch (\Throwable) {
+            // Fallback su ElevenLabs diretto se configurato
+        }
+
         $defaultVoiceId = trim((string) (config('elevenlabs.default_voice_id') ?: ''));
         if ($defaultVoiceId !== '' && $this->elevenLabs->isConfigured()) {
             try {
@@ -117,7 +133,7 @@ class SpeechSynthesisService
                     'label'    => 'Voce ElevenLabs standard',
                 ];
             } catch (\Throwable) {
-                // Fallback su OpenAI se ElevenLabs fallisce
+                // Fallback su OpenAI
             }
         }
 
