@@ -52,6 +52,7 @@ class ImageProviderResolver
     {
         $labels = [
             'nanobanana' => 'Gemini 2.5 Flash (Google)',
+            'luma'       => 'Luma Photon',
         ];
 
         $result = [];

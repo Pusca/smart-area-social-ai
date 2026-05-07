@@ -3,11 +3,14 @@
 namespace App\Services\AI\Pipeline;
 
 use App\Jobs\GenerateAiForContentItem;
+use App\Models\ContentItem;
 use App\Services\AI\ContentAlignmentService;
 use App\Services\GenerationAuditService;
 use App\Services\GenerationMetricsService;
 use App\Services\GoogleVeoService;
 use App\Services\KlingService;
+use App\Services\Luma\LumaImageService;
+use App\Services\Luma\LumaVideoService;
 use App\Services\NanoBananaService;
 use App\Services\OpenAiService;
 use App\Services\Overlays\ContentOverlayRenderer;
@@ -26,6 +29,8 @@ class GenerateVisualAssetStep
         private readonly KlingService $kling,
         private readonly GoogleVeoService $googleVeo,
         private readonly NanoBananaService $nanoBanana,
+        private readonly LumaImageService $lumaImage,
+        private readonly LumaVideoService $lumaVideo,
         private readonly ContentAlignmentService $contentAlignment,
         private readonly SpeechSynthesisService $speechSynthesis,
         private readonly ContentOverlayRenderer $contentOverlayRenderer,
@@ -110,6 +115,40 @@ class GenerateVisualAssetStep
             $lastImageAlignmentReview = null;
 
             if ($job->isVideoFormat($item)) {
+                if ($visualAttemptProviderRequested === 'luma') {
+                    $lumaRefUrls = $this->resolveLumaPublicUrls($selectedBrandImagePaths);
+                    $lumaSeconds = $visualNormalizedSeconds ?? $visualRequestedSeconds ?? 5;
+                    $lumaAspect  = $this->resolveLumaAspectRatio($item, true);
+                    $lumaOut = $this->lumaVideo->generate(
+                        prompt: $prompt,
+                        requestedSeconds: (int) $lumaSeconds,
+                        referenceUrls: $lumaRefUrls,
+                        aspectRatio: $lumaAspect,
+                        outputStoragePath: 'generated/videos/' . now()->format('Y/m') . '/' . Str::uuid() . '.mp4',
+                    );
+                    $videoResult = [
+                        'video_path'              => $lumaOut['path'],
+                        'thumbnail_path'          => '',
+                        'provider'                => 'luma',
+                        'source'                  => 'luma_video',
+                        'video_id'                => '',
+                        'reference_path'          => $selectedBrandImagePaths[0] ?? '',
+                        'reference_paths'         => $selectedBrandImagePaths,
+                        'reference_reason'        => 'brand_reference',
+                        'reference_validation'    => null,
+                        'composition_reference'   => null,
+                        'generation_attempts'     => 1,
+                        'request_summary'         => ['model' => $lumaOut['model'], 'duration' => $lumaOut['duration']],
+                        'reference_input_summary' => null,
+                        'extended'                => null,
+                        'segment_count'           => 1,
+                        'target_total_seconds'    => (int) rtrim($lumaOut['duration'], 's'),
+                        'segments'                => [],
+                        'extended_fallback'       => null,
+                        'provider_fallback'       => null,
+                        'skip_playback_postprocess' => false,
+                    ];
+                } else {
                 $videoResult = $job->generateVideoAsset(
                     openAi: $this->openAi,
                     nanoBanana: $this->nanoBanana,
@@ -126,6 +165,7 @@ class GenerateVisualAssetStep
                     activeFeedbackRequest: $activeFeedbackRequest,
                     brandDecision: $brandDecision
                 );
+                } // end non-luma video branch
 
                 $videoPath = trim((string) ($videoResult['video_path'] ?? ''));
                 $thumbPath = trim((string) ($videoResult['thumbnail_path'] ?? ''));
@@ -249,7 +289,20 @@ class GenerateVisualAssetStep
                     $attemptPrompt .= ' ' . $job->multiReferenceBlendInstruction($selectedBrandImagePaths);
                     $attemptPrompt .= ' ' . $job->locationEnvelopePreservationInstruction($assetVariables, $selectedBrandImagePaths);
 
-                    if (!empty($selectedBrandImageAbsList) || (is_string($logoSceneAbs) && $logoSceneAbs !== '')) {
+                    $resolvedImageProvider = $job->resolveImageProvider((array) ($item->ai_meta ?? []));
+                    if ($resolvedImageProvider === 'luma') {
+                        $lumaRefUrls  = $this->resolveLumaPublicUrls($selectedBrandImagePaths);
+                        $lumaAspect   = $this->resolveLumaAspectRatio($item, false);
+                        $lumaBytes    = $this->lumaImage->generate(
+                            prompt:        $attemptPrompt,
+                            referenceUrls: $lumaRefUrls,
+                            aspectRatio:   $lumaAspect,
+                        );
+                        $img = ['b64' => base64_encode($lumaBytes)];
+                        $imageSourceMode  = !empty($lumaRefUrls) ? 'brand_image_edit' : 'text_to_image';
+                        $brandSourcesUsed = array_values(array_slice($selectedBrandImagePaths, 0, 4));
+                        $brandSourceUsed  = $brandSourcesUsed[0] ?? null;
+                    } elseif (!empty($selectedBrandImageAbsList) || (is_string($logoSceneAbs) && $logoSceneAbs !== '')) {
                         try {
                             $editPaths = [];
                             foreach (array_slice($selectedBrandImageAbsList, 0, 4) as $referenceAbs) {
@@ -529,6 +582,66 @@ class GenerateVisualAssetStep
         $state->meta = is_array($item->ai_meta) ? $item->ai_meta : [];
 
         return $state;
+    }
+
+    /**
+     * Convert relative public-disk storage paths to absolute public URLs
+     * suitable for Luma API reference images (Luma requires public HTTP URLs).
+     *
+     * @param  list<string>  $paths
+     * @return list<string>
+     */
+    private function resolveLumaPublicUrls(array $paths): array
+    {
+        $disk = Storage::disk('public');
+        $urls = [];
+        foreach ($paths as $path) {
+            if (!is_string($path) || $path === '') {
+                continue;
+            }
+            if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+                $urls[] = $path;
+                continue;
+            }
+            if ($disk->exists($path)) {
+                $urls[] = $disk->url($path);
+            }
+        }
+        return array_values(array_unique($urls));
+    }
+
+    /**
+     * Resolve the best Luma aspect ratio string for a content item's format/platform.
+     * Falls back to 1:1 for images and 9:16 for videos.
+     */
+    private function resolveLumaAspectRatio(ContentItem $item, bool $isVideo): string
+    {
+        $format   = strtolower(trim((string) ($item->format ?? '')));
+        $platform = strtolower(trim((string) ($item->platform ?? '')));
+
+        if ($isVideo) {
+            // Reels / TikTok / Shorts are always vertical
+            if (in_array($format, ['reel', 'reels', 'short', 'shorts', 'story', 'stories'], true)) {
+                return '9:16';
+            }
+            if (str_contains($format, 'landscape') || str_contains($format, 'horizontal')) {
+                return '16:9';
+            }
+            return '9:16'; // default vertical for social video
+        }
+
+        // Image: square default, portrait for feed
+        if (str_contains($format, 'portrait') || str_contains($format, 'feed')) {
+            return '4:5';
+        }
+        if (str_contains($format, 'story') || str_contains($format, 'reel')) {
+            return '9:16';
+        }
+        if (str_contains($format, 'landscape') || str_contains($format, 'banner')) {
+            return '16:9';
+        }
+
+        return '1:1';
     }
 }
 

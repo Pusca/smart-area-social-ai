@@ -519,41 +519,24 @@
             </details>
             @endif
 
-            {{-- ── Motori AI ── --}}
-            <details class="cr-accordion advanced-only" id="provider-settings-details">
+            {{-- ── Motori AI (Luma — provider fisso) ── --}}
+            <input type="hidden" name="image_provider" value="luma">
+            <input type="hidden" name="video_provider" value="luma">
+            <details class="cr-accordion advanced-only" id="provider-settings-details" x-show="mode === 'reel'">
                 <summary>
-                    <span>Motori AI</span>
+                    <span>Durata video</span>
                     <span style="font-size:.75rem;font-weight:400;color:var(--slate-light);" id="provider-summary-label">—</span>
                 </summary>
-                <div class="cr-accordion-body" style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-md);">
+                <div class="cr-accordion-body">
                     <div>
-                        <label class="cr-field-label">Immagini</label>
+                        <label class="cr-field-label">Durata</label>
                         <div class="cr-field-wrap">
-                            <select id="image_provider" name="image_provider"
+                            <select id="video_duration_seconds_requested" name="video_duration_seconds_requested"
                                 style="width:100%;background:transparent;border:none;outline:none;box-shadow:none;border-radius:0;padding:0;font-size:.875rem;color:#1e3a5f;appearance:none;cursor:pointer;">
-                                @foreach($imageProviderOptions as $key => $label)
-                                    <option value="{{ $key }}" @selected($defaultImageProvider === $key)>{{ $label }}</option>
-                                @endforeach
+                                <option value="5" @selected(($defaultVideoDurationSeconds ?: 5) == 5)>5 secondi</option>
+                                <option value="10" @selected(($defaultVideoDurationSeconds ?: 5) == 10)>10 secondi</option>
+                                <option value="15" @selected(($defaultVideoDurationSeconds ?: 5) == 15)>15 secondi</option>
                             </select>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="cr-field-label">Video</label>
-                        <div class="cr-field-wrap">
-                            <select id="video_provider" name="video_provider"
-                                style="width:100%;background:transparent;border:none;outline:none;box-shadow:none;border-radius:0;padding:0;font-size:.875rem;color:#1e3a5f;appearance:none;cursor:pointer;">
-                                @foreach($videoProviderOptions as $key => $label)
-                                    <option value="{{ $key }}" @selected($defaultVideoProvider === $key)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                    <div x-show="mode === 'reel'" style="grid-column:span 2;">
-                        <label class="cr-field-label">Durata video (secondi)</label>
-                        <div class="cr-field-wrap">
-                            <input id="video_duration_seconds_requested" type="number" name="video_duration_seconds_requested"
-                                min="4" max="45" step="1" value="{{ $defaultVideoDurationSeconds > 0 ? $defaultVideoDurationSeconds : 20 }}"
-                                style="width:100%;background:transparent;border:none;outline:none;box-shadow:none;border-radius:0;padding:0;font-size:.875rem;color:#1e3a5f;">
                         </div>
                     </div>
                 </div>

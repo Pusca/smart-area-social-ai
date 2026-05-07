@@ -24,12 +24,12 @@ return [
     'speech_providers' => ['openai', 'elevenlabs'],
     'voice_clone_provider_default' => env('VOICE_CLONE_PROVIDER_DEFAULT', 'elevenlabs'),
 
-    'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'google_veo'),
-    'video_providers' => ['google_veo'],
+    'video_provider_default' => env('VIDEO_PROVIDER_DEFAULT', 'luma'),
+    'video_providers' => ['luma'],
     'locked_video_provider_failover' => (bool) env('GENERATION_LOCKED_VIDEO_PROVIDER_FAILOVER', false),
 
-    'image_provider_default' => env('IMAGE_PROVIDER_DEFAULT', 'nanobanana'),
-    'image_providers' => ['nanobanana'],
+    'image_provider_default' => env('IMAGE_PROVIDER_DEFAULT', 'luma'),
+    'image_providers' => ['luma'],
 
     'video_auto_audio' => (bool) env('VIDEO_AUTO_AUDIO', true),
     'strict_asset_mode' => (bool) env('GENERATION_STRICT_ASSET_MODE', true),

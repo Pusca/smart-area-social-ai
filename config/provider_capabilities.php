@@ -226,6 +226,41 @@ return [
                 ],
             ],
         ],
+        'luma' => [
+            'credential_paths' => ['luma.api_key'],
+            'areas' => [
+                'image' => [
+                    'reference_aware' => true,
+                    'strict_asset_mode' => true,
+                    'fallbacks' => [],
+                    'model_config' => 'luma.image.model_default',
+                    'aspect_ratios' => ['1:1', '4:5', '9:16', '16:9', '3:2', '2:3'],
+                    'timeouts' => [
+                        'request' => 'luma.timeout',
+                        'poll' => 'luma.poll_max_attempts',
+                    ],
+                ],
+                'video' => [
+                    'reference_aware' => true,
+                    'image_to_video' => true,
+                    'text_to_video' => true,
+                    'native_audio' => false,
+                    'requires_mux' => true,
+                    'strict_asset_mode' => false,
+                    'fallbacks' => [],
+                    'model_config' => 'luma.video.model_standard',
+                    'duration_rule' => [
+                        'mode' => 'enum',
+                        'values' => [5, 10, 15],
+                    ],
+                    'aspect_ratios' => ['9:16', '16:9', '1:1'],
+                    'timeouts' => [
+                        'request' => 'luma.timeout',
+                        'poll' => 'luma.poll_max_attempts',
+                    ],
+                ],
+            ],
+        ],
         'elevenlabs' => [
             'credential_paths' => ['elevenlabs.api_key'],
             'areas' => [

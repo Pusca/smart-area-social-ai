@@ -515,39 +515,19 @@
                         </div>
                     </div>
 
-                    @if($allowsCustomImageProvider)
-                        <div>
-                            <label for="image_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore immagini</label>
-                            <select id="image_provider" name="image_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                                @foreach($imageProviderOptions as $key => $label)
-                                    <option value="{{ $key }}" @selected($imageProviderValue === $key)>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            <p class="mt-1 text-xs text-gray-500">Valido solo per questo contenuto manuale.</p>
-                        </div>
-                    @else
-                        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                            <p class="text-sm font-semibold text-emerald-900">Motore immagini fisso: Nano Banana</p>
-                            <p class="mt-1 text-xs text-emerald-800">Flusso piano/demo — rigenerazione visual resta allineata al motore base.</p>
-                        </div>
-                    @endif
-
-                    <div>
-                        <label for="video_provider" class="mb-1 block text-sm font-semibold text-gray-700">Motore video (solo reel/story)</label>
-                        <select id="video_provider" name="video_provider" class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                            @foreach($videoProviderOptions as $key => $label)
-                                <option value="{{ $key }}" @selected($videoProviderValue === $key)>{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    {{-- Provider fisso: Luma Labs --}}
+                    <input type="hidden" name="image_provider" value="luma">
+                    <input type="hidden" name="video_provider" value="luma">
 
                     @if($isVideoFormat)
                         <div>
-                            <label for="video_duration_seconds_requested" class="mb-1 block text-sm font-semibold text-gray-700">Durata video (secondi)</label>
-                            <input id="video_duration_seconds_requested" type="number" name="video_duration_seconds_requested" min="4" max="45" step="1"
-                                value="{{ $videoDurationSeconds > 0 ? $videoDurationSeconds : 20 }}"
+                            <label for="video_duration_seconds_requested" class="mb-1 block text-sm font-semibold text-gray-700">Durata video</label>
+                            <select id="video_duration_seconds_requested" name="video_duration_seconds_requested"
                                 class="block w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-                            <p class="mt-1 text-xs text-gray-500">Se supera il limite del provider, viene spezzato e ricucito automaticamente.</p>
+                                <option value="5" @selected(($videoDurationSeconds ?: 5) == 5)>5 secondi</option>
+                                <option value="10" @selected(($videoDurationSeconds ?: 5) == 10)>10 secondi</option>
+                                <option value="15" @selected(($videoDurationSeconds ?: 5) == 15)>15 secondi</option>
+                            </select>
                         </div>
                     @endif
 

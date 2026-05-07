@@ -52,6 +52,7 @@ class VideoProviderResolver
     {
         $labels = [
             'google_veo' => 'Google Veo 3.1',
+            'luma'       => 'Luma Ray',
         ];
 
         $result = [];
