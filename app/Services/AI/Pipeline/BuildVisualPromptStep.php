@@ -104,7 +104,16 @@ class BuildVisualPromptStep
             $industry = data_get($tenantProfile, 'industry', '');
             $palette = data_get($strategy, 'brand_references.palette', '');
             $logoPath = data_get($strategy, 'brand_references.logo_path', '');
-            $visualRules = data_get($itemBrain, 'image_direction', 'Visual coerente con il brand.');
+            // Priorità: image_direction esplicito → narrative_angle + main_hook → fallback generico
+            $narrativeAngle = trim((string) data_get($itemBrain, 'narrative_angle', ''));
+            $mainHook       = trim((string) data_get($itemBrain, 'hook_meta.main_hook', ''));
+            $visualRulesDefault = match (true) {
+                $narrativeAngle !== '' && $mainHook !== '' => "Tema: {$narrativeAngle}. Angolo narrativo: {$mainHook}.",
+                $narrativeAngle !== ''                     => "Tema: {$narrativeAngle}.",
+                $mainHook !== ''                           => "Angolo narrativo: {$mainHook}.",
+                default                                    => 'Visual coerente con il brand.',
+            };
+            $visualRules = trim((string) data_get($itemBrain, 'image_direction', '')) ?: $visualRulesDefault;
             $visualStyle = (string) data_get($strategy, 'visual_system.style', '');
             $visualMood = (string) data_get($strategy, 'visual_system.mood', '');
             $visualDo = (string) data_get($strategy, 'visual_system.visual_do', '');

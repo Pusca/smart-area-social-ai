@@ -454,15 +454,29 @@ class VideoScenePlanner
      */
     private function sceneVisualPromptFragment(string $sceneType, array $shot, array $context): string
     {
+        // purpose è la descrizione narrativa più ricca dello shot — va in testa al fragment
+        $purpose = trim((string) ($shot['purpose'] ?? ''));
+
+        // Se purpose è generico o mancante, arricchisci con video_segments e hook_meta
+        $videoSegments = (array) data_get($context, 'content_structure_meta.video_segments', []);
+        if ($purpose === '' || in_array($purpose, ['hook iniziale', 'hook iniziale forte', 'sviluppo chiaro della scena', 'payoff finale leggibile'], true)) {
+            $purpose = match ($sceneType) {
+                'hook'    => trim((string) ($videoSegments['hook_0_3'] ?? data_get($context, 'hook_meta.main_hook', ''))),
+                'payoff'  => trim((string) ($videoSegments['payoff_reveal'] ?? data_get($context, 'hook_meta.narrative_angle', ''))),
+                'cta'     => trim((string) ($videoSegments['cta_ending'] ?? '')),
+                default   => trim((string) ($videoSegments['development_3_8'] ?? data_get($context, 'item_brain.narrative_angle', ''))),
+            };
+        }
+
         $parts = array_filter([
+            $purpose !== '' ? $purpose : null,
             trim((string) ($shot['subject'] ?? '')),
             trim((string) ($shot['camera'] ?? '')),
             trim((string) ($shot['motion'] ?? '')),
             $sceneType === 'cta' ? 'chiusura pulita con spazio per CTA finale' : null,
-            trim((string) data_get($context, 'storyboard_meta.provider_bridge.prompt_summary', '')),
         ], fn ($part) => is_string($part) && trim($part) !== '');
 
-        return Str::limit(implode(', ', $parts), 220, '');
+        return Str::limit(implode(', ', array_unique($parts)), 280, '');
     }
 
     /**
