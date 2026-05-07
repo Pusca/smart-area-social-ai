@@ -41,7 +41,7 @@ class LumaClient
         }
 
         return Http::withHeaders([
-            'Authorization' => 'Bearer ' . $this->apiKey,
+            'Authorization' => $this->apiKey,
         ])->asJson()->timeout($this->timeout);
     }
 
