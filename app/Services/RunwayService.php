@@ -717,39 +717,51 @@ class RunwayService
     {
         $ratio = strtolower(trim($ratio));
 
-        // Direct pixel-dimension passthrough (already in correct format)
-        if (preg_match('/^\d{3,4}:\d{3,4}$/', $ratio)) {
+        // Direct passthrough if already a valid Runway pixel-dimension
+        $validDims = ['1280:720', '720:1280', '1104:832', '832:1104', '960:960', '1584:672', '672:1584', '1024:1024'];
+        if (in_array($ratio, $validDims, true)) {
             return $ratio;
         }
 
-        // Short ratio → Runway image pixel dimensions
+        // Short ratio → valid Runway gen4_image pixel dimensions
+        // Runway text_to_image only accepts these exact values.
+        // Unmapped ratios fall to closest by float proximity below.
         $map = [
-            '1:1'   => '1024:1024',
-            '4:5'   => '880:1100',
-            '9:16'  => '768:1360',
-            '16:9'  => '1360:768',
-            '3:2'   => '1168:880',  // closest to 3:2
-            '2:3'   => '880:1168',
-            '4:3'   => '1168:880',
-            '3:4'   => '880:1168',
-            '21:9'  => '1440:672',
+            '16:9'  => '1280:720',
+            '9:16'  => '720:1280',
+            '4:3'   => '1104:832',
+            '3:4'   => '832:1104',
+            '1:1'   => '960:960',
+            '21:9'  => '1584:672',
+            '9:21'  => '672:1584',
+            // Portrait-ish mappings → nearest supported portrait
+            '4:5'   => '832:1104',   // 0.80 → 3:4 (0.75) — closest supported portrait
+            '2:3'   => '832:1104',   // 0.67 → 3:4
+            // Landscape-ish
+            '3:2'   => '1104:832',   // 1.50 → 4:3 (1.33) — closest supported landscape
         ];
 
         if (isset($map[$ratio])) {
             return $map[$ratio];
         }
 
-        // Long Runway video format → image pixel dimensions
-        $videoToImage = [
-            '720:1280'  => '768:1360',
-            '1280:720'  => '1360:768',
-            '960:960'   => '1024:1024',
-            '1104:832'  => '1168:880',
-            '832:1104'  => '880:1168',
-            '1584:672'  => '1440:672',
-        ];
+        // Parse short ratio and find closest valid dim by float proximity
+        if (preg_match('/^(\d{1,4}):(\d{1,4})$/', $ratio, $m)) {
+            $target = (int) $m[1] / max(1, (int) $m[2]);
+            $best = '960:960';
+            $bestDiff = INF;
+            foreach ($validDims as $dim) {
+                [$dw, $dh] = array_map('intval', explode(':', $dim, 2));
+                $diff = abs($target - ($dw / max(1, $dh)));
+                if ($diff < $bestDiff) {
+                    $bestDiff = $diff;
+                    $best = $dim;
+                }
+            }
+            return $best;
+        }
 
-        return $videoToImage[$ratio] ?? '1024:1024';
+        return '960:960';
     }
 
     private function normalizeDurationForModel(int $seconds, string $model): int
