@@ -255,7 +255,7 @@ class AlterEgoController extends Controller
         $request->validate([
             'type'    => 'required|string|in:photos,audio,video',
             'files'   => 'required|array|min:1|max:12',
-            'files.*' => 'required|file|max:51200', // 50 MB per file
+            'files.*' => 'required|file|max:307200', // 300 MB per file
         ]);
 
         $type    = (string) $request->input('type');

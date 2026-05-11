@@ -93,9 +93,9 @@ class OnboardingController extends Controller
     public function uploadAssets(Request $request): JsonResponse
     {
         $request->validate([
-            'logo'     => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:8192',
+            'logo'     => 'nullable|file|mimes:png,jpg,jpeg,webp,svg|max:20480',
             'images'   => 'nullable|array|max:8',
-            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:10240',
+            'images.*' => 'file|mimes:png,jpg,jpeg,webp|max:20480',
         ]);
 
         $user     = $request->user();
