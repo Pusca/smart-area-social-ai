@@ -4,27 +4,28 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
+
 
 class ContentItem extends Model
 {
     protected $table = 'content_items';
 
-    /**
-     * Preferisco guarded vuoto così non ti blocchi con colonne nuove
-     * (in un progetto in evoluzione come questo è più pratico).
-     * Se vuoi fillable, te lo preparo dopo che fissiamo lo schema finale.
-     */
     protected $guarded = [];
 
     protected $casts = [
-        // Date
-        'scheduled_at'    => 'datetime',
-        'created_at'      => 'datetime',
-        'updated_at'      => 'datetime',
-
-        // JSON / array
-        'hashtags'        => 'array', // se in DB è TEXT va benissimo: Laravel salva JSON
-        'ai_meta'         => 'array',
+        'scheduled_at' => 'datetime',
+        'published_at' => 'datetime',
+        'ai_generated_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'hashtags' => 'array',
+        'assets' => 'array',
+        'ai_meta' => 'array',
+        'ai_hashtags' => 'array',
+        'source_refs' => 'array',
     ];
 
     public function plan(): BelongsTo
@@ -32,43 +33,93 @@ class ContentItem extends Model
         return $this->belongsTo(ContentPlan::class, 'content_plan_id');
     }
 
+    public function alterEgo(): BelongsTo
+    {
+        return $this->belongsTo(AlterEgo::class);
+    }
+
+    public function publications(): HasMany
+    {
+        return $this->hasMany(SocialPublication::class);
+    }
+
+    public function generationRuns(): HasMany
+    {
+        return $this->hasMany(GenerationRun::class);
+    }
+
+    public function canvaDesigns(): HasMany
+    {
+        return $this->hasMany(CanvaDesign::class);
+    }
+
+    public function feedbackEntries(): HasMany
+    {
+        return $this->hasMany(ContentFeedbackEntry::class);
+    }
+
+    public function latestFeedbackEntry(): HasOne
+    {
+        return $this->hasOne(ContentFeedbackEntry::class, 'content_item_id')->latestOfMany('id');
+    }
+
     /**
-     * Normalizzazioni: se qualcuno setta hashtags come string,
-     * le trasformiamo in array; se le setta come array, ok.
-     * Questo evita "Array to string conversion" e mantiene coerenza.
+     * @return array<int, string>
      */
+    public function platforms(): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn ($value) => Str::lower(trim((string) $value)),
+            preg_split('/[\s,;|]+/', (string) $this->platform) ?: []
+        ))));
+    }
+
     public function setHashtagsAttribute($value): void
     {
         if (is_string($value)) {
-            // accetta "#a #b" oppure "#a, #b"
             $parts = preg_split('/[\s,]+/', trim($value));
             $parts = array_values(array_filter($parts));
-            $this->attributes['hashtags'] = json_encode($parts);
+            $this->attributes['hashtags'] = json_encode($parts, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
         if (is_array($value)) {
-            $this->attributes['hashtags'] = json_encode($value);
+            $this->attributes['hashtags'] = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
-        // null o altro
         $this->attributes['hashtags'] = null;
     }
 
     public function setAiMetaAttribute($value): void
     {
         if (is_array($value)) {
-            $this->attributes['ai_meta'] = json_encode($value);
+            $this->attributes['ai_meta'] = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
             return;
         }
 
         if (is_string($value)) {
-            // se ti arriva già json string, lo lasciamo
             $this->attributes['ai_meta'] = $value;
             return;
         }
 
         $this->attributes['ai_meta'] = null;
     }
+
+    public function setAssetsAttribute($value): void
+    {
+        if (is_array($value)) {
+            $this->attributes['assets'] = json_encode($value, JSON_INVALID_UTF8_SUBSTITUTE);
+            return;
+        }
+
+        if (is_string($value)) {
+            $this->attributes['assets'] = $value;
+            return;
+        }
+
+        $this->attributes['assets'] = null;
+    }
 }
+
+

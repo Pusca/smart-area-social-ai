@@ -15,10 +15,12 @@ class ContentPlan extends Model
         'end_date',
         'status',
         'settings',
+        'strategy',
     ];
 
     protected $casts = [
         'settings'   => 'array',
+        'strategy'   => 'array',
         'start_date' => 'datetime',
         'end_date'   => 'datetime',
     ];
@@ -26,5 +28,10 @@ class ContentPlan extends Model
     public function items(): HasMany
     {
         return $this->hasMany(ContentItem::class, 'content_plan_id');
+    }
+
+    public function canvaDesigns(): HasMany
+    {
+        return $this->hasMany(CanvaDesign::class);
     }
 }

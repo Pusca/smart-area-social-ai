@@ -1,45 +1,37 @@
 <nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
-    <!-- Primary Navigation Menu -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
             <div class="flex">
-                <!-- Logo -->
                 <div class="shrink-0 flex items-center">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                        <x-application-logo class="block h-9 w-auto fill-current text-gray-800" />
-                        <span class="hidden sm:inline text-sm font-semibold text-gray-900"> Social AI</span>
+                        <x-application-logo class="block h-9 w-auto" />
                     </a>
                 </div>
 
-                <!-- Desktop Navigation Links -->
                 <div class="hidden space-x-2 sm:-my-px sm:ms-10 sm:flex">
                     <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                        Dashboard
+                        Home
                     </x-nav-link>
 
-                    <x-nav-link :href="route('calendar')" :active="request()->routeIs('calendar')">
-                        Calendario
+                    <x-nav-link :href="route('settings')" :active="request()->routeIs('settings') || request()->routeIs('profile.brand*')">
+                        Setup
                     </x-nav-link>
 
-                    <x-nav-link :href="route('posts.index')" :active="request()->routeIs('posts*')">
-                        Contenuti
+                    <x-nav-link :href="route('posts.create')" :active="request()->routeIs('posts.create')">
+                        Crea
                     </x-nav-link>
 
-                    <x-nav-link :href="route('wizard.start')" :active="request()->routeIs('wizard*')">
-                        Wizard
+                    <x-nav-link :href="route('calendar')" :active="request()->routeIs('calendar') || request()->routeIs('wizard*') || request()->routeIs('plans.generating')">
+                        Pianifica
                     </x-nav-link>
 
-                    <x-nav-link :href="route('ai')" :active="request()->routeIs('ai*')">
-                        AI Lab
+                    <x-nav-link :href="route('posts.index')" :active="request()->routeIs('posts.index') || request()->routeIs('posts.edit') || request()->routeIs('posts.generating') || request()->routeIs('posts.generation.*') || request()->routeIs('content-items.*')">
+                        Libreria
                     </x-nav-link>
 
-                    <x-nav-link :href="route('settings')" :active="request()->routeIs('settings')">
-                        Impostazioni
-                    </x-nav-link>
                 </div>
             </div>
 
-            <!-- Settings Dropdown -->
             <div class="hidden sm:flex sm:items-center sm:ms-6">
                 <x-dropdown align="right" width="48">
                     <x-slot name="trigger">
@@ -60,7 +52,7 @@
                         </x-dropdown-link>
 
                         <x-dropdown-link :href="route('settings')">
-                            Impostazioni
+                            Setup
                         </x-dropdown-link>
 
                         <form method="POST" action="{{ route('logout') }}">
@@ -74,54 +66,41 @@
                 </x-dropdown>
             </div>
 
-            <!-- Hamburger -->
             <div class="-me-2 flex items-center sm:hidden">
                 <button @click="open = ! open" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 focus:text-gray-500 transition duration-150 ease-in-out">
                     <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-                        <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 6h16M4 12h16M4 18h16" />
-                        <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M6 18L18 6M6 6l12 12" />
+                        <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Responsive Navigation Menu -->
     <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden">
         <div class="pt-2 pb-3 space-y-1">
             <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                Dashboard
+                Home
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('calendar')" :active="request()->routeIs('calendar')">
-                Calendario
+            <x-responsive-nav-link :href="route('settings')" :active="request()->routeIs('settings') || request()->routeIs('profile.brand*')">
+                Setup
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('posts.index')" :active="request()->routeIs('posts*')">
-                Contenuti
+            <x-responsive-nav-link :href="route('posts.create')" :active="request()->routeIs('posts.create')">
+                Crea
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('wizard.start')" :active="request()->routeIs('wizard*')">
-                Wizard
+            <x-responsive-nav-link :href="route('calendar')" :active="request()->routeIs('calendar') || request()->routeIs('wizard*') || request()->routeIs('plans.generating')">
+                Pianifica
             </x-responsive-nav-link>
 
-            <x-responsive-nav-link :href="route('ai')" :active="request()->routeIs('ai*')">
-                AI Lab
+            <x-responsive-nav-link :href="route('posts.index')" :active="request()->routeIs('posts.index') || request()->routeIs('posts.edit') || request()->routeIs('posts.generating') || request()->routeIs('posts.generation.*') || request()->routeIs('content-items.*')">
+                Libreria
             </x-responsive-nav-link>
-            
 
-            <x-responsive-nav-link :href="route('settings')" :active="request()->routeIs('settings')">
-                Impostazioni
-            </x-responsive-nav-link>
         </div>
-           <x-nav-link :href="route('content-items.index')" :active="request()->routeIs('content-items.*')">
-                 Content Items
-        </x-nav-link>
 
-
-        <!-- Responsive Settings Options -->
         <div class="pt-4 pb-1 border-t border-gray-200">
             <div class="px-4">
                 <div class="font-medium text-base text-gray-800">{{ Auth::user()->name }}</div>

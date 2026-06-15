@@ -1,81 +1,64 @@
-
 <x-app-layout>
     <x-slot name="header">
         <div class="flex items-center justify-between gap-4">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                Content Items
-            </h2>
-
-            <div class="text-sm text-gray-500">
-                {{ $items->total() }} elementi
-            </div>
+            <h2 class="ui-title-lg">Galleria contenuti</h2>
+            <div class="text-sm text-muted">{{ $items->total() }} elementi</div>
         </div>
     </x-slot>
 
-    <div class="py-8">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+    <section class="ui-shell ui-page">
+        <div class="ui-card p-4 sm:p-5">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                @foreach ($items as $item)
+                    @php
+                        $img = $item->ai_image_path ? asset('storage/' . $item->ai_image_path) : null;
+                        $aiInfo = \App\Support\UiStatus::ai((string) $item->ai_status);
+                    @endphp
 
-            <div class="bg-white shadow-sm sm:rounded-lg p-4">
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <a href="{{ route('content-items.show', $item) }}" class="group overflow-hidden rounded-xl border border-app bg-surface transition hover:-translate-y-1 hover:shadow-card">
+                        <div class="aspect-square overflow-hidden bg-surface-2">
+                            @if($img)
+                                <img src="{{ $img }}" alt="AI image" class="h-full w-full object-cover transition group-hover:scale-[1.03]" loading="lazy" />
+                            @else
+                                <div class="flex h-full w-full items-center justify-center text-sm text-muted">Nessuna immagine</div>
+                            @endif
+                        </div>
 
-                    @foreach ($items as $item)
-                        @php
-                            $img = $item->ai_image_path ? asset('storage/' . $item->ai_image_path) : null;
-                        @endphp
+                        <div class="p-3">
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="rounded-full bg-surface-2 px-2 py-1 text-xs text-muted">
+                                    {{ strtoupper($item->platform) }} - {{ $item->format }}
+                                </div>
 
-                        <a href="{{ route('content-items.show', $item) }}"
-                           class="group border rounded-xl overflow-hidden hover:shadow-md transition bg-white">
+                                <div class="ui-pill {{ $aiInfo['pill'] }}">
+                                    AI: {{ $aiInfo['label'] }}
+                                </div>
+                            </div>
 
-                            <div class="aspect-square bg-gray-100 overflow-hidden">
-                                @if($img)
-                                    <img
-                                        src="{{ $img }}"
-                                        alt="AI image"
-                                        class="w-full h-full object-cover group-hover:scale-[1.02] transition"
-                                        loading="lazy"
-                                    />
-                                @else
-                                    <div class="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-                                        Nessuna immagine
-                                    </div>
+                            <div class="mt-2 line-clamp-2 font-semibold text-text">
+                                {{ $item->title }}
+                            </div>
+
+                            <div class="mt-2 flex flex-wrap gap-1 text-[11px]">
+                                @if($item->rubric)
+                                    <span class="rounded-full bg-surface-2 px-2 py-0.5 text-brand">{{ $item->rubric }}</span>
+                                @endif
+                                @if($item->series_key)
+                                    <span class="rounded-full bg-surface-2 px-2 py-0.5 text-accent">Serie {{ $item->episode_number ? 'Ep. '.$item->episode_number : '' }}</span>
                                 @endif
                             </div>
 
-                            <div class="p-3">
-                                <div class="flex items-center justify-between gap-2">
-                                    <div class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                                        {{ strtoupper($item->platform) }} • {{ $item->format }}
-                                    </div>
-
-                                    <div class="text-xs px-2 py-1 rounded-full
-                                        {{ $item->ai_status === 'done' ? 'bg-green-100 text-green-700' : ($item->ai_status === 'error' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700') }}">
-                                        AI: {{ $item->ai_status ?? 'n/a' }}
-                                    </div>
-                                </div>
-
-                                <div class="mt-2 font-semibold text-gray-800 line-clamp-2">
-                                    {{ $item->title }}
-                                </div>
-
-                                <div class="mt-1 text-sm text-gray-500">
-                                    {{ optional($item->scheduled_at)->format('d/m/Y H:i') }}
-                                </div>
-
-                                @if($item->ai_error)
-                                    <div class="mt-2 text-xs text-red-600 line-clamp-2">
-                                        {{ $item->ai_error }}
-                                    </div>
-                                @endif
+                            <div class="mt-1 text-sm text-muted">
+                                {{ optional($item->scheduled_at)->format('d/m/Y H:i') }}
                             </div>
-                        </a>
-                    @endforeach
+                        </div>
+                    </a>
+                @endforeach
+            </div>
 
-                </div>
-
-                <div class="mt-6">
-                    {{ $items->links() }}
-                </div>
+            <div class="mt-6">
+                {{ $items->links() }}
             </div>
         </div>
-    </div>
+    </section>
 </x-app-layout>

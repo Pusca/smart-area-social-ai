@@ -1,59 +1,89 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Smart Area Social AI
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Applicazione Laravel 12 multi-tenant per pianificazione editoriale, generazione AI di contenuti social e publishing Meta.
 
-## About Laravel
+## Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.2+, Laravel 12, Breeze, Tailwind, Vite
+- Queue/job Laravel con driver database
+- OpenAI, NanoBanana, Runway, Kling
+- Meta publishing, Web Push, PWA shell
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Flusso prodotto
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+1. Auth e tenant
+   - Gli utenti lavorano sempre dentro un tenant.
+   - `EnsureUserHasTenant` protegge tutta l'area applicativa.
+   - `/profile` resta fuori dal middleware tenant per la gestione account.
+2. Brand Center
+   - Route principale: `/profile/brand`.
+   - Modello centrale: `TenantProfile`.
+   - Qui si gestiscono brand assets, variabili asset e quickstart onboarding.
+3. Quickstart demo
+   - `QuickstartOnboardingService` raccoglie i dati minimi brand.
+   - Genera una demo iniziale da 7 giorni con 3 contenuti.
+   - La demo puo essere salvata nel workspace, rigenerata o eliminata.
+4. Wizard editoriale
+   - Route principali: `/wizard`, `/wizard/done`, `/plans/{plan}/generating`.
+   - Usa `EditorialStrategyService`, `EditorialPlanBuilder` e `ContentGenerator`.
+   - Crea un `ContentPlan`, costruisce i `ContentItem` e li mette in coda per la generazione AI.
+5. Creazione contenuti singoli
+   - Route principali: `/posts/create` e `/posts/reels/create`.
+   - Permette brief manuale, scelta provider, immagini di riferimento e variabili asset.
+   - I contenuti singoli usano la stessa pipeline AI del wizard, ma con maggiore controllo manuale.
+6. Generazione AI
+   - Job centrale: `GenerateAiForContentItem`.
+   - Genera copy, CTA, hashtag, prompt visuale, immagine o video.
+   - Integra strategia editoriale, memoria tenant, feedback loop e asset reali.
+7. Review e publishing
+   - Dashboard, libreria post e calendario leggono i `ContentItem`.
+   - `SocialPublishingService` sincronizza le pubblicazioni pianificate verso Meta.
+   - La pubblicazione effettiva passa dalla tabella `social_publications` e dai job dedicati.
 
-## Learning Laravel
+## Mappa del codice
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- `app/Http/Controllers/TenantProfileController.php`: Brand Center e quickstart.
+- `app/Http/Controllers/PlanWizardController.php`: wizard editoriale e progress generation.
+- `app/Http/Controllers/ContentItemController.php`: contenuti singoli, edit, libreria e generazione on demand.
+- `app/Jobs/GenerateAiForContentItem.php`: pipeline AI principale.
+- `app/Services/Editorial/*`: strategia, piano editoriale, anti-duplicati e generazione blueprint.
+- `app/Services/Onboarding/QuickstartOnboardingService.php`: onboarding demo iniziale.
+- `app/Services/Social/SocialPublishingService.php`: sincronizzazione pubblicazioni Meta.
+- `routes/web.php`: mappa principale delle route applicative.
+- `docs/current-state-handoff.md`: stato corrente e decisioni di prodotto.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Modelli chiave
 
-## Laravel Sponsors
+- `Tenant`, `User`
+- `TenantProfile`
+- `BrandAsset`, `AssetVariable`
+- `ContentPlan`, `ContentItem`
+- `SocialAccount`, `SocialPublication`
+- `ContentFeedbackEntry`
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Avvio locale
 
-### Premium Partners
+Setup iniziale:
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```bash
+composer setup
+```
 
-## Contributing
+Sviluppo locale:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+composer dev
+```
 
-## Code of Conduct
+Test:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+php artisan test
+```
 
-## Security Vulnerabilities
+## Note operative
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- In locale `GenerationExecution` gira in sync per evitare dipendenza da un worker persistente.
+- In ambienti non locali la generazione passa per queue o `afterResponse`, a seconda della configurazione.
+- Il default globale per le immagini e `nanobanana`; `openai` resta sbloccato per i contenuti singoli manuali.
+- La repo contiene gia il flusso Meta publishing, ma l'UX end-to-end e ancora in evoluzione.

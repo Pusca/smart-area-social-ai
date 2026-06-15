@@ -1,0 +1,795 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
+
+class GoogleVeoService
+{
+    private function apiKey(): string
+    {
+        $key = trim((string) (config('google_veo.api_key') ?: env('GOOGLE_VEO_API_KEY') ?: env('NANOBANANA_API_KEY') ?: ''));
+        if ($key === '') {
+            throw new RuntimeException('Missing GOOGLE_VEO_API_KEY');
+        }
+
+        return $key;
+    }
+
+    private function baseUrl(): string
+    {
+        return rtrim((string) (config('google_veo.base_url') ?: 'https://generativelanguage.googleapis.com'), '/');
+    }
+
+    private function apiVersion(): string
+    {
+        return trim((string) (config('google_veo.api_version') ?: 'v1beta'));
+    }
+
+    private function request(int $timeout, bool $asJson = true): PendingRequest
+    {
+        $request = Http::accept($asJson ? 'application/json' : '*/*')
+            ->timeout($timeout)
+            ->connectTimeout((int) (config('google_veo.connect_timeout') ?: 15))
+            ->withOptions([
+                // Some Google Veo gateway paths reject the default large-body Expect handshake with 417.
+                'expect' => false,
+            ])
+            ->withHeaders([
+                'x-goog-api-key' => $this->apiKey(),
+                'Expect' => '',
+            ]);
+
+        if ($asJson) {
+            $request = $request->asJson();
+        }
+
+        return $request;
+    }
+
+    private function createUrl(string $model): string
+    {
+        return sprintf(
+            '%s/%s/models/%s:predictLongRunning',
+            $this->baseUrl(),
+            $this->apiVersion(),
+            rawurlencode($model)
+        );
+    }
+
+    private function operationUrl(string $name): string
+    {
+        $name = trim($name);
+        if ($name === '') {
+            throw new RuntimeException('Missing Google Veo operation name.');
+        }
+
+        if (str_starts_with($name, 'http://') || str_starts_with($name, 'https://')) {
+            return $name;
+        }
+
+        $name = ltrim($name, '/');
+        if (!str_starts_with($name, $this->apiVersion() . '/')) {
+            $name = $this->apiVersion() . '/' . $name;
+        }
+
+        return $this->baseUrl() . '/' . $name;
+    }
+
+    private function fileUrl(string $name): string
+    {
+        $name = trim($name);
+        if ($name === '') {
+            throw new RuntimeException('Missing Google Veo file name.');
+        }
+
+        if (str_starts_with($name, 'http://') || str_starts_with($name, 'https://')) {
+            return $name;
+        }
+
+        $name = ltrim($name, '/');
+        if (!str_starts_with($name, $this->apiVersion() . '/')) {
+            $name = $this->apiVersion() . '/' . $name;
+        }
+
+        return $this->baseUrl() . '/' . $name;
+    }
+
+    /**
+     * @return array{bytes:string,mime:string,normalized:bool,source_mime:string,source_bytes:int,payload_bytes:int}|null
+     */
+    private function prepareReferenceImagePayload(string $absolutePath): ?array
+    {
+        if (!is_file($absolutePath)) {
+            return null;
+        }
+
+        $sourceMime = strtolower((string) (mime_content_type($absolutePath) ?: ''));
+        if (!str_starts_with($sourceMime, 'image/') || str_contains($sourceMime, 'svg')) {
+            return null;
+        }
+
+        $sourceBytes = @file_get_contents($absolutePath);
+        if (!is_string($sourceBytes) || $sourceBytes === '') {
+            return null;
+        }
+
+        $sourceLength = strlen($sourceBytes);
+        $image = $this->loadRasterImage($absolutePath, $sourceMime);
+        if (!$image) {
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        $srcW = imagesx($image);
+        $srcH = imagesy($image);
+        if ($srcW < 1 || $srcH < 1) {
+            imagedestroy($image);
+
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        $maxDim = max(512, (int) (config('google_veo.reference_max_dimension') ?: 1280));
+        $quality = max(60, min(92, (int) (config('google_veo.reference_jpeg_quality') ?: 84)));
+        $scale = min(1.0, $maxDim / max($srcW, $srcH));
+        $dstW = max(1, (int) round($srcW * $scale));
+        $dstH = max(1, (int) round($srcH * $scale));
+
+        $canvas = imagecreatetruecolor($dstW, $dstH);
+        imagealphablending($canvas, true);
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $dstW, $dstH, $white);
+        imagecopyresampled($canvas, $image, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+
+        ob_start();
+        imagejpeg($canvas, null, $quality);
+        $jpegBytes = ob_get_clean();
+
+        imagedestroy($canvas);
+        imagedestroy($image);
+
+        if (!is_string($jpegBytes) || $jpegBytes === '') {
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        $jpegLength = strlen($jpegBytes);
+        $shouldUseNormalized = $scale < 1.0 || $jpegLength < $sourceLength;
+
+        if (!$shouldUseNormalized) {
+            return [
+                'bytes' => $sourceBytes,
+                'mime' => $sourceMime,
+                'normalized' => false,
+                'source_mime' => $sourceMime,
+                'source_bytes' => $sourceLength,
+                'payload_bytes' => $sourceLength,
+            ];
+        }
+
+        return [
+            'bytes' => $jpegBytes,
+            'mime' => 'image/jpeg',
+            'normalized' => true,
+            'source_mime' => $sourceMime,
+            'source_bytes' => $sourceLength,
+            'payload_bytes' => $jpegLength,
+        ];
+    }
+
+    private function loadRasterImage(string $path, string $mime)
+    {
+        return match (strtolower($mime)) {
+            'image/png' => @imagecreatefrompng($path),
+            'image/jpeg', 'image/jpg' => @imagecreatefromjpeg($path),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : false,
+            'image/gif' => @imagecreatefromgif($path),
+            default => false,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array{id:string,raw:array<string,mixed>,request_summary:array<string,mixed>}
+     */
+    public function createVideoJob(string $prompt, ?string $inputReferenceAbsolutePath = null, array $options = []): array
+    {
+        $model = $this->normalizeModelName((string) ($options['model'] ?? config('google_veo.model') ?: ''));
+        $seconds = $this->normalizeDuration((int) ($options['seconds'] ?? config('google_veo.video_seconds') ?: 8));
+        $ratio = $this->normalizeAspectRatio(
+            (string) ($options['ratio'] ?? config('google_veo.video_ratio') ?: ''),
+            (string) ($options['size'] ?? '')
+        );
+        $resolution = $this->normalizeResolution((string) ($options['resolution'] ?? config('google_veo.resolution') ?: '720p'));
+        $negativePrompt = trim((string) ($options['negative_prompt'] ?? config('google_veo.negative_prompt') ?: ''));
+        $generateAudio = (bool) ($options['generate_audio'] ?? config('google_veo.generate_audio', false));
+
+        $payload = [
+            'instances' => [[
+                'prompt' => $this->normalizePrompt($prompt),
+            ]],
+            'parameters' => [
+                'aspectRatio' => $ratio,
+                'durationSeconds' => $seconds,
+                'resolution' => $resolution,
+                'sampleCount' => 1,
+            ],
+        ];
+
+        $hasImageInput = false;
+        if (is_string($inputReferenceAbsolutePath) && $inputReferenceAbsolutePath !== '' && is_file($inputReferenceAbsolutePath)) {
+            $referencePayload = $this->prepareReferenceImagePayload($inputReferenceAbsolutePath);
+            if (is_array($referencePayload)) {
+                $payload['instances'][0]['image'] = [
+                    'bytesBase64Encoded' => base64_encode((string) $referencePayload['bytes']),
+                    'mimeType' => (string) $referencePayload['mime'],
+                ];
+                $payload['parameters']['personGeneration'] = (string) (config('google_veo.person_generation_image') ?: 'allow_adult');
+                if ($this->shouldForceEightSecondReferenceVideo($model)) {
+                    $seconds = 8;
+                    $payload['parameters']['durationSeconds'] = 8;
+                }
+                $hasImageInput = true;
+            }
+        }
+
+        if ($generateAudio && $this->supportsGenerateAudio($model)) {
+            $payload['parameters']['generateAudio'] = true;
+        }
+
+        if (!$hasImageInput) {
+            $payload['parameters']['personGeneration'] = (string) (config('google_veo.person_generation_text') ?: 'allow_all');
+        }
+
+        if ($negativePrompt !== '') {
+            $payload['parameters']['negativePrompt'] = $negativePrompt;
+        }
+
+        $url = $this->createUrl($model);
+        $timeout = (int) (config('google_veo.timeout_create') ?: 60);
+        $response = $this->request($timeout)->retry(1, 500)->post($url, $payload);
+
+        if (!$response->successful()) {
+            throw new RuntimeException("Google Veo video create error ({$response->status()}) URL={$url} BODY=" . $response->body());
+        }
+
+        $data = $response->json();
+        if (!is_array($data)) {
+            throw new RuntimeException('Invalid Google Veo create response payload.');
+        }
+
+        $operationName = trim((string) ($data['name'] ?? data_get($data, 'operation.name', '')));
+        if ($operationName === '') {
+            throw new RuntimeException('Missing Google Veo operation name in create response.');
+        }
+
+        $summary = [
+            'mode' => $hasImageInput ? 'image_to_video' : 'text_to_video',
+            'model' => $model,
+            'seconds' => $seconds,
+            'aspect_ratio' => $ratio,
+            'resolution' => $resolution,
+            'generate_audio' => $generateAudio,
+            'generate_audio_forwarded' => (bool) data_get($payload, 'parameters.generateAudio', false),
+            'has_image_input' => $hasImageInput,
+            'has_negative_prompt' => $negativePrompt !== '',
+        ];
+        if (isset($referencePayload) && is_array($referencePayload)) {
+            $summary['image_input_mime'] = (string) ($referencePayload['mime'] ?? '');
+            $summary['image_input_source_mime'] = (string) ($referencePayload['source_mime'] ?? '');
+            $summary['image_input_normalized'] = (bool) ($referencePayload['normalized'] ?? false);
+            $summary['image_input_source_bytes'] = (int) ($referencePayload['source_bytes'] ?? 0);
+            $summary['image_input_payload_bytes'] = (int) ($referencePayload['payload_bytes'] ?? 0);
+        }
+
+        Log::info('GoogleVeoService createVideoJob', $summary + [
+            'operation_name' => $operationName,
+            'url' => $url,
+        ]);
+
+        return [
+            'id' => $operationName,
+            'raw' => $data,
+            'request_summary' => $summary,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function retrieveVideoJob(string $operationName): array
+    {
+        $url = $this->operationUrl($operationName);
+        $timeout = (int) (config('google_veo.timeout_poll') ?: 60);
+        $response = $this->request($timeout)->get($url);
+
+        if (!$response->successful()) {
+            throw new RuntimeException("Google Veo video retrieve error ({$response->status()}) URL={$url} BODY=" . $response->body());
+        }
+
+        $data = $response->json();
+        if (!is_array($data)) {
+            throw new RuntimeException('Invalid Google Veo retrieve response payload.');
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function waitForVideoCompletion(string $operationName): array
+    {
+        $pollEvery = max(2, min(30, (int) (config('google_veo.poll_interval') ?: 10)));
+        $timeout = max(30, (int) (config('google_veo.poll_timeout') ?: 900));
+        $deadline = microtime(true) + $timeout;
+
+        do {
+            $job = $this->retrieveVideoJob($operationName);
+            $done = (bool) ($job['done'] ?? false);
+            if ($done) {
+                if (is_array($job['error'] ?? null)) {
+                    $reason = $this->extractFailureReason($job);
+                    throw new RuntimeException("Google Veo video generation failed: {$reason}");
+                }
+
+                // Check for RAI/content-safety filtering — done:true but no video produced.
+                $raiFilteredCount = (int) data_get($job, 'response.generateVideoResponse.raiMediaFilteredCount', 0);
+                $raiReasons = (array) data_get($job, 'response.generateVideoResponse.raiMediaFilteredReasons', []);
+                if ($raiFilteredCount > 0 || !empty($raiReasons)) {
+                    $reasonStr = !empty($raiReasons) ? implode(', ', $raiReasons) : 'unspecified';
+                    throw new RuntimeException("Google Veo video bloccato dal filtro di sicurezza: {$reasonStr}");
+                }
+
+                // Log full payload for diagnostics whenever done (useful if download later fails).
+                Log::debug('GoogleVeoService operation completed', [
+                    'operation_name' => $operationName,
+                    'top_level_keys' => array_keys($job),
+                    'response_keys' => array_keys((array) ($job['response'] ?? [])),
+                    'response_preview' => mb_substr(json_encode($job['response'] ?? []) ?: '', 0, 800),
+                ]);
+
+                return $job;
+            }
+
+            if (microtime(true) >= $deadline) {
+                throw new RuntimeException("Google Veo video generation timeout after {$timeout}s");
+            }
+
+            sleep($pollEvery);
+        } while (true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $jobPayload
+     */
+    public function downloadVideoContent(array $jobPayload): string
+    {
+        $downloadUrl = $this->extractDownloadUrl($jobPayload);
+        if ($downloadUrl === '') {
+            $fileName = $this->extractFileName($jobPayload);
+            if ($fileName !== '') {
+                $filePayload = $this->retrieveFile($fileName);
+                $downloadUrl = $this->extractDownloadUrl($filePayload);
+                if ($downloadUrl === '') {
+                    // Files API: il download richiede ?alt=media, NON :download
+                    $downloadUrl = $this->fileUrl($fileName) . '?alt=media';
+                }
+            }
+        }
+
+        // Files API URL senza ?alt=media → aggiunge il parametro per ottenere i bytes
+        if ($downloadUrl !== ''
+            && str_contains($downloadUrl, '/files/')
+            && !str_contains($downloadUrl, 'alt=media')
+            && !str_contains($downloadUrl, ':download')
+        ) {
+            $downloadUrl .= (str_contains($downloadUrl, '?') ? '&' : '?') . 'alt=media';
+        }
+
+        if ($downloadUrl === '') {
+            $jsonDump = json_encode($jobPayload) ?: '';
+            Log::warning('GoogleVeoService missing downloadable video URL', [
+                'top_level_keys' => array_keys($jobPayload),
+                'response_keys' => array_keys((array) ($jobPayload['response'] ?? [])),
+                'response_generateVideoResponse_keys' => array_keys((array) data_get($jobPayload, 'response.generateVideoResponse', [])),
+                'response_generatedSamples_0' => data_get($jobPayload, 'response.generatedSamples.0'),
+                'file_name_candidate' => $this->extractFileName($jobPayload),
+                'full_payload_preview' => mb_substr($jsonDump, 0, 3000),
+            ]);
+            throw new RuntimeException('Google Veo completed payload missing downloadable video URL.');
+        }
+
+        return $this->downloadBinary($downloadUrl, (int) (config('google_veo.timeout_download') ?: 240));
+    }
+
+    /**
+     * @param  array<string, mixed>  $jobPayload
+     */
+    public function downloadThumbnailContent(array $jobPayload): ?string
+    {
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function retrieveFile(string $fileName): array
+    {
+        $url = $this->fileUrl($fileName);
+        $timeout = (int) (config('google_veo.timeout_poll') ?: 60);
+        $response = $this->request($timeout)->get($url);
+
+        if (!$response->successful()) {
+            throw new RuntimeException("Google Veo file retrieve error ({$response->status()}) URL={$url} BODY=" . $response->body());
+        }
+
+        $data = $response->json();
+        if (!is_array($data)) {
+            throw new RuntimeException('Invalid Google Veo file response payload.');
+        }
+
+        return $data;
+    }
+
+    private function downloadBinary(string $url, int $timeout, bool $retried = false): string
+    {
+        $response = $this->request($timeout, false)->get($url);
+        if (!$response->successful()) {
+            throw new RuntimeException("Google Veo video download error ({$response->status()}) URL={$url} BODY=" . $response->body());
+        }
+
+        // Se la risposta è JSON invece di bytes, la Files API ha restituito metadata.
+        // Tentiamo il redirect al vero URL di download.
+        $contentType = strtolower((string) ($response->header('Content-Type') ?? ''));
+        if (str_contains($contentType, 'application/json')) {
+            $json = $response->json();
+            if (is_array($json) && !$retried) {
+                // Cerca un URL scaricabile nel payload JSON
+                $redirectUrl = $this->extractDownloadUrl($json);
+                if ($redirectUrl === '') {
+                    // Prova ad aggiungere ?alt=media se non già presente
+                    $altUrl = str_contains($url, '?') ? $url . '&alt=media' : $url . '?alt=media';
+                    if ($altUrl !== $url) {
+                        return $this->downloadBinary($altUrl, $timeout, retried: true);
+                    }
+                } else {
+                    $altRedirect = str_contains($redirectUrl, 'alt=media') ? $redirectUrl
+                        : (str_contains($redirectUrl, '?') ? $redirectUrl . '&alt=media' : $redirectUrl . '?alt=media');
+                    return $this->downloadBinary($altRedirect, $timeout, retried: true);
+                }
+            }
+            throw new RuntimeException("Google Veo video download returned JSON instead of binary URL={$url}");
+        }
+
+        $body = $response->body();
+        if (!is_string($body) || $body === '') {
+            throw new RuntimeException("Google Veo video download returned an empty body URL={$url}");
+        }
+
+        return $body;
+    }
+
+    private function normalizePrompt(string $prompt): string
+    {
+        $limit = max(400, min(2400, (int) (config('google_veo.max_prompt_chars') ?: 1600)));
+
+        return \Illuminate\Support\Str::limit(trim($prompt), $limit, '');
+    }
+
+    private function normalizeDuration(int $seconds): int
+    {
+        $seconds = max(1, $seconds);
+        if ($seconds <= 4) {
+            return 4;
+        }
+
+        if ($seconds <= 6) {
+            return 6;
+        }
+
+        return 8;
+    }
+
+    private function shouldForceEightSecondReferenceVideo(string $model): bool
+    {
+        $model = strtolower(trim($model));
+
+        return str_starts_with($model, 'veo-3.1');
+    }
+
+    private function supportsGenerateAudio(string $model): bool
+    {
+        $model = strtolower(trim($model));
+
+        return !str_starts_with($model, 'veo-3.1');
+    }
+
+    private function normalizeAspectRatio(string $ratio, string $size = ''): string
+    {
+        $ratio = trim($ratio);
+        if (in_array($ratio, ['9:16', '16:9'], true)) {
+            return $ratio;
+        }
+
+        if (preg_match('/^\s*(\d{2,4})x(\d{2,4})\s*$/i', $size, $matches) === 1) {
+            $width = (int) ($matches[1] ?? 0);
+            $height = (int) ($matches[2] ?? 0);
+            if ($width > 0 && $height > 0) {
+                return $height > $width ? '9:16' : '16:9';
+            }
+        }
+
+        return '9:16';
+    }
+
+    private function normalizeResolution(string $resolution): string
+    {
+        $resolution = strtolower(trim($resolution));
+
+        return in_array($resolution, ['720p', '1080p'], true) ? $resolution : '720p';
+    }
+
+    private function normalizeModelName(string $model): string
+    {
+        $model = strtolower(trim($model));
+
+        return match ($model) {
+            '', 'veo3.1', 'veo-3.1', 'veo_3.1', 'veo3_1',
+            'veo-3.1-generate-001', 'veo-3.1-generate-preview' => 'veo-3.1-generate-preview',
+            default => 'veo-3.1-generate-preview',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractDownloadUrl(array $payload): string
+    {
+        $candidates = [
+            'response.generatedVideos.0.video.downloadUri',
+            'response.generatedVideos.0.downloadUri',
+            'response.generated_videos.0.video.download_uri',
+            'response.generated_videos.0.video.downloadUri',
+            'response.generated_videos.0.download_uri',
+            'response.generated_videos.0.downloadUri',
+            'response.generateVideoResponse.generatedSamples.0.video.downloadUri',
+            'response.generateVideoResponse.generatedSamples.0.video.download_uri',
+            'response.generateVideoResponse.generatedSamples.0.video.file.downloadUri',
+            'response.generateVideoResponse.generatedSamples.0.video.file.download_uri',
+            'response.generateVideoResponse.generatedSamples.0.video.file.uri',
+            'response.generateVideoResponse.generatedSamples.0.uri',
+            'response.generateVideoResponse.generatedVideos.0.video.downloadUri',
+            'response.generateVideoResponse.generatedVideos.0.video.download_uri',
+            'response.generateVideoResponse.generatedVideos.0.video.file.downloadUri',
+            'response.generateVideoResponse.generatedVideos.0.video.file.download_uri',
+            'response.generateVideoResponse.generatedVideos.0.video.file.uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.downloadUri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.download_uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.downloadUri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.download_uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.downloadUri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.download_uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.downloadUri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.download_uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.uri',
+            'generatedVideos.0.video.downloadUri',
+            'generatedVideos.0.downloadUri',
+            'generated_videos.0.video.download_uri',
+            'generated_videos.0.video.downloadUri',
+            'generated_videos.0.download_uri',
+            'generated_videos.0.downloadUri',
+            'generatedVideos.0.video.file.downloadUri',
+            'generatedVideos.0.video.file.download_uri',
+            'generatedVideos.0.video.file.uri',
+            'generated_videos.0.video.file.downloadUri',
+            'generated_videos.0.video.file.download_uri',
+            'generated_videos.0.video.file.uri',
+            'file.downloadUri',
+            'file.download_uri',
+            'downloadUri',
+            'download_uri',
+            'response.generatedVideos.0.video.uri',
+            'response.generated_videos.0.video.uri',
+            'response.generateVideoResponse.generatedSamples.0.video.uri',
+            'response.generateVideoResponse.generatedVideos.0.video.uri',
+            'response.result.generateVideoResponse.generatedSamples.0.video.uri',
+            'response.result.generateVideoResponse.generatedVideos.0.video.uri',
+            'generatedVideos.0.video.uri',
+            'generated_videos.0.video.uri',
+            // Veo 3.1 predictLongRunning: a volte omette il wrapper generateVideoResponse
+            'response.generatedSamples.0.video.uri',
+            'response.generatedSamples.0.video.downloadUri',
+            'response.generatedSamples.0.video.file.uri',
+            'response.generatedSamples.0.uri',
+            'response.generatedVideos.0.video.file.uri',
+            'response.videos.0.uri',
+            'response.videos.0.url',
+            'response.video.uri',
+            'response.video.url',
+            'videos.0.uri',
+            'videos.0.url',
+            'video.uri',
+            'video.url',
+            'url',
+            'file.uri',
+            'uri',
+        ];
+
+        foreach ($candidates as $path) {
+            $value = trim((string) data_get($payload, $path, ''));
+            if ($this->isLikelyDownloadUrl($value)) {
+                return $value;
+            }
+        }
+
+        return $this->findFirstMatchingStringRecursive($payload, fn (string $value) => $this->isLikelyDownloadUrl($value));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractFileName(array $payload): string
+    {
+        $candidates = [
+            'response.generatedVideos.0.video.name',
+            'response.generatedVideos.0.video.file.name',
+            'response.generated_videos.0.video.name',
+            'response.generated_videos.0.video.file.name',
+            'response.generateVideoResponse.generatedSamples.0.video.name',
+            'response.generateVideoResponse.generatedSamples.0.video.file.name',
+            'response.generateVideoResponse.generatedVideos.0.video.name',
+            'response.generateVideoResponse.generatedVideos.0.video.file.name',
+            'response.result.generateVideoResponse.generatedSamples.0.video.name',
+            'response.result.generateVideoResponse.generatedSamples.0.video.file.name',
+            'response.result.generateVideoResponse.generatedVideos.0.video.name',
+            'response.result.generateVideoResponse.generatedVideos.0.video.file.name',
+            'generatedVideos.0.video.name',
+            'generatedVideos.0.video.file.name',
+            'generated_videos.0.video.name',
+            'generated_videos.0.video.file.name',
+            'file.name',
+            'name',
+        ];
+
+        foreach ($candidates as $path) {
+            $value = $this->normalizeFileResourceName((string) data_get($payload, $path, ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return $this->normalizeFileResourceName(
+            $this->findFirstMatchingStringRecursive($payload, fn (string $value) => $this->looksLikeFileResource($value))
+        );
+    }
+
+    private function isLikelyDownloadUrl(string $value): bool
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return false;
+        }
+
+        if (!str_starts_with($value, 'http://') && !str_starts_with($value, 'https://')) {
+            return false;
+        }
+
+        return str_contains($value, ':download')
+            || str_contains($value, 'alt=media')
+            || str_contains($value, '/files/')
+            || str_contains($value, '/download/')
+            || str_contains($value, '.googleapis.com')
+            || str_contains($value, 'googleusercontent.com')
+            || preg_match('/\.(mp4|mov|webm)(?:\?|$)/i', $value) === 1;
+    }
+
+    private function looksLikeFileResource(string $value): bool
+    {
+        return $this->normalizeFileResourceName($value) !== '';
+    }
+
+    private function normalizeFileResourceName(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
+            $path = trim((string) parse_url($value, PHP_URL_PATH));
+            if ($path !== '') {
+                $value = $path;
+            }
+        }
+
+        $value = ltrim($value, '/');
+        $apiVersion = preg_quote($this->apiVersion(), '/');
+        $value = preg_replace('/^' . $apiVersion . '\//i', '', $value) ?? $value;
+        $value = preg_replace('/^download\/' . $apiVersion . '\//i', '', $value) ?? $value;
+        $value = preg_replace('/^download\//i', '', $value) ?? $value;
+        $value = preg_replace('/^upload\/' . $apiVersion . '\//i', '', $value) ?? $value;
+        $value = preg_replace('/[:?].*$/', '', $value) ?? $value;
+
+        if (!str_starts_with($value, 'files/')) {
+            $offset = stripos($value, 'files/');
+            if ($offset === false) {
+                return '';
+            }
+            $value = substr($value, $offset);
+        }
+
+        return trim($value);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function extractFailureReason(array $payload): string
+    {
+        $candidates = [
+            trim((string) data_get($payload, 'error.message', '')),
+            trim((string) data_get($payload, 'response.error.message', '')),
+            trim((string) data_get($payload, 'response.status.message', '')),
+            trim((string) data_get($payload, 'message', '')),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return 'unknown_error';
+    }
+
+    /**
+     * @param  array<string, mixed>|array<int, mixed>  $payload
+     */
+    private function findFirstMatchingStringRecursive(array $payload, callable $matcher): string
+    {
+        foreach ($payload as $value) {
+            if (is_string($value)) {
+                $trimmed = trim($value);
+                if ($trimmed !== '' && $matcher($trimmed) === true) {
+                    return $trimmed;
+                }
+                continue;
+            }
+
+            if (is_array($value)) {
+                $found = $this->findFirstMatchingStringRecursive($value, $matcher);
+                if ($found !== '') {
+                    return $found;
+                }
+            }
+        }
+
+        return '';
+    }
+}
