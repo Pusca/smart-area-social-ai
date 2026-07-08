@@ -10,3 +10,8 @@
 .env.*
 .phpunit.result.cache
 .DS_Store
+*.bak
+*.bak.*
+/public/build.zip
+/artisan-egpcs
+/php-cli.ini

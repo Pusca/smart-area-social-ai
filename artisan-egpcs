@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-export PHPRC=/home/socialai/domains/socialai.smartera.it/app/php-cli.ini
-exec php artisan "$@"
