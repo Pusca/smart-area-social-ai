@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateAiForContentItem;
+use App\Jobs\GeneratePlanTopics;
 use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
@@ -179,17 +179,17 @@ class PlanWizardController extends Controller
                 ],
             ]);
 
-            // Distribuzione: spalmata nei giorni del range
-            $daysCount = max(1, $start->diffInDays($end) + 1);
-            $days = [];
-            for ($i = 0; $i < $daysCount; $i++) {
-                $days[] = (clone $start)->addDays($i);
-            }
+            // Distribuzione: posts_per_week è A SETTIMANA, spalmati uniformemente sul range
+            $daysCount = max(1, (int) $start->diffInDays($end) + 1);
+            $weeks = max(1, (int) ceil($daysCount / 7));
+            $totalPosts = min($postsPerWeek * $weeks, 90);
 
-            for ($i = 0; $i < $postsPerWeek; $i++) {
-                $day = $days[$i % $daysCount];
-                $hour = ($i % 2 === 0) ? 10 : 17;
-                $scheduledAt = (clone $day)->setTime($hour, 0);
+            $hours = [9, 12, 17, 19];
+
+            for ($i = 0; $i < $totalPosts; $i++) {
+                $dayOffset = intdiv($i * $daysCount, $totalPosts);
+                $hour = $hours[$i % count($hours)];
+                $scheduledAt = (clone $start)->addDays($dayOffset)->setTime($hour, 0);
 
                 $platform = $platforms[$i % max(1, count($platforms))] ?? 'instagram';
                 $format = $formats[$i % max(1, count($formats))] ?? 'post';
@@ -204,10 +204,10 @@ class PlanWizardController extends Controller
                     'status' => 'draft',
                     'title' => Str::limit(($profile->business_name ?? 'Brand') . " — {$step1['goal']}", 110, ''),
                     'caption' => null,
-                    'hashtags' => json_encode([], JSON_UNESCAPED_UNICODE),
+                    'hashtags' => [],
                     'assets' => json_encode([], JSON_UNESCAPED_UNICODE),
-                    'ai_meta' => json_encode([
-                        'tenant_profile' => [
+                    'ai_meta' => [
+                        'brand' => [
                             'business_name' => $profile->business_name,
                             'industry' => $profile->industry,
                             'website' => $profile->website,
@@ -225,7 +225,7 @@ class PlanWizardController extends Controller
                             'formats' => $formats,
                             'date_range' => [$start->toDateString(), $end->toDateString()],
                         ],
-                    ], JSON_UNESCAPED_UNICODE),
+                    ],
                     'ai_status' => 'queued',
                 ]);
 
@@ -236,12 +236,9 @@ class PlanWizardController extends Controller
 
             $request->session()->put('plan.plan_id', $plan->id);
 
-            // best-effort queue dispatch
+            // Ideazione argomenti a livello piano, poi generazione dei singoli item
             try {
-                $ids = ContentItem::where('content_plan_id', $plan->id)->pluck('id')->all();
-                foreach ($ids as $id) {
-                    GenerateAiForContentItem::dispatch((int)$id);
-                }
+                GeneratePlanTopics::dispatch($plan->id);
             } catch (\Throwable $e) {}
 
             return redirect()->route('wizard.done')
