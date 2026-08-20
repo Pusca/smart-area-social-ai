@@ -74,7 +74,15 @@ class BuildBrandProfileFromWebsite implements ShouldQueue
 
             $profile->website = $this->website;
             $profile->social_links = $site['social_links'] + ($profile->social_links ?? []);
+
+            $this->fillContentDefaults($profile, $extracted);
+
             $profile->save();
+
+            // Arricchimento dai post social reali (best-effort, dietro APIFY_TOKEN)
+            if (config('services.apify.token') && isset($profile->social_links['instagram'])) {
+                EnrichBrandFromSocials::dispatch($this->tenantId);
+            }
 
             Cache::put($key, [
                 'status' => 'done',
@@ -89,6 +97,30 @@ class BuildBrandProfileFromWebsite implements ShouldQueue
             ], now()->addMinutes(15));
 
             throw $e;
+        }
+    }
+
+    /**
+     * Default contenuti dedotti (solo se vuoti): tono dal sito, piattaforme
+     * dai canali social effettivamente trovati.
+     */
+    protected function fillContentDefaults(TenantProfile $profile, array $extracted): void
+    {
+        $validTones = ['professionale', 'amichevole', 'ironico', 'ispirazionale', 'tecnico'];
+        $tone = trim((string) ($extracted['default_tone'] ?? ''));
+        if (trim((string) $profile->default_tone) === '' && in_array($tone, $validTones, true)) {
+            $profile->default_tone = $tone;
+        }
+
+        if (empty($profile->default_platforms)) {
+            $known = ['instagram', 'facebook', 'tiktok', 'linkedin', 'youtube', 'threads'];
+            $found = array_values(array_intersect($known, array_keys($profile->social_links ?? [])));
+            $profile->default_platforms = $found !== [] ? $found : ['instagram'];
+        }
+
+        if (empty($profile->default_formats)) {
+            $video = array_intersect(['instagram', 'tiktok', 'youtube'], $profile->default_platforms ?? []);
+            $profile->default_formats = $video !== [] ? ['post', 'reel'] : ['post'];
         }
     }
 }

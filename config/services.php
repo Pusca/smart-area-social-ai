@@ -41,4 +41,16 @@ return [
         'key' => env('FIRECRAWL_API_KEY'),
     ],
 
+    // Arricchimento profilo dai post social reali (opzionale)
+    'apify' => [
+        'token' => env('APIFY_TOKEN'),
+    ],
+
+    // Login con Google (Socialite)
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/google/callback'),
+    ],
+
 ];

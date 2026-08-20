@@ -307,6 +307,7 @@ class AiPipelineTest extends TestCase
                             'cta' => 'Chiama ora',
                             'brand_voice' => 'Formale',
                             'notes' => 'Ingredienti DOP campani',
+                            'default_tone' => 'amichevole',
                         ]),
                     ]],
                 ]],
@@ -328,6 +329,12 @@ class AiPipelineTest extends TestCase
         $this->assertSame('Ingredienti DOP campani', $profile->notes);
         $this->assertSame('Pizza napoletana, impasti a lunga lievitazione', $profile->services);
         $this->assertSame('Pizzeria Da Mario', $profile->business_name);
+
+        // Default contenuti dedotti (solo se vuoti): tono dal sito,
+        // piattaforme dai social trovati, formati di conseguenza
+        $this->assertSame('amichevole', $profile->default_tone);
+        $this->assertSame(['instagram'], $profile->default_platforms);
+        $this->assertSame(['post', 'reel'], $profile->default_formats);
 
         $state = Cache::get(BuildBrandProfileFromWebsite::cacheKey($this->tenant->id));
         $this->assertSame('done', $state['status']);

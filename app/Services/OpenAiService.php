@@ -281,7 +281,8 @@ class OpenAiService
             . "- \"target\": chi sono i clienti tipo (età, bisogni, zona se indicata).\n"
             . "- \"brand_voice\": 2-3 frasi che descrivono tono e personalità comunicativa che emergono dal sito.\n"
             . "- \"cta\": l'invito all'azione più naturale per questa attività (es. prenota, richiedi preventivo).\n"
-            . "- \"notes\": punti di forza, valori o dettagli distintivi utili a scrivere post.";
+            . "- \"notes\": punti di forza, valori o dettagli distintivi utili a scrivere post.\n"
+            . "- \"default_tone\": il tono più adatto a come comunica il sito, scelto tra le opzioni disponibili.";
 
         $schema = [
             'type' => 'object',
@@ -293,8 +294,12 @@ class OpenAiService
                 'cta' => ['type' => 'string'],
                 'brand_voice' => ['type' => 'string'],
                 'notes' => ['type' => 'string'],
+                'default_tone' => [
+                    'type' => 'string',
+                    'enum' => ['professionale', 'amichevole', 'ironico', 'ispirazionale', 'tecnico'],
+                ],
             ],
-            'required' => ['business_name', 'industry', 'services', 'target', 'cta', 'brand_voice', 'notes'],
+            'required' => ['business_name', 'industry', 'services', 'target', 'cta', 'brand_voice', 'notes', 'default_tone'],
             'additionalProperties' => false,
         ];
 
@@ -306,6 +311,41 @@ class OpenAiService
         );
 
         return $data['parsed'];
+    }
+
+    /**
+     * Sintetizza la voce del brand dai suoi post social REALI.
+     *
+     * @param list<string> $captions
+     */
+    public function describeBrandVoiceFromPosts(array $captions): string
+    {
+        if ($captions === []) {
+            return '';
+        }
+
+        $language = $this->language();
+
+        $instructions =
+            "Questi sono post social REALI pubblicati da un'attività. Analizzali e descrivi in {$language}, "
+            . "in 2-3 frasi, la voce del brand: tono, registro (tu/voi/lei), ritmo, uso di emoji, "
+            . "espressioni ricorrenti. Descrivi solo ciò che emerge davvero dai post.";
+
+        $schema = [
+            'type' => 'object',
+            'properties' => ['brand_voice' => ['type' => 'string']],
+            'required' => ['brand_voice'],
+            'additionalProperties' => false,
+        ];
+
+        $data = $this->responsesCall(
+            $instructions,
+            "Post reali del brand:\n\n" . implode("\n\n---\n\n", array_slice($captions, 0, 12)),
+            'brand_voice',
+            $schema
+        );
+
+        return trim((string) ($data['parsed']['brand_voice'] ?? ''));
     }
 
     /**
