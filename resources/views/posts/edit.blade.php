@@ -36,7 +36,7 @@
                     <span class="font-medium text-gray-700">{{ strtoupper($contentItem->platform) }}</span>
                     • {{ strtoupper($contentItem->format) }}
                     • {{ optional($contentItem->scheduled_at)->format('d/m H:i') ?? '—' }}
-                    • <span class="font-semibold text-gray-700">AI:</span> {{ $contentItem->ai_status ?? '—' }}
+                    • <x-ai-status-badge :status="$contentItem->ai_status" :item-id="$contentItem->id" />
                 </div>
 
                 {{-- AZIONI AI --}}
@@ -49,7 +49,7 @@
                         </button>
                     </form>
 
-                    <form method="POST" action="{{ route('ai.content.generate', $contentItem) }}">
+                    <form method="POST" action="{{ route('ai.content.generateImage', $contentItem) }}">
                         @csrf
                         <button type="submit"
                                 class="rounded-lg bg-gray-900 px-3 py-2 text-white text-sm font-semibold hover:bg-black">
@@ -162,4 +162,6 @@
 
         </div>
     </div>
+
+    @include('partials.ai-status-poller')
 </x-app-layout>

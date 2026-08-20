@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AiStatus;
 use App\Jobs\GeneratePlanTopics;
-use App\Models\BrandAsset;
 use App\Models\ContentItem;
 use App\Models\ContentPlan;
 use App\Models\TenantProfile;
@@ -20,9 +20,7 @@ class PlanWizardController extends Controller
      */
     public function start(Request $request)
     {
-        $user = $request->user();
-
-        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
+        $profile = TenantProfile::first();
 
         // Se non ha profilo tenant, lo mando a completarlo (una volta sola)
         if (!$profile) {
@@ -30,7 +28,6 @@ class PlanWizardController extends Controller
                 ->with('status', 'Prima completa il profilo attività (wizard unico).');
         }
 
-        // Prefill
         $defaults = [
             'name' => 'Piano ' . ($profile->business_name ?? 'Social AI') . ' — ' . Carbon::now()->format('d/m'),
             'start_date' => Carbon::now()->next(Carbon::MONDAY)->toDateString(),
@@ -80,29 +77,14 @@ class PlanWizardController extends Controller
      */
     public function done(Request $request)
     {
-        $user = $request->user();
-
-        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
-
-        // step1 piano
+        $profile = TenantProfile::first();
         $step1 = $request->session()->get('plan.step1', []);
 
-        // ultimo piano del tenant (per preview)
         $planId = $request->session()->get('plan.plan_id');
-        $plan = null;
-
-        if ($planId) {
-            $plan = ContentPlan::where('tenant_id', $user->tenant_id)
-                ->where('id', $planId)
-                ->with('items')
-                ->first();
-        }
+        $plan = $planId ? ContentPlan::with('items')->find($planId) : null;
 
         if (!$plan) {
-            $plan = ContentPlan::where('tenant_id', $user->tenant_id)
-                ->latest('id')
-                ->with('items')
-                ->first();
+            $plan = ContentPlan::latest('id')->with('items')->first();
         }
 
         return view('wizard.done', [
@@ -113,13 +95,14 @@ class PlanWizardController extends Controller
     }
 
     /**
-     * Genera piano + items, usando TenantProfile + override step1
+     * Genera piano + items. Il contesto brand NON viene copiato nel piano:
+     * i job lo leggono live dal TenantProfile al momento della generazione.
      */
     public function generate(Request $request)
     {
         $user = $request->user();
 
-        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
+        $profile = TenantProfile::first();
         if (!$profile) {
             return redirect()->route('profile.brand')->with('status', 'Completa prima il profilo attività.');
         }
@@ -132,23 +115,9 @@ class PlanWizardController extends Controller
         $start = Carbon::parse($step1['start_date'])->startOfDay();
         $end = Carbon::parse($step1['end_date'])->startOfDay();
 
-        $postsPerWeek = (int)$step1['posts_per_week'];
+        $postsPerWeek = (int) $step1['posts_per_week'];
         $platforms = $step1['platforms'] ?? ['instagram'];
         $formats = $step1['formats'] ?? ['post'];
-
-        // assets base tenant
-        $assets = BrandAsset::where('tenant_id', $user->tenant_id)
-            ->whereNull('content_plan_id')
-            ->latest('id')
-            ->get()
-            ->map(fn($a) => [
-                'kind' => $a->kind,
-                'path' => $a->path,
-                'original_name' => $a->original_name,
-            ])->values()->all();
-
-        $plan = null;
-        $itemsCreated = 0;
 
         DB::beginTransaction();
         try {
@@ -165,17 +134,6 @@ class PlanWizardController extends Controller
                     'posts_per_week' => $postsPerWeek,
                     'platforms' => $platforms,
                     'formats' => $formats,
-
-                    'tenant_profile' => [
-                        'business_name' => $profile->business_name,
-                        'industry' => $profile->industry,
-                        'website' => $profile->website,
-                        'services' => $profile->services,
-                        'target' => $profile->target,
-                        'cta' => $profile->cta,
-                        'notes' => $profile->notes,
-                    ],
-                    'assets' => $assets,
                 ],
             ]);
 
@@ -185,6 +143,7 @@ class PlanWizardController extends Controller
             $totalPosts = min($postsPerWeek * $weeks, 90);
 
             $hours = [9, 12, 17, 19];
+            $itemsCreated = 0;
 
             for ($i = 0; $i < $totalPosts; $i++) {
                 $dayOffset = intdiv($i * $daysCount, $totalPosts);
@@ -205,28 +164,9 @@ class PlanWizardController extends Controller
                     'title' => Str::limit(($profile->business_name ?? 'Brand') . " — {$step1['goal']}", 110, ''),
                     'caption' => null,
                     'hashtags' => [],
-                    'assets' => json_encode([], JSON_UNESCAPED_UNICODE),
-                    'ai_meta' => [
-                        'brand' => [
-                            'business_name' => $profile->business_name,
-                            'industry' => $profile->industry,
-                            'website' => $profile->website,
-                            'services' => $profile->services,
-                            'target' => $profile->target,
-                            'cta' => $profile->cta,
-                            'notes' => $profile->notes,
-                        ],
-                        'assets' => $assets,
-                        'plan' => [
-                            'goal' => $step1['goal'],
-                            'tone' => $step1['tone'],
-                            'posts_per_week' => $postsPerWeek,
-                            'platforms' => $platforms,
-                            'formats' => $formats,
-                            'date_range' => [$start->toDateString(), $end->toDateString()],
-                        ],
-                    ],
-                    'ai_status' => 'queued',
+                    'assets' => [],
+                    'ai_meta' => null,
+                    'ai_status' => AiStatus::Queued,
                 ]);
 
                 $itemsCreated++;
@@ -237,19 +177,13 @@ class PlanWizardController extends Controller
             $request->session()->put('plan.plan_id', $plan->id);
 
             // Ideazione argomenti a livello piano, poi generazione dei singoli item
-            try {
-                GeneratePlanTopics::dispatch($plan->id);
-            } catch (\Throwable $e) {}
+            GeneratePlanTopics::dispatch($plan->id);
 
             return redirect()->route('wizard.done')
                 ->with('status', "Piano creato ✅ (ID: {$plan->id}) — Items creati: {$itemsCreated}");
-
         } catch (\Throwable $e) {
             DB::rollBack();
             return redirect()->route('wizard.done')->with('status', 'Errore creazione piano ❌: ' . $e->getMessage());
         }
     }
 }
-
-
-

@@ -90,13 +90,24 @@
                             <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">Sito web</label>
-                                    <input
-                                        type="text"
-                                        name="website"
-                                        value="{{ old('website', $profile?->website ?? '') }}"
-                                        placeholder="https://..."
-                                        class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                                    />
+                                    <div class="mt-1 flex gap-2">
+                                        <input
+                                            type="text"
+                                            name="website"
+                                            id="websiteInput"
+                                            value="{{ old('website', $profile?->website ?? '') }}"
+                                            placeholder="https://..."
+                                            class="w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                        />
+                                        <button type="button"
+                                                id="prefillBtn"
+                                                class="shrink-0 inline-flex items-center rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+                                            ✨ Compila con AI
+                                        </button>
+                                    </div>
+                                    <p class="mt-1 text-xs text-gray-500" id="prefillStatus">
+                                        L'AI legge il tuo sito e compila automaticamente i campi del profilo.
+                                    </p>
                                 </div>
 
                                 <div>
@@ -141,6 +152,47 @@
                                     placeholder="Extra info: posizionamento, punti di forza, differenziatori..."
                                 >{{ old('notes', $profile?->notes ?? '') }}</textarea>
                             </div>
+                        </div>
+
+                        {{-- VOCE DEL BRAND: il contesto che fa la differenza sulla qualità dei post --}}
+                        <div class="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5">
+                            <h4 class="text-base font-semibold text-gray-900">Voce del brand ✍️</h4>
+                            <p class="mt-1 text-sm text-gray-600">
+                                Più questa sezione è curata, più i post sembreranno scritti da te e non da un'AI.
+                            </p>
+
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700">Come comunica il brand</label>
+                                <textarea
+                                    name="brand_voice"
+                                    rows="3"
+                                    class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                    placeholder="Es. Diretti e concreti, diamo del tu, zero paroloni. Un pizzico di ironia, mai sopra le righe. Parliamo di risultati, non di tecnologia."
+                                >{{ old('brand_voice', $profile?->brand_voice ?? '') }}</textarea>
+                            </div>
+
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700">Esempi di post scritti da te (2-3)</label>
+                                <textarea
+                                    name="example_posts"
+                                    rows="6"
+                                    class="mt-1 w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
+                                    placeholder="Incolla qui 2-3 post che hai già pubblicato e di cui sei soddisfatto: l'AI imiterà stile, ritmo e lessico. Separali con una riga vuota."
+                                >{{ old('example_posts', $profile?->example_posts ?? '') }}</textarea>
+                                <p class="mt-1 text-xs text-gray-500">L'AI ne imita lo stile, non i contenuti.</p>
+                            </div>
+
+                            @if($profile?->visual_style)
+                                <div class="mt-4">
+                                    <label class="block text-sm font-medium text-gray-700">Stile visivo (generato dall'AI dalle tue foto)</label>
+                                    <div class="mt-1 rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-600">
+                                        {{ $profile->visual_style }}
+                                    </div>
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        Si aggiorna automaticamente quando carichi nuove immagini. Guida la generazione delle immagini AI.
+                                    </p>
+                                </div>
+                            @endif
                         </div>
 
                         {{-- DEFAULT CONTENUTI --}}
@@ -510,6 +562,81 @@
                     }
                 });
             }
+        })();
+    </script>
+
+    {{-- JS: compila il profilo con l'AI leggendo il sito web --}}
+    <script>
+        (function () {
+            const btn = document.getElementById('prefillBtn');
+            const statusEl = document.getElementById('prefillStatus');
+            const websiteInput = document.getElementById('websiteInput');
+            if (!btn || !websiteInput) return;
+
+            const setStatus = (msg, isError = false) => {
+                statusEl.textContent = msg;
+                statusEl.className = 'mt-1 text-xs ' + (isError ? 'text-red-600' : 'text-gray-500');
+            };
+
+            btn.addEventListener('click', async () => {
+                let website = websiteInput.value.trim();
+                if (!website) {
+                    setStatus('Inserisci prima l\'indirizzo del sito web.', true);
+                    return;
+                }
+                if (!/^https?:\/\//i.test(website)) {
+                    website = 'https://' + website;
+                    websiteInput.value = website;
+                }
+
+                btn.disabled = true;
+                setStatus('Sto leggendo il sito e compilando il profilo… (10-30 secondi)');
+
+                try {
+                    const res = await fetch(@json(route('profile.brand.prefill')), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value,
+                        },
+                        body: JSON.stringify({ website }),
+                    });
+
+                    const json = await res.json();
+                    if (!res.ok || !json.ok) {
+                        throw new Error(json?.error || (json?.message ?? 'Errore sconosciuto'));
+                    }
+
+                    const map = {
+                        business_name: 'input[name="business_name"]',
+                        industry: 'input[name="industry"]',
+                        cta: 'input[name="cta"]',
+                        services: 'textarea[name="services"]',
+                        target: 'textarea[name="target"]',
+                        brand_voice: 'textarea[name="brand_voice"]',
+                        notes: 'textarea[name="notes"]',
+                    };
+
+                    let filled = 0;
+                    for (const [key, selector] of Object.entries(map)) {
+                        const value = (json.data?.[key] || '').trim();
+                        const field = document.querySelector(selector);
+                        if (value && field) {
+                            field.value = value;
+                            filled++;
+                        }
+                    }
+
+                    setStatus(filled > 0
+                        ? `Profilo compilato (${filled} campi) ✅ Controlla, ritocca e salva.`
+                        : 'Il sito non conteneva abbastanza informazioni utili.');
+                } catch (err) {
+                    setStatus('Errore: ' + (err?.message || err), true);
+                } finally {
+                    btn.disabled = false;
+                }
+            });
         })();
     </script>
 </x-app-layout>

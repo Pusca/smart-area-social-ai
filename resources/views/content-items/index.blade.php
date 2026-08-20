@@ -47,10 +47,7 @@
                                         {{ strtoupper($item->platform) }} • {{ $item->format }}
                                     </div>
 
-                                    <div class="text-xs px-2 py-1 rounded-full
-                                        {{ $item->ai_status === 'done' ? 'bg-green-100 text-green-700' : ($item->ai_status === 'error' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700') }}">
-                                        AI: {{ $item->ai_status ?? 'n/a' }}
-                                    </div>
+                                    <x-ai-status-badge :status="$item->ai_status" :item-id="$item->id" />
                                 </div>
 
                                 <div class="mt-2 font-semibold text-gray-800 line-clamp-2">
@@ -78,4 +75,6 @@
             </div>
         </div>
     </div>
+
+    @include('partials.ai-status-poller')
 </x-app-layout>

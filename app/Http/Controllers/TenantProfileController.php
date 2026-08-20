@@ -2,23 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\AnalyzeBrandVisuals;
 use App\Models\BrandAsset;
 use App\Models\TenantProfile;
+use App\Services\OpenAiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class TenantProfileController extends Controller
 {
     public function show(Request $request)
     {
-        $user = $request->user();
+        $profile = TenantProfile::first();
 
-        $profile = TenantProfile::where('tenant_id', $user->tenant_id)->first();
-
-        $assets = BrandAsset::where('tenant_id', $user->tenant_id)
-            ->whereNull('content_plan_id') // assets “di brand” (non legati a un piano)
+        $assets = BrandAsset::whereNull('content_plan_id') // assets "di brand" (non legati a un piano)
             ->latest('id')
             ->get();
 
@@ -39,6 +40,9 @@ class TenantProfileController extends Controller
             'target' => 'nullable|string|max:2000',
             'cta' => 'nullable|string|max:255',
 
+            'brand_voice' => 'nullable|string|max:2000',
+            'example_posts' => 'nullable|string|max:6000',
+
             'default_goal' => 'nullable|string|max:500',
             'default_tone' => 'nullable|string|max:80',
             'default_posts_per_week' => 'nullable|integer|min:1|max:21',
@@ -55,7 +59,7 @@ class TenantProfileController extends Controller
 
         DB::beginTransaction();
         try {
-            $profile = TenantProfile::updateOrCreate(
+            TenantProfile::updateOrCreate(
                 ['tenant_id' => $user->tenant_id],
                 [
                     'business_name' => $data['business_name'],
@@ -67,6 +71,9 @@ class TenantProfileController extends Controller
                     'target' => $data['target'] ?? null,
                     'cta' => $data['cta'] ?? null,
 
+                    'brand_voice' => $data['brand_voice'] ?? null,
+                    'example_posts' => $data['example_posts'] ?? null,
+
                     'default_goal' => $data['default_goal'] ?? null,
                     'default_tone' => $data['default_tone'] ?? null,
                     'default_posts_per_week' => $data['default_posts_per_week'] ?? null,
@@ -76,7 +83,7 @@ class TenantProfileController extends Controller
                 ]
             );
 
-            // Salva assets (brand-level)
+            $uploadedSomething = false;
             $baseDir = 'brand-assets/' . $user->tenant_id;
 
             if ($request->hasFile('logo')) {
@@ -92,6 +99,8 @@ class TenantProfileController extends Controller
                     'size' => $file->getSize(),
                     'mime' => $file->getMimeType(),
                 ]);
+
+                $uploadedSomething = true;
             }
 
             if ($request->hasFile('images')) {
@@ -107,12 +116,19 @@ class TenantProfileController extends Controller
                         'size' => $img->getSize(),
                         'mime' => $img->getMimeType(),
                     ]);
+
+                    $uploadedSomething = true;
                 }
             }
 
             DB::commit();
-            return redirect()->route('profile.brand')->with('status', 'Profilo attività salvato ✅');
 
+            // Nuove foto → aggiorna la guida di stile visivo usata dagli image prompt
+            if ($uploadedSomething) {
+                AnalyzeBrandVisuals::dispatch($user->tenant_id);
+            }
+
+            return redirect()->route('profile.brand')->with('status', 'Profilo attività salvato ✅');
         } catch (\Throwable $e) {
             DB::rollBack();
             return redirect()->route('profile.brand')->with('status', 'Errore salvataggio ❌: ' . $e->getMessage());
@@ -120,21 +136,57 @@ class TenantProfileController extends Controller
     }
 
     /**
-     * ✅ Elimina asset (logo o immagine) del tenant
-     * - verifica appartenenza tenant
-     * - cancella file da storage public
-     * - cancella record DB
+     * Compila il profilo con l'AI a partire dal sito web dell'attività.
+     * Risponde in JSON: la pagina brand riempie i campi via fetch.
+     */
+    public function prefill(Request $request, OpenAiService $openAi)
+    {
+        $data = $request->validate([
+            'website' => 'required|url:http,https|max:255',
+        ]);
+
+        try {
+            $res = Http::timeout(15)
+                ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; SocialAI/1.0)'])
+                ->get($data['website']);
+
+            if (!$res->successful()) {
+                return response()->json([
+                    'ok' => false,
+                    'error' => "Il sito ha risposto con errore {$res->status()}.",
+                ], 422);
+            }
+
+            $text = $this->extractReadableText($res->body());
+            if (mb_strlen($text) < 200) {
+                return response()->json([
+                    'ok' => false,
+                    'error' => 'Il sito contiene troppo poco testo per compilare il profilo.',
+                ], 422);
+            }
+
+            $profile = $openAi->extractBrandProfile($data['website'], $text);
+
+            return response()->json(['ok' => true, 'data' => $profile]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'error' => 'Analisi non riuscita: ' . Str::limit($e->getMessage(), 200),
+            ], 422);
+        }
+    }
+
+    /**
+     * Elimina asset (logo o immagine) del tenant.
+     * Il global scope garantisce già che l'asset appartenga al tenant.
      */
     public function destroyAsset(Request $request, BrandAsset $asset)
     {
-        $user = $request->user();
-
-        // sicurezza: solo asset del tenant e solo brand-level (non plan-level)
-        if ((int)$asset->tenant_id !== (int)$user->tenant_id || !is_null($asset->content_plan_id)) {
+        // solo asset brand-level (non plan-level)
+        if (!is_null($asset->content_plan_id)) {
             abort(403);
         }
 
-        // cancella file
         if ($asset->path) {
             Storage::disk('public')->delete($asset->path);
         }
@@ -142,5 +194,15 @@ class TenantProfileController extends Controller
         $asset->delete();
 
         return redirect()->route('profile.brand')->with('status', 'Asset eliminato ✅');
+    }
+
+    private function extractReadableText(string $html): string
+    {
+        // via script/style, poi tag → spazi, entità decodificate, spazi collassati
+        $html = preg_replace('/<(script|style|noscript|svg)\b[^>]*>.*?<\/\1>/si', ' ', $html) ?? $html;
+        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+
+        return mb_substr(trim($text), 0, 14000);
     }
 }

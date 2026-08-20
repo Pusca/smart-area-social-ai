@@ -51,9 +51,9 @@
                             Path: <span class="font-mono">{{ $item->ai_image_path ?? '-' }}</span>
                         </div>
 
-                        @if($item->ai_status !== 'done')
+                        @if($item->ai_status !== \App\Enums\AiStatus::Done)
                             <div class="mt-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                                Stato AI: <b>{{ $item->ai_status ?? 'n/a' }}</b>
+                                Stato AI: <b>{{ $item->ai_status?->label() ?? 'n/a' }}</b>
                             </div>
                         @endif
 

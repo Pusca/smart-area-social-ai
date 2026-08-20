@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\AiStatus;
 use App\Models\ContentItem;
 use App\Services\ContentAiGenerator;
 use Illuminate\Bus\Queueable;
@@ -36,7 +37,7 @@ class GenerateAiForContentItem implements ShouldQueue
             return;
         }
 
-        $item->ai_status = 'pending';
+        $item->ai_status = AiStatus::Generating;
         $item->ai_error = null;
         $item->save();
 
@@ -54,7 +55,7 @@ class GenerateAiForContentItem implements ShouldQueue
             ]);
         }
 
-        $item->ai_status = 'done';
+        $item->ai_status = AiStatus::Done;
         $item->ai_generated_at = now();
         $item->save();
     }
@@ -66,7 +67,7 @@ class GenerateAiForContentItem implements ShouldQueue
             return;
         }
 
-        $item->ai_status = 'error';
+        $item->ai_status = AiStatus::Error;
         $item->ai_error = Str::limit($e->getMessage(), 500);
         $item->save();
 

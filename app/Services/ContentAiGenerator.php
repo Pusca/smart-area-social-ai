@@ -3,13 +3,16 @@
 namespace App\Services;
 
 use App\Models\ContentItem;
+use App\Models\TenantProfile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * Genera testo e immagine per un singolo ContentItem,
- * leggendo il contesto (brand, piano, argomento) da ai_meta.
+ * Genera testo e immagine per un singolo ContentItem.
+ * Il contesto brand viene letto LIVE dal TenantProfile (unica fonte di
+ * verità); in ai_meta restano solo topic e usage.
  */
 class ContentAiGenerator
 {
@@ -21,10 +24,20 @@ class ContentAiGenerator
     {
         $meta = is_array($item->ai_meta) ? $item->ai_meta : [];
 
+        $profile = TenantProfile::where('tenant_id', $item->tenant_id)->first();
+        $brand = $profile
+            ? $profile->toAiContext()
+            // fallback per item creati prima del refactor
+            : ($meta['brand'] ?? $meta['tenant_profile'] ?? []);
+
+        $planSettings = is_array($item->plan?->settings) ? $item->plan->settings : [];
+        $plan = $planSettings !== []
+            ? Arr::only($planSettings, ['goal', 'tone', 'platforms', 'formats'])
+            : ($meta['plan'] ?? []);
+
         return [
-            // 'tenant_profile' è la chiave usata dai piani creati prima del refactor
-            'brand' => $meta['brand'] ?? $meta['tenant_profile'] ?? [],
-            'plan' => $meta['plan'] ?? [],
+            'brand' => $brand,
+            'plan' => $plan,
             'topic' => $meta['topic'] ?? null,
             'item' => [
                 'platform' => $item->platform,
@@ -63,7 +76,7 @@ class ContentAiGenerator
             $item->save();
         }
 
-        $img = $this->openAi->generateImageBase64($prompt);
+        $img = $this->openAi->generateImageBase64($prompt, null, $this->imageSizeFor($item));
         $bytes = base64_decode($img['b64'], true);
         if ($bytes === false || $bytes === '') {
             throw new RuntimeException('Payload immagine base64 non valido');
@@ -90,18 +103,30 @@ class ContentAiGenerator
         $item->save();
     }
 
+    /**
+     * Story e reel sono verticali, il resto quadrato.
+     */
+    protected function imageSizeFor(ContentItem $item): string
+    {
+        return in_array($item->format, ['story', 'reel'], true)
+            ? '1024x1536'
+            : (string) (config('openai.image_size') ?: '1024x1024');
+    }
+
     protected function fallbackImagePrompt(ContentItem $item): string
     {
         $ctx = $this->buildContext($item);
 
         $brandName = (string) data_get($ctx, 'brand.business_name', 'a local business');
         $industry = (string) data_get($ctx, 'brand.industry', '');
+        $visual = (string) data_get($ctx, 'brand.visual_style', '');
         $tone = (string) data_get($ctx, 'plan.tone', '');
         $subject = trim((string) ($item->ai_caption ?: $item->title ?: ''));
 
-        return "High-quality square social media photo for {$brandName}"
+        return "High-quality social media photo for {$brandName}"
             . ($industry !== '' ? " ({$industry})" : '')
             . ". Visual concept: {$subject}. "
+            . ($visual !== '' ? "Brand visual style: {$visual}. " : '')
             . ($tone !== '' ? "Mood: {$tone}. " : '')
             . "Natural light, professional look, modern minimal composition. No text, no logos, no watermarks.";
     }

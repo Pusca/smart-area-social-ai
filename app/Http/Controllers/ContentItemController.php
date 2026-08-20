@@ -6,18 +6,19 @@ use App\Models\ContentItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
+/**
+ * L'isolamento tenant è garantito dal global scope BelongsToTenant
+ * (query filtrate e binding 404 per risorse di altri tenant).
+ */
 class ContentItemController extends Controller
 {
     /**
-     * LISTA "POSTS" (la tua pagina attuale) => resources/views/posts/index.blade.php
+     * LISTA "POSTS" => resources/views/posts/index.blade.php
      */
     public function index(Request $request)
     {
-        $user = $request->user();
-
         $items = ContentItem::query()
-            ->where('tenant_id', $user->tenant_id)
-            ->orderByRaw("CASE WHEN scheduled_at IS NULL THEN 1 ELSE 0 END")
+            ->orderByRaw('CASE WHEN scheduled_at IS NULL THEN 1 ELSE 0 END')
             ->orderBy('scheduled_at')
             ->orderByDesc('id')
             ->paginate(20);
@@ -26,18 +27,14 @@ class ContentItemController extends Controller
     }
 
     /**
-     * LISTA "CONTENT ITEMS" (nuova galleria con immagini) => resources/views/content-items/index.blade.php
+     * GALLERIA (con immagini) => resources/views/content-items/index.blade.php
      */
     public function gallery(Request $request)
     {
-        $user = $request->user();
-
         $q = ContentItem::query()
-            ->where('tenant_id', $user->tenant_id)
             ->orderByDesc('scheduled_at')
             ->orderByDesc('id');
 
-        // filtri opzionali (se li aggiungi in futuro)
         if ($request->filled('status')) {
             $q->where('status', $request->string('status')->toString());
         }
@@ -50,16 +47,9 @@ class ContentItemController extends Controller
         return view('content-items.index', compact('items'));
     }
 
-    /**
-     * DETTAGLIO "CONTENT ITEM" (immagine grande) => resources/views/content-items/show.blade.php
-     */
     public function show(Request $request, ContentItem $contentItem)
     {
-        $this->authorizeTenant($request, $contentItem);
-
-        return view('content-items.show', [
-            'item' => $contentItem,
-        ]);
+        return view('content-items.show', ['item' => $contentItem]);
     }
 
     public function create(Request $request)
@@ -83,14 +73,15 @@ class ContentItemController extends Controller
 
         $item = new ContentItem();
         $item->tenant_id = $user->tenant_id;
-        $item->content_plan_id = 1; // per ora placeholder (poi lo rendiamo dinamico)
+        $item->content_plan_id = null; // post manuale, non legato a un piano
         $item->created_by = $user->id;
 
         $item->platform = $data['platform'];
         $item->format = $data['format'];
         $item->status = $data['status'];
         $item->title = $data['title'] ?? null;
-        $item->caption = $data['caption'] ?? null;
+        $item->ai_caption = $data['ai_caption'] ?? null;
+        $item->ai_image_prompt = $data['ai_image_prompt'] ?? null;
 
         $item->scheduled_at = !empty($data['scheduled_at'])
             ? Carbon::parse($data['scheduled_at'])
@@ -103,14 +94,11 @@ class ContentItemController extends Controller
 
     public function edit(Request $request, ContentItem $contentItem)
     {
-        $this->authorizeTenant($request, $contentItem);
         return view('posts.edit', compact('contentItem'));
     }
 
     public function update(Request $request, ContentItem $contentItem)
     {
-        $this->authorizeTenant($request, $contentItem);
-
         $data = $request->validate([
             'platform' => 'required|string|max:50',
             'format' => 'required|string|max:50',
@@ -136,16 +124,8 @@ class ContentItemController extends Controller
 
     public function destroy(Request $request, ContentItem $contentItem)
     {
-        $this->authorizeTenant($request, $contentItem);
         $contentItem->delete();
 
         return redirect()->route('posts.index')->with('status', 'Contenuto eliminato 🗑️');
-    }
-
-    private function authorizeTenant(Request $request, ContentItem $item): void
-    {
-        if ((int)$item->tenant_id !== (int)$request->user()->tenant_id) {
-            abort(403);
-        }
     }
 }

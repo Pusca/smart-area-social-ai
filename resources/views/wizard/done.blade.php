@@ -98,17 +98,10 @@
                             <div class="mt-1 font-semibold text-lg">{{ $item->title }}</div>
                         </div>
 
-                        <div class="text-xs px-2 py-1 rounded-full
-                            @if($item->ai_status === 'done') bg-green-100 text-green-700
-                            @elseif($item->ai_status === 'error') bg-red-100 text-red-700
-                            @elseif(in_array($item->ai_status, ['queued','pending'])) bg-yellow-100 text-yellow-700
-                            @else bg-gray-100 text-gray-700 @endif
-                        ">
-                            AI: {{ $item->ai_status ?? '—' }}
-                        </div>
+                        <x-ai-status-badge :status="$item->ai_status" :item-id="$item->id" />
                     </div>
 
-                    @if($item->ai_status === 'error' && $item->ai_error)
+                    @if($item->ai_status === \App\Enums\AiStatus::Error && $item->ai_error)
                         <div class="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">
                             <div class="font-medium">Errore AI</div>
                             <div class="mt-1">{{ $item->ai_error }}</div>
@@ -119,6 +112,8 @@
         </div>
     @endif
 </div>
+
+@include('partials.ai-status-poller')
 @endsection
 
 

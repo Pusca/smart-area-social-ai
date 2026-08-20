@@ -2,17 +2,17 @@
 
 @section('content')
 @php
+    // Le query sono già filtrate sul tenant dell'utente dal global scope BelongsToTenant
     $u = auth()->user();
-    $tenantId = $u?->tenant_id;
 
-    $latestPlan = \App\Models\ContentPlan::where('tenant_id', $tenantId)->latest('id')->first();
+    $latestPlan = \App\Models\ContentPlan::latest('id')->first();
 
-    $totalItems = \App\Models\ContentItem::where('tenant_id', $tenantId)->count();
-    $queuedItems = \App\Models\ContentItem::where('tenant_id', $tenantId)->whereIn('ai_status', ['queued','pending'])->count();
-    $doneItems = \App\Models\ContentItem::where('tenant_id', $tenantId)->where('ai_status', 'done')->count();
-    $errorItems = \App\Models\ContentItem::where('tenant_id', $tenantId)->where('ai_status', 'error')->count();
+    $totalItems = \App\Models\ContentItem::count();
+    $queuedItems = \App\Models\ContentItem::whereIn('ai_status', \App\Enums\AiStatus::busyValues())->count();
+    $doneItems = \App\Models\ContentItem::where('ai_status', \App\Enums\AiStatus::Done->value)->count();
+    $errorItems = \App\Models\ContentItem::where('ai_status', \App\Enums\AiStatus::Error->value)->count();
 
-    $recentItems = \App\Models\ContentItem::where('tenant_id', $tenantId)
+    $recentItems = \App\Models\ContentItem::query()
         ->orderByRaw("CASE WHEN scheduled_at IS NULL THEN 1 ELSE 0 END")
         ->orderBy('scheduled_at')
         ->orderByDesc('id')
@@ -96,9 +96,14 @@
                     <div class="text-xs text-gray-500 mt-1">Vista planning e scheduling</div>
                 </a>
 
-                <a href="{{ route('ai') }}" class="rounded-xl border p-4 hover:bg-gray-50">
-                    <div class="text-sm font-semibold">AI Lab</div>
-                    <div class="text-xs text-gray-500 mt-1">Generazioni manuali / test</div>
+                <a href="{{ route('content-items.index') }}" class="rounded-xl border p-4 hover:bg-gray-50">
+                    <div class="text-sm font-semibold">Galleria contenuti</div>
+                    <div class="text-xs text-gray-500 mt-1">Anteprima post con immagini AI</div>
+                </a>
+
+                <a href="{{ route('profile.brand') }}" class="rounded-xl border p-4 hover:bg-gray-50">
+                    <div class="text-sm font-semibold">Profilo attività</div>
+                    <div class="text-xs text-gray-500 mt-1">Il contesto che guida l'AI: più è ricco, meglio scrive</div>
                 </a>
             </div>
 
@@ -161,14 +166,7 @@
                                     </div>
                                 </div>
 
-                                <div class="shrink-0 text-xs px-2 py-1 rounded-full
-                                    @if($item->ai_status === 'done') bg-green-100 text-green-700
-                                    @elseif($item->ai_status === 'error') bg-red-100 text-red-700
-                                    @elseif(in_array($item->ai_status, ['queued','pending'])) bg-yellow-100 text-yellow-700
-                                    @else bg-gray-100 text-gray-700 @endif
-                                ">
-                                    {{ $item->ai_status ?? '—' }}
-                                </div>
+                                <x-ai-status-badge class="shrink-0" :status="$item->ai_status" :item-id="$item->id" />
                             </div>
                         @empty
                             <div class="p-6 text-center text-sm text-gray-600">
@@ -196,4 +194,6 @@
         </div>
     </div>
 </div>
+
+@include('partials.ai-status-poller')
 @endsection

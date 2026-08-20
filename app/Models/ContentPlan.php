@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ContentPlan extends Model
 {
+    use BelongsToTenant;
+
     protected $fillable = [
         'tenant_id',
         'created_by',
@@ -18,9 +21,9 @@ class ContentPlan extends Model
     ];
 
     protected $casts = [
-        'settings'   => 'array',
+        'settings' => 'array',
         'start_date' => 'datetime',
-        'end_date'   => 'datetime',
+        'end_date' => 'datetime',
     ];
 
     public function items(): HasMany

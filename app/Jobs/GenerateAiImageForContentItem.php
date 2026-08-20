@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\AiStatus;
 use App\Models\ContentItem;
 use App\Services\ContentAiGenerator;
 use Illuminate\Bus\Queueable;
@@ -43,8 +44,8 @@ class GenerateAiImageForContentItem implements ShouldQueue
         }
 
         // Il testo non è stato toccato: non lasciare l'item bloccato in coda
-        if ($item->ai_status === 'queued') {
-            $item->ai_status = 'done';
+        if ($item->ai_status === AiStatus::Queued) {
+            $item->ai_status = AiStatus::Done;
             $item->save();
         }
     }

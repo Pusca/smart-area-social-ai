@@ -2,29 +2,25 @@
 
 namespace App\Models;
 
+use App\Enums\AiStatus;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ContentItem extends Model
 {
-    protected $table = 'content_items';
+    use BelongsToTenant;
 
-    /**
-     * Preferisco guarded vuoto così non ti blocchi con colonne nuove
-     * (in un progetto in evoluzione come questo è più pratico).
-     * Se vuoi fillable, te lo preparo dopo che fissiamo lo schema finale.
-     */
     protected $guarded = [];
 
     protected $casts = [
-        // Date
-        'scheduled_at'    => 'datetime',
-        'created_at'      => 'datetime',
-        'updated_at'      => 'datetime',
-
-        // JSON / array
-        'hashtags'        => 'array', // se in DB è TEXT va benissimo: Laravel salva JSON
-        'ai_meta'         => 'array',
+        'scheduled_at' => 'datetime',
+        'ai_generated_at' => 'datetime',
+        'hashtags' => 'array',
+        'ai_hashtags' => 'array',
+        'assets' => 'array',
+        'ai_meta' => 'array',
+        'ai_status' => AiStatus::class,
     ];
 
     public function plan(): BelongsTo
@@ -33,42 +29,24 @@ class ContentItem extends Model
     }
 
     /**
-     * Normalizzazioni: se qualcuno setta hashtags come string,
-     * le trasformiamo in array; se le setta come array, ok.
-     * Questo evita "Array to string conversion" e mantiene coerenza.
+     * Accetta hashtag sia come array che come stringa ("#a #b" o "#a, #b").
      */
     public function setHashtagsAttribute($value): void
     {
-        if (is_string($value)) {
-            // accetta "#a #b" oppure "#a, #b"
-            $parts = preg_split('/[\s,]+/', trim($value));
-            $parts = array_values(array_filter($parts));
-            $this->attributes['hashtags'] = json_encode($parts);
-            return;
-        }
-
-        if (is_array($value)) {
-            $this->attributes['hashtags'] = json_encode($value);
-            return;
-        }
-
-        // null o altro
-        $this->attributes['hashtags'] = null;
+        $this->attributes['hashtags'] = $this->normalizeTagList($value);
     }
 
-    public function setAiMetaAttribute($value): void
+    public function setAiHashtagsAttribute($value): void
     {
-        if (is_array($value)) {
-            $this->attributes['ai_meta'] = json_encode($value);
-            return;
-        }
+        $this->attributes['ai_hashtags'] = $this->normalizeTagList($value);
+    }
 
+    private function normalizeTagList($value): ?string
+    {
         if (is_string($value)) {
-            // se ti arriva già json string, lo lasciamo
-            $this->attributes['ai_meta'] = $value;
-            return;
+            $value = array_values(array_filter(preg_split('/[\s,]+/', trim($value)) ?: []));
         }
 
-        $this->attributes['ai_meta'] = null;
+        return is_array($value) ? json_encode(array_values($value), JSON_UNESCAPED_UNICODE) : null;
     }
 }

@@ -7,7 +7,6 @@ use App\Http\Controllers\PushController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ContentItemController;
 use App\Http\Controllers\PlanWizardController;
-use App\Http\Controllers\AiController;
 use App\Http\Controllers\AiGenerateController;
 use App\Http\Controllers\TenantProfileController;
 
@@ -24,6 +23,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     // Profilo attività (wizard unico tenant)
     Route::get('/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
     Route::post('/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
+    Route::post('/brand/prefill', [TenantProfileController::class, 'prefill'])->name('profile.brand.prefill');
     Route::delete('/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
         ->name('profile.brand.asset.destroy');
 
@@ -33,14 +33,11 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
     Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
-    // AI Lab
-    Route::get('/ai', [AiController::class, 'index'])->name('ai');
-    Route::post('/ai/generate', [AiController::class, 'generate'])->name('ai.generate');
-
     // AI generate
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
     Route::post('/ai/plan/{contentPlan}/generate', [AiGenerateController::class, 'generatePlan'])->name('ai.plan.generate');
     Route::post('/ai/content/{contentItem}/image', [AiGenerateController::class, 'generateImage'])->name('ai.content.generateImage');
+    Route::get('/ai/status', [AiGenerateController::class, 'status'])->name('ai.status');
 
     Route::view('/notifications', 'notifications')->name('notifications');
     Route::view('/settings', 'settings')->name('settings');
