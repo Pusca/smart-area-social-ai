@@ -68,6 +68,8 @@
                         </div>
                     @endif
                 </form>
+
+                @include('auth.partials.google-button')
             </div>
         </div>
 

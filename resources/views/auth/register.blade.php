@@ -49,4 +49,8 @@
             </x-primary-button>
         </div>
     </form>
+
+    <div class="bg-white rounded-xl">
+        @include('auth.partials.google-button')
+    </div>
 </x-guest-layout>

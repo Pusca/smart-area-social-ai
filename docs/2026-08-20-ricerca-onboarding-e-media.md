@@ -113,3 +113,4 @@ Fatto nella sessione del 20/08 (commit `9a1c719` → `1735ff8`):
 3. **Layer template** per grafiche con testo (Parte 3): sessione Claude Design → template Blade + Browsershot.
 4. Vista di revisione unificata (fondere /posts, /content-items, /calendar) + uso di `social_links` nella UI del profilo.
 5. Prendere una chiave Firecrawl per il JS rendering (senza, funziona il fetcher nativo).
+6. **Deploy automatico**: webhook GitHub → endpoint sul server (socialai.smartera.it) che fa `git pull` + `composer install` + `artisan migrate --force` + restart queue worker (richiesto dall'utente il 20/08).
