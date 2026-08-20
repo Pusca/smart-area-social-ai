@@ -105,6 +105,8 @@ class ContentItemController extends Controller
             'scheduled_at' => 'nullable|date',
             'title' => 'nullable|string|max:120',
             'ai_caption' => 'nullable|string',
+            'ai_hashtags' => 'nullable|string|max:1000',
+            'ai_cta' => 'nullable|string|max:255',
             'ai_image_prompt' => 'nullable|string',
             'status' => 'required|string|max:30',
         ]);
@@ -114,6 +116,8 @@ class ContentItemController extends Controller
         $contentItem->status = $data['status'];
         $contentItem->title = $data['title'] ?? null;
         $contentItem->ai_caption = $data['ai_caption'] ?? null;
+        $contentItem->ai_hashtags = $data['ai_hashtags'] ?? null;
+        $contentItem->ai_cta = $data['ai_cta'] ?? null;
         $contentItem->ai_image_prompt = $data['ai_image_prompt'] ?? null;
         $contentItem->scheduled_at = !empty($data['scheduled_at']) ? Carbon::parse($data['scheduled_at']) : null;
 

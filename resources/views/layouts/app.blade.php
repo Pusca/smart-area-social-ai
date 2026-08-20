@@ -45,6 +45,11 @@
                         Wizard
                     </a>
 
+                    <a href="{{ route('profile.brand') }}"
+                       class="px-3 py-2 rounded-xl {{ request()->routeIs('profile.brand*') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                        Brand
+                    </a>
+
                     <a href="{{ route('settings') }}"
                        class="px-3 py-2 rounded-xl {{ request()->routeIs('settings') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
                         Settings
@@ -76,7 +81,7 @@
    {{-- Bottom nav (mobile) --}}
 <nav class="fixed bottom-0 inset-x-0 z-50 border-t bg-white/95 backdrop-blur sm:hidden">
     <div class="max-w-7xl mx-auto px-3 pb-[env(safe-area-inset-bottom)]">
-        <div class="grid grid-cols-5 text-center text-xs gap-1 py-2">
+        <div class="grid grid-cols-6 text-center text-xs gap-1 py-2">
 
             <a href="{{ route('dashboard') }}"
                class="touch-manipulation select-none rounded-xl px-2 py-3
@@ -100,6 +105,12 @@
                class="touch-manipulation select-none rounded-xl px-2 py-3
                {{ request()->routeIs('wizard.*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
                 Wizard
+            </a>
+
+            <a href="{{ route('profile.brand') }}"
+               class="touch-manipulation select-none rounded-xl px-2 py-3
+               {{ request()->routeIs('profile.brand*') ? 'bg-gray-900 text-white font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Brand
             </a>
 
             <a href="{{ route('settings') }}"

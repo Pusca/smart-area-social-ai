@@ -22,6 +22,9 @@
                             <option value="instagram">Instagram</option>
                             <option value="facebook">Facebook</option>
                             <option value="tiktok">TikTok</option>
+                            <option value="linkedin">LinkedIn</option>
+                            <option value="youtube">YouTube</option>
+                            <option value="threads">Threads</option>
                         </select>
                     </div>
 
@@ -31,6 +34,9 @@
                             <option value="post">Post</option>
                             <option value="reel">Reel</option>
                             <option value="story">Story</option>
+                            <option value="live">Live</option>
+                            <option value="blog">Blog</option>
+                            <option value="newsletter">Newsletter</option>
                         </select>
                     </div>
 
@@ -57,7 +63,7 @@
 
                 <div>
                     <label class="text-sm font-medium text-gray-700">Caption</label>
-                    <textarea name="caption" rows="6" class="mt-1 w-full rounded-xl border-gray-200" placeholder="Scrivi la caption..."></textarea>
+                    <textarea name="ai_caption" rows="6" class="mt-1 w-full rounded-xl border-gray-200" placeholder="Scrivi la caption...">{{ old('ai_caption') }}</textarea>
                 </div>
 
                 <div class="flex gap-2">

@@ -82,19 +82,46 @@
                                class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
+                    @php
+                        $platformOptions = ['instagram', 'facebook', 'tiktok', 'linkedin', 'youtube', 'threads'];
+                        $formatOptions = ['post', 'reel', 'story', 'live', 'blog', 'newsletter'];
+                        $statusOptions = ['draft' => 'Bozza', 'review' => 'In revisione', 'approved' => 'Approvato', 'scheduled' => 'Programmato', 'published' => 'Pubblicato'];
+
+                        // Non perdere valori legacy fuori lista
+                        if ($contentItem->platform && !in_array($contentItem->platform, $platformOptions)) $platformOptions[] = $contentItem->platform;
+                        if ($contentItem->format && !in_array($contentItem->format, $formatOptions)) $formatOptions[] = $contentItem->format;
+                        if ($contentItem->status && !array_key_exists($contentItem->status, $statusOptions)) $statusOptions[$contentItem->status] = $contentItem->status;
+                    @endphp
+
+                    <div class="grid grid-cols-3 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Piattaforma</label>
-                            <input type="text" name="platform"
-                                   value="{{ old('platform', $contentItem->platform) }}"
-                                   class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                            <select name="platform"
+                                    class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                                @foreach($platformOptions as $p)
+                                    <option value="{{ $p }}" @selected(old('platform', $contentItem->platform) === $p)>{{ ucfirst($p) }}</option>
+                                @endforeach
+                            </select>
                         </div>
 
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Formato</label>
-                            <input type="text" name="format"
-                                   value="{{ old('format', $contentItem->format) }}"
-                                   class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                            <select name="format"
+                                    class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                                @foreach($formatOptions as $f)
+                                    <option value="{{ $f }}" @selected(old('format', $contentItem->format) === $f)>{{ ucfirst($f) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Stato</label>
+                            <select name="status"
+                                    class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                                @foreach($statusOptions as $value => $label)
+                                    <option value="{{ $value }}" @selected(old('status', $contentItem->status) === $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
 
@@ -109,6 +136,24 @@
                         <label class="block text-sm font-medium text-gray-700">Caption (AI)</label>
                         <textarea name="ai_caption" rows="6"
                                   class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">{{ old('ai_caption', $contentItem->ai_caption) }}</textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Hashtag</label>
+                            <input type="text" name="ai_hashtags"
+                                   value="{{ old('ai_hashtags', implode(' ', $contentItem->ai_hashtags ?? [])) }}"
+                                   placeholder="#uno #due #tre"
+                                   class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                            <p class="mt-1 text-xs text-gray-500">Separati da spazio o virgola.</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">CTA</label>
+                            <input type="text" name="ai_cta"
+                                   value="{{ old('ai_cta', $contentItem->ai_cta) }}"
+                                   class="mt-1 w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
                     </div>
 
                     <div>
