@@ -86,7 +86,41 @@ class OpenAiService
     protected function writerInstructions(string $platform, string $format, array $context): string
     {
         $language = $this->language();
-        $rules = $this->platformRules($platform);
+        $rules = $this->platformRules($platform) . "\n" . $this->formatRules($format);
+
+        // I fatti del brand vengono promossi a istruzioni: nel solo blob JSON
+        // il modello tende a ignorarli.
+        $factsBlock = '';
+        $factLines = [];
+        $factMap = [
+            'industry' => 'Settore',
+            'services' => 'Servizi/prodotti reali (parla di questi)',
+            'target' => 'Clienti tipo',
+            'cta' => 'CTA preferita dal brand',
+            'notes' => 'Punti di forza e note distintive',
+        ];
+        foreach ($factMap as $key => $label) {
+            $value = trim((string) data_get($context, "brand.{$key}", ''));
+            if ($value !== '') {
+                $factLines[] = "- {$label}: {$value}";
+            }
+        }
+        if ($factLines !== []) {
+            $factsBlock = "\n\nScheda attività (unica fonte di verità sui fatti):\n" . implode("\n", $factLines);
+        }
+
+        $avoidBlock = '';
+        $avoid = data_get($context, 'avoid_openings', []);
+        if (is_array($avoid) && $avoid !== []) {
+            $avoidBlock = "\n\nAperture già usate da altri post di questo piano — NON ripeterle né parafrasarle, parti in modo diverso:\n- "
+                . implode("\n- ", array_map('strval', $avoid));
+        }
+
+        $scheduleBlock = '';
+        $day = trim((string) data_get($context, 'item.scheduled_day', ''));
+        if ($day !== '') {
+            $scheduleBlock = "\n\nIl post uscirà {$day}: se il momento è rilevante (weekend, stagione, festività), sfruttalo; altrimenti ignoralo senza citare la data.";
+        }
 
         $voiceBlock = '';
         $voice = trim((string) data_get($context, 'brand.brand_voice', ''));
@@ -111,9 +145,12 @@ class OpenAiService
             . "Scrivi contenuti in {$language}, pronti da pubblicare, specifici per il brand e l'argomento indicati: mai generici, mai riempitivi.\n\n"
             . "Piattaforma: {$platform} (formato: {$format}).\n"
             . $rules
+            . $factsBlock
             . $voiceBlock
             . $examplesBlock
-            . $visualBlock . "\n\n"
+            . $visualBlock
+            . $avoidBlock
+            . $scheduleBlock . "\n\n"
             . "Regole generali:\n"
             . "- La caption apre con un hook forte e sviluppa UN solo argomento (quello in \"topic\", se presente), toccando i suoi \"key_points\".\n"
             . "- Usa dettagli concreti presi dal contesto (servizi, target, zona): un lettore deve capire che parla proprio di questa attività.\n"
@@ -130,7 +167,7 @@ class OpenAiService
     protected function refineContent(array $context, array $draft, string $platform, string $format): array
     {
         $language = $this->language();
-        $rules = $this->platformRules($platform);
+        $rules = $this->platformRules($platform) . "\n" . $this->formatRules($format);
 
         $instructions =
             "Sei un editor senior di contenuti social, severo e concreto. Lingua: {$language}.\n"
@@ -217,7 +254,8 @@ class OpenAiService
             'plan_topics',
             $schema,
             $maxTokens,
-            (string) (config('openai.ideation_model') ?: config('openai.text_model'))
+            (string) (config('openai.ideation_model') ?: config('openai.text_model')),
+            (string) (config('openai.ideation_reasoning_effort') ?: 'medium')
         );
 
         $topics = $data['parsed']['topics'] ?? [];
@@ -317,10 +355,10 @@ class OpenAiService
      */
     public function generateImageBase64(string $prompt, ?string $modelOverride = null, ?string $size = null): array
     {
-        $model = trim((string) ($modelOverride ?: config('openai.image_model') ?: 'gpt-image-1'));
+        $model = trim((string) ($modelOverride ?: config('openai.image_model') ?: 'gpt-image-2'));
         // Guardia: mai chiamare le Images API con un modello testo
         if ($model === '' || (!str_contains($model, 'image') && !str_starts_with($model, 'dall-e'))) {
-            $model = 'gpt-image-1';
+            $model = 'gpt-image-2';
         }
 
         $timeout = (int) (config('openai.timeout_images') ?: 120);
@@ -379,7 +417,8 @@ class OpenAiService
         string $schemaName,
         array $schema,
         ?int $maxTokens = null,
-        ?string $model = null
+        ?string $model = null,
+        ?string $effort = null
     ): array {
         $model = $model ?: (string) (config('openai.text_model') ?: 'gpt-5-mini');
         $timeout = (int) (config('openai.timeout') ?: 90);
@@ -402,7 +441,7 @@ class OpenAiService
 
         // I modelli reasoning (gpt-5.x, o*) accettano l'effort: per il copy basta "low"
         if (preg_match('/^(gpt-5|o\d)/', $model)) {
-            $payload['reasoning'] = ['effort' => (string) (config('openai.reasoning_effort') ?: 'low')];
+            $payload['reasoning'] = ['effort' => (string) ($effort ?: config('openai.reasoning_effort') ?: 'low')];
         }
 
         try {
@@ -437,6 +476,27 @@ class OpenAiService
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Il formato cambia cosa si scrive, non solo l'aspect ratio dell'immagine.
+     */
+    protected function formatRules(string $format): string
+    {
+        return match ($format) {
+            'reel' =>
+                "- È la caption di un VIDEO breve: prima riga = il gancio parlato del video, poi il payoff in 2-3 frasi.\n"
+                . "- \"image_prompt\": la scena di copertina del video, verticale, dinamica.",
+            'story' =>
+                "- È una story: 1-2 frasi secche + un invito interattivo (domanda, sondaggio, \"scrivici\").\n"
+                . "- Niente blocchi di testo: la story si guarda, non si legge.",
+            'live' =>
+                "- Annuncio di una diretta: crea attesa, di' cosa si porta a casa chi partecipa; se data/ora sono nel contesto, mettile in evidenza.",
+            'blog', 'newsletter' =>
+                "- Formato lungo: struttura con un'idea forte per paragrafo e una sola CTA in chiusura.",
+            default =>
+                "- Post da feed: hook, sviluppo del punto, chiusura con CTA.",
+        };
     }
 
     protected function platformRules(string $platform): string

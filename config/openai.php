@@ -11,13 +11,17 @@ return [
     // Ideazione argomenti del piano: qui la qualità paga, meglio un modello top
     'ideation_model' => env('OPENAI_IDEATION_MODEL', 'gpt-5.1'),
 
-    'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-1'),
+    // gpt-image-1 viene ritirato il 23/10/2026: gpt-image-2 è il drop-in
+    'image_model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
 
     // Secondo pass di revisione editoriale sul copy (raddoppia le chiamate testo)
     'refine_pass' => (bool) env('OPENAI_REFINE_PASS', true),
 
     // Effort di reasoning per i modelli gpt-5.x / o* ("low" basta per il copy)
     'reasoning_effort' => env('OPENAI_REASONING_EFFORT', 'low'),
+
+    // L'ideazione del piano è la chiamata dove la qualità pesa di più
+    'ideation_reasoning_effort' => env('OPENAI_IDEATION_EFFORT', 'medium'),
 
     // Lingua dei contenuti generati (nome per esteso: "italiano", "English", ...)
     'language' => env('OPENAI_LANGUAGE', 'italiano'),

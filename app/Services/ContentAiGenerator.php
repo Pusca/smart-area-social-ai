@@ -44,8 +44,36 @@ class ContentAiGenerator
                 'format' => $item->format,
                 'title' => $item->title,
                 'scheduled_at' => optional($item->scheduled_at)->toDateTimeString(),
+                'scheduled_day' => optional($item->scheduled_at)?->locale('it')->isoFormat('dddd D MMMM YYYY'),
             ],
+            'avoid_openings' => $this->siblingOpenings($item),
         ];
+    }
+
+    /**
+     * Prime righe dei post già generati nello stesso piano: ogni item viene
+     * generato in isolamento e senza questa lista gli hook si ripetono.
+     *
+     * @return list<string>
+     */
+    protected function siblingOpenings(ContentItem $item): array
+    {
+        if (!$item->content_plan_id) {
+            return [];
+        }
+
+        return ContentItem::query()
+            ->where('content_plan_id', $item->content_plan_id)
+            ->where('id', '!=', $item->id)
+            ->whereNotNull('ai_caption')
+            ->orderByDesc('ai_generated_at')
+            ->limit(12)
+            ->pluck('ai_caption')
+            ->map(fn ($caption) => Str::limit(trim(strtok((string) $caption, "\n")), 90, '…'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function generateText(ContentItem $item): void
@@ -119,15 +147,23 @@ class ContentAiGenerator
 
         $brandName = (string) data_get($ctx, 'brand.business_name', 'a local business');
         $industry = (string) data_get($ctx, 'brand.industry', '');
+        $services = (string) data_get($ctx, 'brand.services', '');
         $visual = (string) data_get($ctx, 'brand.visual_style', '');
         $tone = (string) data_get($ctx, 'plan.tone', '');
-        $subject = trim((string) ($item->ai_caption ?: $item->title ?: ''));
+        $topicTitle = trim((string) data_get($ctx, 'topic.title', ''));
+        $subject = $topicTitle !== '' ? $topicTitle : trim((string) ($item->ai_caption ?: $item->title ?: ''));
+
+        $vertical = in_array($item->format, ['story', 'reel'], true);
 
         return "High-quality social media photo for {$brandName}"
             . ($industry !== '' ? " ({$industry})" : '')
             . ". Visual concept: {$subject}. "
-            . ($visual !== '' ? "Brand visual style: {$visual}. " : '')
+            . ($services !== '' ? 'Show their real offering: ' . Str::limit($services, 160, '') . '. ' : '')
+            . ($visual !== ''
+                ? "Brand visual style: {$visual}. "
+                : 'Natural light, authentic setting, candid rather than stock-photo look. ')
             . ($tone !== '' ? "Mood: {$tone}. " : '')
-            . "Natural light, professional look, modern minimal composition. No text, no logos, no watermarks.";
+            . ($vertical ? 'Vertical composition with clear focal subject. ' : '')
+            . "No text, no logos, no watermarks.";
     }
 }

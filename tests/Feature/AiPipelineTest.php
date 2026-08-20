@@ -202,6 +202,46 @@ class AiPipelineTest extends TestCase
         });
     }
 
+    public function test_writer_prompt_includes_brand_facts_and_sibling_openings(): void
+    {
+        Storage::fake('public');
+        $this->makeItems(2);
+        $this->fakeOpenAi();
+
+        [$first, $second] = ContentItem::orderBy('id')->get()->all();
+        $first->ai_caption = "La lievitazione lenta cambia tutto.\nSeconda riga.";
+        $first->save();
+
+        (new GenerateAiForContentItem($second->id))->handle(app(ContentAiGenerator::class));
+
+        Http::assertSent(function (Request $request) {
+            if (!str_contains($request->url(), '/v1/responses')) {
+                return false;
+            }
+            $instructions = (string) data_get($request->data(), 'instructions');
+
+            // Scheda attività promossa a istruzioni + anti-ripetizione tra post fratelli
+            return str_contains($instructions, 'Pizza napoletana, impasti a lunga lievitazione')
+                && str_contains($instructions, 'Famiglie e giovani della zona')
+                && str_contains($instructions, 'La lievitazione lenta cambia tutto.');
+        });
+    }
+
+    public function test_ideation_uses_dedicated_reasoning_effort(): void
+    {
+        $this->makeItems(2);
+        $this->fakeOpenAi(topicsCount: 2);
+        Queue::fake();
+
+        (new GeneratePlanTopics($this->plan->id))->handle(app(OpenAiService::class));
+
+        Http::assertSent(function (Request $request) {
+            return str_contains($request->url(), '/v1/responses')
+                && data_get($request->data(), 'text.format.name') === 'plan_topics'
+                && data_get($request->data(), 'reasoning.effort') === 'medium';
+        });
+    }
+
     public function test_generation_error_marks_item_as_error(): void
     {
         $this->makeItems(1);
