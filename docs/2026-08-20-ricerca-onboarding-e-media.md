@@ -86,6 +86,16 @@ Fonti: [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing) · [g
 
 ---
 
+## Parte 3 — Layer template per le grafiche con testo (decisione 20/08)
+
+Per i post con testo in overlay (card promo, tips, quote, story) la diffusione pura non basta: il testo renderizzato è l'unico affidabile al 100%. Architettura decisa:
+
+1. **Claude Design come studio interno** (non è incorporabile nel SaaS: strumento interattivo, niente API): progettiamo lì la libreria di template — card promo, educational/tips, quote, story — l'utente li rifinisce visivamente e li approva.
+2. **Ogni template approvato diventa un template Blade/HTML parametrizzato** nel SaaS: colori/font/logo del tenant + testi AI come variabili.
+3. **A runtime**: GPT Image 2 genera il layer fotografico → il template si riempie → **`spatie/browsershot`** (Puppeteer) renderizza il PNG finale. Costo per grafica: centesimi di token, testo perfetto, modificabile senza rigenerare.
+
+Stato: da fare dopo la ristrutturazione (prima bug + nuova struttura). Il divieto attuale di testo nelle immagini nei prompt resta valido per il layer fotografico.
+
 ## Prossimi passi proposti (in ordine)
 
 1. **Migrazione immagini a GPT Image 2** (scadenza dura 23/10) — drop-in, occasione per passare a edit-con-reference usando i brand asset.

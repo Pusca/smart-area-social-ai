@@ -31,7 +31,6 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/wizard', [PlanWizardController::class, 'start'])->name('wizard.start');
     Route::post('/wizard', [PlanWizardController::class, 'store'])->name('wizard.store');
     Route::get('/wizard/done', [PlanWizardController::class, 'done'])->name('wizard.done');
-    Route::post('/wizard/generate', [PlanWizardController::class, 'generate'])->name('wizard.generate');
 
     // AI generate
     Route::post('/ai/content/{contentItem}/generate', [AiGenerateController::class, 'generateOne'])->name('ai.content.generate');
