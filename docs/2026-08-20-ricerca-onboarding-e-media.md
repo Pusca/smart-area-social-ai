@@ -106,11 +106,18 @@ Fatto nella sessione del 20/08 (commit `9a1c719` → `1735ff8`):
 - ✅ **Migrazione GPT Image 2**: default `gpt-image-2` in config (env override possibile).
 - ✅ **Onboarding solo-URL**: `SiteCrawler` (homepage + pagine rilevanti; driver Firecrawl auto-attivo con `FIRECRAWL_API_KEY`, fallback nativo) + estrazione canali social → `tenant_profiles.social_links` + job `BuildBrandProfileFromWebsite` che salva il profilo (solo campi vuoti, mai sovrascrive l'utente) con stato in cache e polling UI. La registrazione atterra su /brand.
 
+Secondo giro del 20/08 (commit `23bf177`, `64ce738`, 52 test verdi):
+
+- ✅ **Default contenuti dedotti in onboarding**: `default_tone` scelto dall'AI dal sito (enum dei 5 toni), `default_platforms` dai social effettivamente trovati, `default_formats` di conseguenza — sempre solo su campi vuoti.
+- ✅ **Arricchimento Apify**: job `EnrichBrandFromSocials` (dietro `APIFY_TOKEN`, best-effort, auto-dispatched se trovato Instagram) — caption reali → `example_posts`, sintesi voce del brand → `brand_voice` (solo se vuoti).
+- ✅ **Verifica email obbligatoria** (`MustVerifyEmail`); post-verifica → onboarding se manca il profilo.
+- ✅ **Login con Google** (Socialite): nuovo utente = nuovo tenant owner con email verificata; account esistenti linkati per email; bottone visibile solo con `GOOGLE_CLIENT_ID` configurato.
+
 ## Prossimi passi rimasti (in ordine)
 
-1. **Arricchimento social con Apify** (ultimi 12 post IG → tono di voce + example_posts) — job async dietro `APIFY_TOKEN`.
-2. **Video Veo 3.1** come nuova feature reel (Gemini API, `predictLongRunning` + polling in coda).
-3. **Layer template** per grafiche con testo (Parte 3): sessione Claude Design → template Blade + Browsershot.
-4. Vista di revisione unificata (fondere /posts, /content-items, /calendar) + uso di `social_links` nella UI del profilo.
-5. Prendere una chiave Firecrawl per il JS rendering (senza, funziona il fetcher nativo).
-6. **Deploy automatico**: webhook GitHub → endpoint sul server (socialai.smartera.it) che fa `git pull` + `composer install` + `artisan migrate --force` + restart queue worker (richiesto dall'utente il 20/08).
+1. **Video Veo 3.1** come nuova feature reel (Gemini API, `predictLongRunning` + polling in coda).
+2. **Layer template** per grafiche con testo (Parte 3): sessione Claude Design → template Blade + Browsershot.
+3. Vista di revisione unificata (fondere /posts, /content-items, /calendar) + uso di `social_links` nella UI del profilo.
+4. Chiavi da procurare: Firecrawl (JS rendering crawl), Apify (`APIFY_TOKEN`), Google OAuth (`GOOGLE_CLIENT_ID/SECRET`, redirect `https://.../auth/google/callback`). Mail: in produzione serve un mailer vero (ora `MAIL_MAILER=log`) per la verifica email.
+5. **Deploy automatico**: webhook GitHub → endpoint sul server che fa `git pull` + `composer install` + `artisan migrate --force` + restart queue worker. L'utente ha chiesto anche di valutare hosting su Hetzner ("così lo vediamo sempre lì") — servono accessi SSH.
+6. `composer audit` segnala 41 advisory su 14 pacchetti: pianificare un `composer update` controllato.
