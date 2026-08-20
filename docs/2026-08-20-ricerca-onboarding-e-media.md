@@ -96,11 +96,20 @@ Per i post con testo in overlay (card promo, tips, quote, story) la diffusione p
 
 Stato: da fare dopo la ristrutturazione (prima bug + nuova struttura). Il divieto attuale di testo nelle immagini nei prompt resta valido per il layer fotografico.
 
-## Prossimi passi proposti (in ordine)
+## Stato di attuazione (aggiornato 20/08/2026, sera)
 
-1. **Migrazione immagini a GPT Image 2** (scadenza dura 23/10) — drop-in, occasione per passare a edit-con-reference usando i brand asset.
-2. **Onboarding solo-URL**: Firecrawl + estrazione social + structured output; arricchimento Apify async.
-3. Bug bloccanti già mappati (tenant al signup, label post/settimana, caption persa, ecc.).
-4. Leve qualità prompt (contesto brand nelle istruzioni, anti-ripetizione tra post, regole per formato, effort alto su ideazione).
-5. **Video Veo 3.1** come nuova feature reel.
-6. Semplificazione wizard + vista di revisione unificata.
+Fatto nella sessione del 20/08 (commit `9a1c719` → `1735ff8`):
+
+- ✅ **Bug bloccanti**: tenant creato alla registrazione (signup self-service funzionante), form edit post riparato (campo status mancante → salvataggio falliva sempre; select per piattaforma/formato; hashtag e CTA editabili), caption manuale non più persa, `default_goal` 120→500, poller senza reload continui (aggiorna i badge sul posto, 1 reload a fine generazione), Brand in navbar.
+- ✅ **Wizard a 1 step**: solo nome/date/post-a-settimana/goal; tono+piattaforme+formati dal profilo (chips di riepilogo); generazione parte al submit; done page = pagina di avanzamento con barra X/N e "Rigenera piano". Label post/settimana corretta con stima live del totale.
+- ✅ **Leve qualità prompt**: scheda attività (services/target/cta/industry/notes) promossa a istruzioni; anti-ripetizione tra post fratelli (aperture già usate passate al writer); regole di copy per formato (reel/story/live/blog); giorno di pubblicazione in italiano nel contesto; effort ideazione dedicato (`OPENAI_IDEATION_EFFORT`, default medium); fallback image prompt basato su topic+servizi.
+- ✅ **Migrazione GPT Image 2**: default `gpt-image-2` in config (env override possibile).
+- ✅ **Onboarding solo-URL**: `SiteCrawler` (homepage + pagine rilevanti; driver Firecrawl auto-attivo con `FIRECRAWL_API_KEY`, fallback nativo) + estrazione canali social → `tenant_profiles.social_links` + job `BuildBrandProfileFromWebsite` che salva il profilo (solo campi vuoti, mai sovrascrive l'utente) con stato in cache e polling UI. La registrazione atterra su /brand.
+
+## Prossimi passi rimasti (in ordine)
+
+1. **Arricchimento social con Apify** (ultimi 12 post IG → tono di voce + example_posts) — job async dietro `APIFY_TOKEN`.
+2. **Video Veo 3.1** come nuova feature reel (Gemini API, `predictLongRunning` + polling in coda).
+3. **Layer template** per grafiche con testo (Parte 3): sessione Claude Design → template Blade + Browsershot.
+4. Vista di revisione unificata (fondere /posts, /content-items, /calendar) + uso di `social_links` nella UI del profilo.
+5. Prendere una chiave Firecrawl per il JS rendering (senza, funziona il fetcher nativo).
