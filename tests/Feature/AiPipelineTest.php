@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\AiStatus;
+use App\Jobs\BuildBrandProfileFromWebsite;
 use App\Jobs\GenerateAiForContentItem;
 use App\Jobs\GeneratePlanTopics;
 use App\Models\ContentItem;
@@ -12,8 +13,10 @@ use App\Models\TenantProfile;
 use App\Models\User;
 use App\Services\ContentAiGenerator;
 use App\Services\OpenAiService;
+use App\Services\SiteCrawler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -262,12 +265,34 @@ class AiPipelineTest extends TestCase
         $this->assertNotNull($item->ai_error);
     }
 
-    public function test_brand_prefill_from_website(): void
+    public function test_brand_prefill_dispatches_crawl_job(): void
+    {
+        Queue::fake();
+
+        $this->actingAs($this->user)
+            ->postJson(route('profile.brand.prefill'), ['website' => 'https://www.damario.example/'])
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        Queue::assertPushed(BuildBrandProfileFromWebsite::class);
+
+        $this->actingAs($this->user)
+            ->getJson(route('profile.brand.prefill.status'))
+            ->assertOk()
+            ->assertJsonPath('status', 'queued');
+    }
+
+    public function test_brand_profile_built_from_multi_page_crawl(): void
     {
         Http::fake([
-            'www.damario.example/*' => Http::response(
-                '<html><head><title>Da Mario</title></head><body>'
-                . str_repeat('<p>Pizzeria napoletana a Venezia. Impasti a lunga lievitazione, forno a legna, ingredienti DOP. Prenota il tuo tavolo.</p>', 10)
+            'www.damario.example/servizi' => Http::response(
+                '<html><body>' . str_repeat('<p>Pizza napoletana verace, impasti 48 ore, forno a legna, ingredienti DOP campani.</p>', 15) . '</body></html>'
+            ),
+            'www.damario.example*' => Http::response(
+                '<html><body><a href="/servizi">I nostri servizi</a>'
+                . '<a href="https://www.instagram.com/damario">Instagram</a>'
+                . '<a href="https://www.facebook.com/sharer/sharer.php?u=x">Share</a>'
+                . str_repeat('<p>Pizzeria napoletana a Venezia. Prenota il tuo tavolo.</p>', 15)
                 . '</body></html>'
             ),
             'api.openai.com/v1/responses' => Http::response([
@@ -275,13 +300,13 @@ class AiPipelineTest extends TestCase
                     'content' => [[
                         'type' => 'output_text',
                         'text' => json_encode([
-                            'business_name' => 'Pizzeria Da Mario',
+                            'business_name' => 'Pizzeria Da Mario SRL',
                             'industry' => 'Ristorazione',
-                            'services' => 'Pizza napoletana, forno a legna',
-                            'target' => 'Famiglie della zona',
-                            'cta' => 'Prenota un tavolo',
-                            'brand_voice' => 'Caloroso e genuino',
-                            'notes' => 'Ingredienti DOP',
+                            'services' => 'Qualcosa di diverso',
+                            'target' => 'Turisti',
+                            'cta' => 'Chiama ora',
+                            'brand_voice' => 'Formale',
+                            'notes' => 'Ingredienti DOP campani',
                         ]),
                     ]],
                 ]],
@@ -289,10 +314,23 @@ class AiPipelineTest extends TestCase
             ]),
         ]);
 
-        $this->actingAs($this->user)
-            ->postJson(route('profile.brand.prefill'), ['website' => 'https://www.damario.example/'])
-            ->assertOk()
-            ->assertJsonPath('ok', true)
-            ->assertJsonPath('data.business_name', 'Pizzeria Da Mario');
+        (new BuildBrandProfileFromWebsite($this->tenant->id, 'https://www.damario.example'))
+            ->handle(app(SiteCrawler::class), app(OpenAiService::class));
+
+        $profile = TenantProfile::where('tenant_id', $this->tenant->id)->firstOrFail();
+
+        // Sempre aggiornati: sito e canali social scoperti (share link esclusi)
+        $this->assertSame('https://www.damario.example', $profile->website);
+        $this->assertSame('https://www.instagram.com/damario', $profile->social_links['instagram'] ?? null);
+        $this->assertArrayNotHasKey('facebook', $profile->social_links ?? []);
+
+        // Compila SOLO i campi vuoti: quelli già scritti dall'utente restano
+        $this->assertSame('Ingredienti DOP campani', $profile->notes);
+        $this->assertSame('Pizza napoletana, impasti a lunga lievitazione', $profile->services);
+        $this->assertSame('Pizzeria Da Mario', $profile->business_name);
+
+        $state = Cache::get(BuildBrandProfileFromWebsite::cacheKey($this->tenant->id));
+        $this->assertSame('done', $state['status']);
+        $this->assertSame(2, $state['pages']);
     }
 }

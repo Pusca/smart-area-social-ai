@@ -590,7 +590,7 @@
                 }
 
                 btn.disabled = true;
-                setStatus('Sto leggendo il sito e compilando il profilo… (10-30 secondi)');
+                setStatus('Sto leggendo il sito (più pagine + canali social) e compilando il profilo…');
 
                 try {
                     const res = await fetch(@json(route('profile.brand.prefill')), {
@@ -608,32 +608,41 @@
                         throw new Error(json?.error || (json?.message ?? 'Errore sconosciuto'));
                     }
 
-                    const map = {
-                        business_name: 'input[name="business_name"]',
-                        industry: 'input[name="industry"]',
-                        cta: 'input[name="cta"]',
-                        services: 'textarea[name="services"]',
-                        target: 'textarea[name="target"]',
-                        brand_voice: 'textarea[name="brand_voice"]',
-                        notes: 'textarea[name="notes"]',
+                    // Il lavoro gira in coda: seguiamo lo stato e ricarichiamo
+                    // quando il profilo è stato salvato lato server.
+                    const statusUrl = @json(route('profile.brand.prefill.status'));
+                    const startedAt = Date.now();
+
+                    const poll = async () => {
+                        if (Date.now() - startedAt > 180000) {
+                            setStatus('Sta impiegando più del previsto: ricarica la pagina tra poco.', true);
+                            btn.disabled = false;
+                            return;
+                        }
+
+                        try {
+                            const s = await (await fetch(statusUrl, { headers: { 'Accept': 'application/json' } })).json();
+
+                            if (s.status === 'done') {
+                                const social = (s.social || []).length ? ` + ${s.social.length} canali social trovati` : '';
+                                setStatus(`Profilo compilato da ${s.pages} pagine del sito${social} ✅ Ricarico…`);
+                                window.location.reload();
+                                return;
+                            }
+                            if (s.status === 'error') {
+                                setStatus('Errore: ' + (s.error || 'analisi non riuscita'), true);
+                                btn.disabled = false;
+                                return;
+                            }
+                            setStatus('Analisi in corso… l\'AI sta leggendo il sito e compilando il profilo.');
+                        } catch (e) { /* rete assente: riprova */ }
+
+                        setTimeout(poll, 3000);
                     };
 
-                    let filled = 0;
-                    for (const [key, selector] of Object.entries(map)) {
-                        const value = (json.data?.[key] || '').trim();
-                        const field = document.querySelector(selector);
-                        if (value && field) {
-                            field.value = value;
-                            filled++;
-                        }
-                    }
-
-                    setStatus(filled > 0
-                        ? `Profilo compilato (${filled} campi) ✅ Controlla, ritocca e salva.`
-                        : 'Il sito non conteneva abbastanza informazioni utili.');
+                    setTimeout(poll, 3000);
                 } catch (err) {
                     setStatus('Errore: ' + (err?.message || err), true);
-                } finally {
                     btn.disabled = false;
                 }
             });

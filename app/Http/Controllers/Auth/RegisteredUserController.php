@@ -62,7 +62,9 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
+        // L'onboarding parte dal profilo attività: basta l'URL del sito
+        return redirect(route('profile.brand', absolute: false))
+            ->with('status', 'Benvenuto! Inserisci il sito web della tua attività e lascia che l\'AI compili il profilo.');
     }
 
     private function uniqueTenantSlug(string $name): string

@@ -3,15 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\AnalyzeBrandVisuals;
+use App\Jobs\BuildBrandProfileFromWebsite;
 use App\Models\BrandAsset;
 use App\Models\TenantProfile;
-use App\Services\OpenAiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class TenantProfileController extends Controller
 {
@@ -136,44 +135,37 @@ class TenantProfileController extends Controller
     }
 
     /**
-     * Compila il profilo con l'AI a partire dal sito web dell'attività.
-     * Risponde in JSON: la pagina brand riempie i campi via fetch.
+     * Onboarding "solo URL": mette in coda il crawling del sito (multi-pagina,
+     * canali social inclusi) e la compilazione AI del profilo.
+     * La UI segue l'avanzamento con prefillStatus.
      */
-    public function prefill(Request $request, OpenAiService $openAi)
+    public function prefill(Request $request)
     {
         $data = $request->validate([
             'website' => 'required|url:http,https|max:255',
         ]);
 
-        try {
-            $res = Http::timeout(15)
-                ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; SocialAI/1.0)'])
-                ->get($data['website']);
+        $tenantId = (int) $request->user()->tenant_id;
 
-            if (!$res->successful()) {
-                return response()->json([
-                    'ok' => false,
-                    'error' => "Il sito ha risposto con errore {$res->status()}.",
-                ], 422);
-            }
+        Cache::put(
+            BuildBrandProfileFromWebsite::cacheKey($tenantId),
+            ['status' => 'queued'],
+            now()->addMinutes(15)
+        );
 
-            $text = $this->extractReadableText($res->body());
-            if (mb_strlen($text) < 200) {
-                return response()->json([
-                    'ok' => false,
-                    'error' => 'Il sito contiene troppo poco testo per compilare il profilo.',
-                ], 422);
-            }
+        BuildBrandProfileFromWebsite::dispatch($tenantId, $data['website']);
 
-            $profile = $openAi->extractBrandProfile($data['website'], $text);
+        return response()->json(['ok' => true, 'queued' => true]);
+    }
 
-            return response()->json(['ok' => true, 'data' => $profile]);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'ok' => false,
-                'error' => 'Analisi non riuscita: ' . Str::limit($e->getMessage(), 200),
-            ], 422);
-        }
+    /**
+     * Stato del prefill in corso (polling della pagina brand).
+     */
+    public function prefillStatus(Request $request)
+    {
+        $state = Cache::get(BuildBrandProfileFromWebsite::cacheKey((int) $request->user()->tenant_id));
+
+        return response()->json($state ?? ['status' => 'idle']);
     }
 
     /**
@@ -194,15 +186,5 @@ class TenantProfileController extends Controller
         $asset->delete();
 
         return redirect()->route('profile.brand')->with('status', 'Asset eliminato ✅');
-    }
-
-    private function extractReadableText(string $html): string
-    {
-        // via script/style, poi tag → spazi, entità decodificate, spazi collassati
-        $html = preg_replace('/<(script|style|noscript|svg)\b[^>]*>.*?<\/\1>/si', ' ', $html) ?? $html;
-        $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
-
-        return mb_substr(trim($text), 0, 14000);
     }
 }

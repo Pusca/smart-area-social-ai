@@ -28,7 +28,8 @@ class RegistrationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        // L'onboarding parte dal profilo attività (sito web → AI)
+        $response->assertRedirect(route('profile.brand', absolute: false));
     }
 
     public function test_registration_creates_tenant_and_grants_access(): void

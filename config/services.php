@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    // Crawling siti per l'onboarding (opzionale: senza chiave si usa il
+    // fetcher nativo senza JS rendering)
+    'firecrawl' => [
+        'key' => env('FIRECRAWL_API_KEY'),
+    ],
+
 ];

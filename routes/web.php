@@ -24,6 +24,7 @@ Route::middleware(['auth', 'verified', 'hasTenant'])->group(function () {
     Route::get('/brand', [TenantProfileController::class, 'show'])->name('profile.brand');
     Route::post('/brand', [TenantProfileController::class, 'store'])->name('profile.brand.store');
     Route::post('/brand/prefill', [TenantProfileController::class, 'prefill'])->name('profile.brand.prefill');
+    Route::get('/brand/prefill/status', [TenantProfileController::class, 'prefillStatus'])->name('profile.brand.prefill.status');
     Route::delete('/brand/assets/{asset}', [TenantProfileController::class, 'destroyAsset'])
         ->name('profile.brand.asset.destroy');
 

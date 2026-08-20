@@ -14,6 +14,7 @@ class TenantProfile extends Model
         'business_name',
         'industry',
         'website',
+        'social_links',
         'notes',
         'services',
         'target',
@@ -30,6 +31,7 @@ class TenantProfile extends Model
     ];
 
     protected $casts = [
+        'social_links' => 'array',
         'default_platforms' => 'array',
         'default_formats' => 'array',
         'completed_at' => 'datetime',
